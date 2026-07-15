@@ -5,6 +5,12 @@ import {
   type PromptCacheMode,
 } from './cache';
 import {
+  calculateNetSavedTokens,
+  loadCacheLedger,
+  resetCacheLedger,
+  type CacheLedger,
+} from './ledger';
+import {
   DEFAULT_MODEL,
   MODEL_ARGUMENT,
   MODEL_OPTIONS,
@@ -129,6 +135,14 @@ function requireSettingsForm(): HTMLFormElement {
   return element;
 }
 
+function requireLedgerSummary(): HTMLElement {
+  const element = document.getElementById('ledger-summary');
+  if (!(element instanceof HTMLElement)) {
+    throw new Error('Ledger summary was not rendered');
+  }
+  return element;
+}
+
 interface SettingsFormElements {
   apiKeyInput: HTMLInputElement;
   modelSelect: HTMLSelectElement;
@@ -157,6 +171,29 @@ async function saveFromForm(
   } finally {
     button.disabled = false;
   }
+}
+
+export function formatTokenCount(value: number): string {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (absolute >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return `${value}`;
+}
+
+// 입력 정가 토큰 등가 기준 순절감 요약. 원시 읽기/쓰기도 함께 보여줘
+// 손익 공식(0.9R − 0.25W)을 검산할 수 있게 한다.
+export function formatLedgerSummary(ledger: CacheLedger): string {
+  if (ledger.readTokens === 0 && ledger.writeTokens === 0 && ledger.costUsd === 0) {
+    return '캐시 손익: 아직 기록 없음';
+  }
+
+  const netSavedTokens = calculateNetSavedTokens(ledger);
+  const sign = netSavedTokens >= 0 ? '+' : '';
+  const costSummary = ledger.costUsd === 0 ? '' : ` · 지출 $${ledger.costUsd.toFixed(4)}`;
+  return (
+    `캐시 손익: ${sign}${formatTokenCount(netSavedTokens)} tokens${costSummary}` +
+    ` (읽기 ${formatTokenCount(ledger.readTokens)} / 쓰기 ${formatTokenCount(ledger.writeTokens)})`
+  );
 }
 
 // 인자 편집 화면에서 직접 입력한 커스텀 모델 ID도 select에서 유실되지 않게 옵션으로 노출한다.
@@ -193,6 +230,10 @@ function renderSettings(currentModel: string): void {
           '<option value="default">스탠다드 티어</option>' +
           '<option value="flex">Flex 티어</option>' +
         '</select>' +
+        '<div class="ledger">' +
+          '<span id="ledger-summary"></span>' +
+          '<button id="ledger-reset" type="button" aria-label="캐시 손익 초기화">🗑</button>' +
+        '</div>' +
         '<div class="actions">' +
           '<button id="save" type="submit">저장</button>' +
           '<button id="close" type="button">닫기</button>' +
@@ -222,6 +263,8 @@ export async function openSettings(): Promise<void> {
   };
   const saveButton = requireButton('save');
   const closeButton = requireButton('close');
+  const ledgerResetButton = requireButton('ledger-reset');
+  const ledgerSummary = requireLedgerSummary();
   const form = requireSettingsForm();
 
   elements.apiKeyInput.value = apiKey;
@@ -230,11 +273,33 @@ export async function openSettings(): Promise<void> {
   elements.serviceTierSelect.value = serviceTier;
   elements.apiKeyInput.focus();
 
+  ledgerSummary.textContent = formatLedgerSummary(await loadCacheLedger());
+
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     void saveFromForm(elements, saveButton);
   });
+  ledgerResetButton.addEventListener('click', () => {
+    void resetLedgerFromForm(ledgerSummary, ledgerResetButton);
+  });
   closeButton.addEventListener('click', () => {
     void risuai.hideContainer();
   });
+}
+
+async function resetLedgerFromForm(
+  summary: HTMLElement,
+  button: HTMLButtonElement,
+): Promise<void> {
+  button.disabled = true;
+
+  try {
+    await resetCacheLedger();
+    summary.textContent = formatLedgerSummary(await loadCacheLedger());
+  } catch (error) {
+    summary.textContent = '캐시 손익: 초기화 실패';
+    console.error('[llm-gateway-provider] Failed to reset cache ledger', error);
+  } finally {
+    button.disabled = false;
+  }
 }

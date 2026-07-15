@@ -10,7 +10,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "llm-io": "github:rndka9-alt/llm-io"
+    "llm-io": "github:rndka9-alt/llm-io",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "esbuild": "^0.25",

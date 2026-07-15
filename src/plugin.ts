@@ -1,12 +1,16 @@
 import { Llm, LlmHttpError, LLMGatewayProvider, OpenAIChatCompletionsFormat } from 'llm-io';
 import {
   PROMPT_CACHE_MODE_ARGUMENT,
-  applyCacheBreakpoints,
   createPromptCacheExtraBody,
   isExplicitPromptCacheMode,
+  loadCacheAnchorState,
+  markCacheBreakpoints,
+  planCacheAnchors,
   resolvePromptCacheMode,
+  saveCacheAnchorState,
 } from './cache';
 import { toLlmMessages } from './convert';
+import { accumulateCacheUsage } from './ledger';
 import { SERVICE_TIER_ARGUMENT, resolveServiceTier } from './options';
 import { openSettings } from './settings';
 
@@ -50,9 +54,22 @@ async function requestLLMGateway(
   const promptCacheMode = resolvePromptCacheMode(await readArgument(PROMPT_CACHE_MODE_ARGUMENT));
   const serviceTier = resolveServiceTier(await readArgument(SERVICE_TIER_ARGUMENT));
   const messages = toLlmMessages(args.prompt_chat);
-  const messagesWithCacheBreakpoints = isExplicitPromptCacheMode(promptCacheMode)
-    ? applyCacheBreakpoints(messages)
-    : messages;
+  let requestMessages = messages;
+  try {
+    // disabled 모드에서도 diff 기준은 계속 갱신한다 — explicit로 되돌렸을 때
+    // 스테일 diff로 잘못된 앵커가 잡히는 것을 막는다.
+    const cachePlan = planCacheAnchors(await loadCacheAnchorState(), messages);
+    if (isExplicitPromptCacheMode(promptCacheMode)) {
+      requestMessages = markCacheBreakpoints(messages, cachePlan);
+    }
+    await saveCacheAnchorState(cachePlan.nextState);
+  } catch (error) {
+    // 앵커 처리 실패가 채팅 요청까지 죽여선 안 된다 — 이번 요청은 캐시 없이 보낸다.
+    console.error(
+      '[llm-gateway-provider] cache anchor handling failed; sending without breakpoints',
+      error,
+    );
+  }
 
   const llm = new Llm({
     format: new OpenAIChatCompletionsFormat({
@@ -70,7 +87,7 @@ async function requestLLMGateway(
 
   try {
     const output = await llm.generate({
-      messages: messagesWithCacheBreakpoints,
+      messages: requestMessages,
       options: {
         maxTokens: args.max_tokens,
         temperature: args.temperature,
@@ -78,6 +95,13 @@ async function requestLLMGateway(
       },
       signal: abortSignal,
     });
+
+    try {
+      await accumulateCacheUsage(output.usage, output.raw, model);
+    } catch (error) {
+      // 손익 집계 실패로 응답 전달을 막지 않는다.
+      console.error('[llm-gateway-provider] cache ledger update failed', error);
+    }
 
     return { success: true, content: output.message.text };
   } catch (error) {

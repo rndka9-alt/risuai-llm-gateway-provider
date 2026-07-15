@@ -17,9 +17,30 @@ npm test
 
 ## 구조
 
-- `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록
+- `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
-- `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사)
+- `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
+- `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰 누적, 0.9R − 0.25W 순절감 계산)
+- `src/options.ts` — 모델 프리셋(sol/terra/luna)·서비스 티어 인자
+- `src/settings.ts` + `src/theme.ts` + `src/constants.ts` — 설정 UI (인자 편집 + 손익 표시/리셋)
+- `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
+  본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
+
+## breakpoint 자동 배치 (cache.ts)
+
+- 조립된 messages만으론 로어북/채팅 경계를 알 수 없어 **직전 요청과의 양끝 diff**
+  (메시지 단위 공통 프리픽스+서픽스)로 삽입 구간을 찾고, 그 끝에 frontier BP를 찍는다.
+  공통 서픽스(후행 블록)는 매턴 위치가 밀려 캐시 불가 — 캐시에 태우지 않는다.
+- 첫 턴/새 epoch: 마지막 user 롤 직전에 기본 BP. 공통 프리픽스 0(채팅방 전환)이면 epoch 리셋.
+- 분기 이벤트 시 가장 얕은 일치 경계를 폴백 앵커로 유지 (BP 최대 2개).
+- **assistant 메시지엔 마킹 금지**: llm-io가 assistant를 문자열 content로 직렬화해
+  breakpoint가 와이어에서 유실된다(to-openai-message.ts). system/user로 물러나 마킹.
+- 직전 요청은 원문이 아닌 **메시지별 fingerprint(FNV-1a 해시 + 토큰 추정)**로
+  `pluginStorage`(`llm-gateway-provider:cache-anchor-state`)에 저장 — 평문 비노출,
+  용량 고정, database.bin 동기화를 타고 다른 기기에서도 이어진다.
+- 토큰 추정: ASCII/4 + 비ASCII/2 + 메시지당 framing 4토큰. 1024토큰 미만 프리픽스는 마킹 생략.
+  (후속: 응답 usage.inputTokens 기반 런타임 보정)
+- 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상 상태는 새 epoch로 자가 회복.
 
 ## 런타임 환경 / 제약
 

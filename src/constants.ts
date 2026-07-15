@@ -22,6 +22,8 @@ export const STYLES = [
   'form { display:flex; flex-direction:column; gap:14px; }',
   'input, select { width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; outline:none; background:var(--background); color:var(--text); font:inherit; }',
   'input:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent); }',
+  '.ledger { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:.85em; color:var(--text2); }',
+  '.ledger button { min-width:0; padding:6px 10px; }',
   '.actions { display:flex; justify-content:flex-end; gap:8px; }',
   'button { min-width:72px; padding:8px 14px; border:1px solid var(--border2); border-radius:7px; background:var(--button); color:var(--text); font:inherit; cursor:pointer; }',
   'button:hover:not(:disabled) { border-color:var(--border); }',

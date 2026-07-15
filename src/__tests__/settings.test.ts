@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createEmptyCacheLedger } from '../ledger';
 import {
+  formatLedgerSummary,
+  formatTokenCount,
   loadApiKey,
   loadModel,
   loadPromptCacheMode,
@@ -83,6 +86,37 @@ describe('model settings', () => {
     vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
 
     await expect(loadModel()).resolves.toBe('gpt-5.6-sol');
+  });
+});
+
+describe('ledger display', () => {
+  it('토큰 수를 k/M 단위로 축약한다', () => {
+    expect(formatTokenCount(120)).toBe('120');
+    expect(formatTokenCount(12_300)).toBe('12.3k');
+    expect(formatTokenCount(-1_500_000)).toBe('-1.5M');
+  });
+
+  it('기록이 없으면 안내 문구를 보여준다', () => {
+    expect(formatLedgerSummary(createEmptyCacheLedger())).toBe('캐시 손익: 아직 기록 없음');
+  });
+
+  it('순절감과 읽기/쓰기 원시값을 함께 보여준다', () => {
+    const ledger = { ...createEmptyCacheLedger(), readTokens: 10_000, writeTokens: 4_000 };
+
+    expect(formatLedgerSummary(ledger)).toBe('캐시 손익: +8.0k tokens (읽기 10.0k / 쓰기 4.0k)');
+  });
+
+  it('실 지출이 있으면 USD 합계를 소수점 넷째 자리까지 병기한다', () => {
+    const ledger = {
+      ...createEmptyCacheLedger(),
+      readTokens: 10_000,
+      writeTokens: 4_000,
+      costUsd: 1.2345,
+    };
+
+    expect(formatLedgerSummary(ledger)).toBe(
+      '캐시 손익: +8.0k tokens · 지출 $1.2345 (읽기 10.0k / 쓰기 4.0k)',
+    );
   });
 });
 
