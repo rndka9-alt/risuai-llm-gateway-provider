@@ -1,6 +1,8 @@
 import { STYLES } from './constants';
 import {
   PROMPT_CACHE_MODE_ARGUMENT,
+  isCacheBackoffActive,
+  loadCacheAnchorState,
   resolvePromptCacheMode,
   type PromptCacheMode,
 } from './cache';
@@ -20,7 +22,6 @@ import {
   REASONING_EFFORT_OPTIONS,
   SERVICE_TIER_ARGUMENT,
   STREAMING_MODE_ARGUMENT,
-  UNSUPPORTED_MEDIA_LLM_FLAG_NAMES,
   VERBOSITY_ARGUMENT,
   VERBOSITY_OPTIONS,
   resolveConfigurableLlmFlagNames,
@@ -33,7 +34,6 @@ import {
   type ReasoningEffort,
   type ServiceTier,
   type StreamingMode,
-  type UnsupportedMediaLlmFlagName,
   type Verbosity,
 } from './options';
 import { applyTheme, resolveScheme } from './theme';
@@ -53,13 +53,6 @@ const FLAG_OPTIONS: readonly FlagOption[] = [
   { label: 'Pool Supported', name: 'poolSupported' },
 ];
 
-const UNSUPPORTED_MEDIA_FLAG_LABELS: Record<UnsupportedMediaLlmFlagName, string> = {
-  hasImageInput: 'Image Input',
-  hasImageOutput: 'Image Output',
-  hasAudioInput: 'Audio Input',
-  hasAudioOutput: 'Audio Output',
-  hasVideoInput: 'Video Input',
-};
 
 export interface ProviderRegistrationSettings {
   flagNames: readonly ConfigurableLlmFlagName[];
@@ -81,7 +74,7 @@ export async function saveApiKey(value: string): Promise<void> {
 
 export async function loadPromptCacheMode(): Promise<PromptCacheMode> {
   const value = await risuai.getArgument(PROMPT_CACHE_MODE_ARGUMENT);
-  if (value === undefined) return 'disabled';
+  if (value === undefined) return 'explicit';
   if (typeof value !== 'string') {
     throw new TypeError('prompt_cache_mode argument must be a string');
   }
@@ -249,18 +242,10 @@ function requireSettingsForm(): HTMLFormElement {
   return element;
 }
 
-function requireLedgerSummary(): HTMLElement {
-  const element = document.getElementById('ledger-summary');
+function requireElement(id: string): HTMLElement {
+  const element = document.getElementById(id);
   if (!(element instanceof HTMLElement)) {
-    throw new Error('Ledger summary was not rendered');
-  }
-  return element;
-}
-
-function requireReloadNotice(): HTMLElement {
-  const element = document.getElementById('reload-notice');
-  if (!(element instanceof HTMLElement)) {
-    throw new Error('Reload notice was not rendered');
+    throw new Error(`${id} element was not rendered`);
   }
   return element;
 }
@@ -294,40 +279,6 @@ export function createProviderRegistrationSignature(
   return `${settings.streamingMode}:${serializeConfigurableLlmFlagNames(sortedFlagNames)}`;
 }
 
-async function saveFromForm(
-  elements: SettingsFormElements,
-  button: HTMLButtonElement,
-  reloadNotice: HTMLElement,
-  registeredSignature: string,
-): Promise<void> {
-  button.disabled = true;
-  button.textContent = '저장 중...';
-
-  const values: SettingsValues = {
-    apiKey: elements.apiKeyInput.value,
-    flagNames: readSelectedFlagNames(elements.flagInputs),
-    model: elements.modelSelect.value,
-    promptCacheMode: resolvePromptCacheMode(elements.promptCacheModeSelect.value),
-    reasoningEffort: resolveReasoningEffort(elements.reasoningEffortSelect.value),
-    serviceTier: resolveServiceTier(elements.serviceTierSelect.value) ?? 'default',
-    streamingMode: resolveStreamingMode(elements.streamingModeSelect.value),
-    verbosity: resolveVerbosity(elements.verbositySelect.value),
-  };
-
-  try {
-    await saveSettings(values);
-    button.textContent = '저장됨';
-    // addProvider metadata와 streaming 동작은 플러그인 로드 때 한 번 고정되므로
-    // 저장값이 등록 스냅샷과 달라지면 재등록이 필요하다는 사실을 즉시 알린다.
-    reloadNotice.hidden = createProviderRegistrationSignature(values) === registeredSignature;
-  } catch (error) {
-    button.textContent = '저장 실패';
-    console.error('[llm-gateway-provider] Failed to save settings', error);
-  } finally {
-    button.disabled = false;
-  }
-}
-
 export function formatTokenCount(value: number): string {
   const absolute = Math.abs(value);
   if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -335,20 +286,43 @@ export function formatTokenCount(value: number): string {
   return `${value}`;
 }
 
-// 입력 정가 토큰 등가 기준 순절감 요약. 원시 읽기/쓰기도 함께 보여줘
-// 손익 공식(0.9R − 0.25W)을 검산할 수 있게 한다.
-export function formatLedgerSummary(ledger: CacheLedger): string {
-  if (ledger.readTokens === 0 && ledger.writeTokens === 0 && ledger.costUsd === 0) {
-    return '캐시 손익: 아직 기록 없음';
+export interface LedgerDisplay {
+  amountText: string;
+  detailText: string;
+  tone: 'gain' | 'loss' | 'neutral';
+}
+
+// 손익을 대표값 하나로 보여준다 — 실측 절감 USD가 있으면 그것을, 없으면
+// 입력 정가 토큰 등가(0.9R − 0.25W)를 쓴다. 원시 읽기/쓰기는 검산용 디테일로.
+export function buildLedgerDisplay(ledger: CacheLedger): LedgerDisplay {
+  const hasRecords =
+    ledger.readTokens !== 0 ||
+    ledger.writeTokens !== 0 ||
+    ledger.costUsd !== 0 ||
+    ledger.savedUsd !== 0;
+  if (!hasRecords) {
+    return { amountText: '아직 기록 없음', detailText: '', tone: 'neutral' };
   }
 
-  const netSavedTokens = calculateNetSavedTokens(ledger);
-  const sign = netSavedTokens >= 0 ? '+' : '';
-  const costSummary = ledger.costUsd === 0 ? '' : ` · 지출 $${ledger.costUsd.toFixed(4)}`;
-  return (
-    `캐시 손익: ${sign}${formatTokenCount(netSavedTokens)} tokens${costSummary}` +
-    ` (읽기 ${formatTokenCount(ledger.readTokens)} / 쓰기 ${formatTokenCount(ledger.writeTokens)})`
-  );
+  const useUsd = ledger.savedUsd !== 0;
+  const amountValue = useUsd ? ledger.savedUsd : calculateNetSavedTokens(ledger);
+  const sign = amountValue >= 0 ? '+' : '-';
+  const absolute = Math.abs(amountValue);
+  const amountText = useUsd
+    ? `${sign}$${absolute.toFixed(4)}`
+    : `${sign}${formatTokenCount(absolute)} tokens`;
+
+  const detailParts = [
+    `읽기 ${formatTokenCount(ledger.readTokens)}`,
+    `쓰기 ${formatTokenCount(ledger.writeTokens)}`,
+  ];
+  if (ledger.costUsd !== 0) detailParts.push(`지출 $${ledger.costUsd.toFixed(4)}`);
+
+  return {
+    amountText,
+    detailText: `(${detailParts.join(' / ')})`,
+    tone: amountValue >= 0 ? 'gain' : 'loss',
+  };
 }
 
 // 인자 편집 화면에서 직접 입력한 커스텀 모델 ID도 select에서 유실되지 않게 옵션으로 노출한다.
@@ -383,12 +357,10 @@ function renderFlagOptionsHtml(): string {
     .join('');
   // convert.ts는 현재 텍스트만 보존한다. 미디어 flag를 켜면 입력이 조용히 유실되므로
   // 멀티모달 변환을 구현할 때까지 설정 자체를 활성화하지 않는다.
-  const unsupportedMedia = UNSUPPORTED_MEDIA_LLM_FLAG_NAMES
-    .map((flagName) =>
-      '<label class="checkbox unsupported"><input type="checkbox" disabled>' +
-      `<span>${UNSUPPORTED_MEDIA_FLAG_LABELS[flagName]} · 미지원</span></label>`,
-    )
-    .join('');
+  // 미디어 항목 중 Image Input만 대표로 노출해 로드맵을 암시한다.
+  const unsupportedMedia =
+    '<label class="checkbox unsupported"><input type="checkbox" disabled>' +
+    '<span>Image Input · 미지원</span></label>';
   return configurable + unsupportedMedia;
 }
 
@@ -424,15 +396,20 @@ export function createSettingsHtml(currentModel: string): string {
         '<fieldset class="flags">' +
           '<legend>LLM flags</legend>' +
           renderFlagOptionsHtml() +
-          '<p class="help">미디어 입출력은 텍스트 전용 변환 때문에 현재 미지원입니다.</p>' +
         '</fieldset>' +
         '<p id="reload-notice" class="notice" hidden>적용하려면 새로고침이 필요합니다.</p>' +
+        '<p id="save-error" class="notice" hidden>저장에 실패했어요 — 콘솔을 확인해주세요.</p>' +
         '<div class="ledger">' +
-          '<span id="ledger-summary"></span>' +
-          '<button id="ledger-reset" type="button" aria-label="캐시 손익 초기화">🗑</button>' +
+          '<span>캐시 손익:</span>' +
+          '<span id="ledger-amount"></span>' +
+          '<button id="ledger-reset" type="button" aria-label="캐시 손익 초기화">×</button>' +
+          '<span id="ledger-detail"></span>' +
         '</div>' +
+        '<p id="cache-backoff-diagnostic" class="cache-diagnostic" hidden>' +
+          '⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. ' +
+          '프리셋의 {{time}}/{{random}}/확률 로어북을 확인해보세요' +
+        '</p>' +
         '<div class="actions">' +
-          '<button id="save" type="submit">저장</button>' +
           '<button id="close" type="button">닫기</button>' +
         '</div>' +
       '</form>' +
@@ -465,6 +442,8 @@ export async function openSettings(
     verbosity,
     streamingMode,
     flagNames,
+    cacheAnchorState,
+    cacheLedger,
   ] = await Promise.all([
     loadApiKey(),
     loadModel(),
@@ -474,6 +453,8 @@ export async function openSettings(
     loadVerbosity(),
     loadStreamingMode(),
     loadConfigurableLlmFlagNames(),
+    loadCacheAnchorState(),
+    loadCacheLedger(),
   ]);
 
   renderSettings(model);
@@ -493,11 +474,13 @@ export async function openSettings(
     streamingModeSelect: requireSelect('streaming-mode'),
     verbositySelect: requireSelect('verbosity'),
   };
-  const saveButton = requireButton('save');
   const closeButton = requireButton('close');
   const ledgerResetButton = requireButton('ledger-reset');
-  const ledgerSummary = requireLedgerSummary();
-  const reloadNotice = requireReloadNotice();
+  const ledgerAmount = requireElement('ledger-amount');
+  const ledgerDetail = requireElement('ledger-detail');
+  const cacheBackoffDiagnostic = requireElement('cache-backoff-diagnostic');
+  const reloadNotice = requireElement('reload-notice');
+  const saveErrorNotice = requireElement('save-error');
   const form = requireSettingsForm();
 
   elements.apiKeyInput.value = apiKey;
@@ -512,32 +495,99 @@ export async function openSettings(
   }
   elements.apiKeyInput.focus();
 
-  ledgerSummary.textContent = formatLedgerSummary(await loadCacheLedger());
+  renderLedger(ledgerAmount, ledgerDetail, cacheLedger);
+  cacheBackoffDiagnostic.hidden = !isCacheBackoffActive(cacheAnchorState);
   const registeredSignature = createProviderRegistrationSignature(registrationSettings);
 
+  // 프로바이더가 매 요청 인자를 라이브로 읽으므로 변경 즉시 저장해도 다음
+  // 요청부터 반영된다 — 저장 버튼 없이 change 시점에 곧바로 저장한다.
+  const persist = (save: () => Promise<void>): void => {
+    save().then(
+      () => {
+        saveErrorNotice.hidden = true;
+      },
+      (error: unknown) => {
+        saveErrorNotice.hidden = false;
+        console.error('[llm-gateway-provider] Failed to save settings', error);
+      },
+    );
+  };
+
+  // addProvider metadata와 streaming 동작은 플러그인 로드 때 한 번 고정되므로
+  // 등록 스냅샷과 달라지는 즉시 재등록(새로고침) 필요를 알린다.
+  const updateReloadNotice = (): void => {
+    const currentSignature = createProviderRegistrationSignature({
+      flagNames: readSelectedFlagNames(flagInputs),
+      streamingMode: resolveStreamingMode(elements.streamingModeSelect.value),
+    });
+    reloadNotice.hidden = currentSignature === registeredSignature;
+  };
+
+  elements.apiKeyInput.addEventListener('change', () => {
+    persist(() => saveApiKey(elements.apiKeyInput.value));
+  });
+  elements.modelSelect.addEventListener('change', () => {
+    persist(() => saveModel(elements.modelSelect.value));
+  });
+  elements.promptCacheModeSelect.addEventListener('change', () => {
+    persist(() => savePromptCacheMode(resolvePromptCacheMode(elements.promptCacheModeSelect.value)));
+  });
+  elements.serviceTierSelect.addEventListener('change', () => {
+    persist(() => saveServiceTier(resolveServiceTier(elements.serviceTierSelect.value) ?? 'default'));
+  });
+  elements.reasoningEffortSelect.addEventListener('change', () => {
+    persist(() => saveReasoningEffort(resolveReasoningEffort(elements.reasoningEffortSelect.value)));
+  });
+  elements.verbositySelect.addEventListener('change', () => {
+    persist(() => saveVerbosity(resolveVerbosity(elements.verbositySelect.value)));
+  });
+  elements.streamingModeSelect.addEventListener('change', () => {
+    updateReloadNotice();
+    persist(() => saveStreamingMode(resolveStreamingMode(elements.streamingModeSelect.value)));
+  });
+  for (const flagInput of flagInputs) {
+    flagInput.input.addEventListener('change', () => {
+      updateReloadNotice();
+      persist(() => saveConfigurableLlmFlagNames(readSelectedFlagNames(flagInputs)));
+    });
+  }
+
+  // 저장 버튼이 없으므로 Enter 키의 기본 submit(페이지 이동)만 막는다.
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void saveFromForm(elements, saveButton, reloadNotice, registeredSignature);
   });
   ledgerResetButton.addEventListener('click', () => {
-    void resetLedgerFromForm(ledgerSummary, ledgerResetButton);
+    void resetLedgerFromForm(ledgerAmount, ledgerDetail, ledgerResetButton);
   });
   closeButton.addEventListener('click', () => {
     void risuai.hideContainer();
   });
 }
 
+function renderLedger(
+  amountElement: HTMLElement,
+  detailElement: HTMLElement,
+  ledger: CacheLedger,
+): void {
+  const display = buildLedgerDisplay(ledger);
+  amountElement.textContent = display.amountText;
+  amountElement.className = `amount ${display.tone}`;
+  detailElement.textContent = display.detailText;
+}
+
 async function resetLedgerFromForm(
-  summary: HTMLElement,
+  amountElement: HTMLElement,
+  detailElement: HTMLElement,
   button: HTMLButtonElement,
 ): Promise<void> {
   button.disabled = true;
 
   try {
     await resetCacheLedger();
-    summary.textContent = formatLedgerSummary(await loadCacheLedger());
+    renderLedger(amountElement, detailElement, await loadCacheLedger());
   } catch (error) {
-    summary.textContent = '캐시 손익: 초기화 실패';
+    amountElement.textContent = '초기화 실패';
+    amountElement.className = 'amount loss';
     console.error('[llm-gateway-provider] Failed to reset cache ledger', error);
   } finally {
     button.disabled = false;

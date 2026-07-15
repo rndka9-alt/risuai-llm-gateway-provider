@@ -10,7 +10,7 @@ const BANNER = `/*!
 //@version ${version}
 //@api 3.0
 //@arg api_key string LLM Gateway API 키 (llmgtwy_...)
-//@arg prompt_cache_mode string 프롬프트 캐시 모드 (explicit 또는 disabled)
+//@arg prompt_cache_mode string 프롬프트 캐시 모드 (explicit 또는 disabled). 기본 explicit
 //@arg service_tier string 서비스 티어 (default 또는 flex). 비우면 provider 기본(auto)
 //@arg reasoning_effort string 추론 강도 (none|minimal|low|medium|high|xhigh|max). 비우면 생략
 //@arg verbosity string 응답 자세함 (low|medium|high). 비우면 생략

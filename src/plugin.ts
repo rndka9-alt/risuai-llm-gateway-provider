@@ -13,11 +13,13 @@ import {
 import {
   PROMPT_CACHE_MODE_ARGUMENT,
   type CacheAnchorState,
+  type CacheBackoffTransition,
   createPromptCacheExtraBody,
   isExplicitPromptCacheMode,
   loadCacheAnchorState,
   markCacheBreakpoints,
   planCacheAnchors,
+  resolveCacheBackoffTransition,
   resolvePromptCacheMode,
   saveCacheAnchorState,
 } from './cache';
@@ -39,6 +41,7 @@ import {
   type StreamingMode,
 } from './options';
 import { openSettings } from './settings';
+import { showCacheBackoffToast } from './toast';
 
 declare const __VERSION__: string;
 
@@ -192,6 +195,7 @@ async function consumeStreamWithCacheRetry(
 
 async function completeSuccessfulRequest(
   nextCacheAnchorState: CacheAnchorState | null,
+  cacheBackoffTransition: CacheBackoffTransition | null,
   usage: LlmUsage | undefined,
   rawResponse: unknown,
   model: string,
@@ -200,6 +204,9 @@ async function completeSuccessfulRequest(
     try {
       // 실패 응답이나 미완료 스트림이 다음 diff의 기준을 오염시키지 않도록 완료 뒤에만 저장한다.
       await saveCacheAnchorState(nextCacheAnchorState);
+      if (cacheBackoffTransition !== null) {
+        await showCacheBackoffToast(cacheBackoffTransition);
+      }
     } catch (error) {
       console.error('[llm-gateway-provider] cache anchor state update failed', error);
     }
@@ -216,6 +223,7 @@ async function completeSuccessfulRequest(
 function createProviderTextStream(
   context: GatewayRequestContext,
   nextCacheAnchorState: CacheAnchorState | null,
+  cacheBackoffTransition: CacheBackoffTransition | null,
   model: string,
 ): ReadableStream<string> {
   return new ReadableStream<string>({
@@ -225,7 +233,13 @@ function createProviderTextStream(
           context,
           (text) => controller.enqueue(text),
         );
-        await completeSuccessfulRequest(nextCacheAnchorState, result.usage, undefined, model);
+        await completeSuccessfulRequest(
+          nextCacheAnchorState,
+          cacheBackoffTransition,
+          result.usage,
+          undefined,
+          model,
+        );
         controller.close();
       } catch (error) {
         controller.error(error);
@@ -257,14 +271,20 @@ async function requestLLMGateway(
   const messages = toLlmMessages(providerArguments.prompt_chat);
   let requestMessages = messages;
   let nextCacheAnchorState: CacheAnchorState | null = null;
+  let cacheBackoffTransition: CacheBackoffTransition | null = null;
   try {
     // disabled 모드에서도 diff 기준은 계속 갱신한다 — explicit로 되돌렸을 때
     // 스테일 diff로 잘못된 앵커가 잡히는 것을 막는다.
-    const cachePlan = planCacheAnchors(await loadCacheAnchorState(), messages);
+    const previousCacheAnchorState = await loadCacheAnchorState();
+    const cachePlan = planCacheAnchors(previousCacheAnchorState, messages);
     if (isExplicitPromptCacheMode(promptCacheMode)) {
       requestMessages = markCacheBreakpoints(messages, cachePlan);
     }
     nextCacheAnchorState = cachePlan.nextState;
+    cacheBackoffTransition = resolveCacheBackoffTransition(
+      previousCacheAnchorState,
+      cachePlan.nextState,
+    );
   } catch (error) {
     // 앵커 처리 실패가 채팅 요청까지 죽여선 안 된다 — 이번 요청은 캐시 없이 보낸다.
     console.error(
@@ -315,19 +335,36 @@ async function requestLLMGateway(
       // 원장에 반영하고, 앵커 상태는 upstream stream이 끝난 뒤에만 확정한다.
       return {
         success: true,
-        content: createProviderTextStream(context, nextCacheAnchorState, model),
+        content: createProviderTextStream(
+          context,
+          nextCacheAnchorState,
+          cacheBackoffTransition,
+          model,
+        ),
       };
     }
 
     if (streamingMode === 'decoupled') {
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
       const result = await consumeStreamWithCacheRetry(context);
-      await completeSuccessfulRequest(nextCacheAnchorState, result.usage, undefined, model);
+      await completeSuccessfulRequest(
+        nextCacheAnchorState,
+        cacheBackoffTransition,
+        result.usage,
+        undefined,
+        model,
+      );
       return { success: true, content: result.text };
     }
 
     const output = await generateWithCacheRetry(context);
-    await completeSuccessfulRequest(nextCacheAnchorState, output.usage, output.raw, model);
+    await completeSuccessfulRequest(
+      nextCacheAnchorState,
+      cacheBackoffTransition,
+      output.usage,
+      output.raw,
+      model,
+    );
     return { success: true, content: output.message.text };
   } catch (error) {
     return { success: false, content: toFailureContent(error) };

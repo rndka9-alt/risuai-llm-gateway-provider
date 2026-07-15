@@ -20,9 +20,10 @@ npm test
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
-- `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰 누적, 0.9R − 0.25W 순절감 계산)
+- `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
 - `src/options.ts` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자
 - `src/settings.ts` + `src/theme.ts` + `src/constants.ts` — 설정 UI (인자 편집 + 손익 표시/리셋)
+- `src/toast.ts` — 캐시 백오프 발동/해제 메인 DOM 토스트 (`SafeDocument`, 실패 시 경고 폴백)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
 
@@ -43,9 +44,18 @@ npm test
 - 직전 요청은 원문이 아닌 **메시지별 fingerprint(FNV-1a 해시 + 토큰 추정)**로
   `pluginStorage`(`llm-gateway-provider:cache-anchor-state`)에 저장 — 평문 비노출,
   용량 고정, database.bin 동기화를 타고 다른 기기에서도 이어진다.
+- 공통 프리픽스 0인 epoch 리셋이 3회 연속이면 explicit breakpoint 마킹을 중단한다.
+  diff와 상태 갱신은 계속하며, 프리픽스가 다시 일치하는 턴에 카운터를 0으로 되돌리고 자동 재개한다.
 - 토큰 추정: ASCII/4 + 비ASCII/2 + 메시지당 framing 4토큰. 1024토큰 미만 프리픽스는 마킹 생략.
   (후속: 응답 usage.inputTokens 기반 런타임 보정)
 - 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상 상태는 새 epoch로 자가 회복.
+
+## 캐시 손익 원장 (ledger.ts)
+
+- 토큰 등가 순절감은 `0.9 × readTokens − 0.25 × writeTokens`로 표시한다.
+- 실측 USD 절감은 일반 입력 토큰의 `input_cost` 단가를 역산한 뒤 캐시 읽기 절감에서 캐시 쓰기 프리미엄을 뺀다.
+- `cost_details`가 없거나 일반 입력 토큰이 0이면 해당 응답의 `savedUsd`만 누적하지 않고 읽기/쓰기 토큰은 유지한다.
+- 구버전 원장의 `costUsd`, `savedUsd`, `lastCostSample`은 Zod 기본값으로 제자리 마이그레이션한다.
 
 ## 런타임 환경 / 제약
 
@@ -67,6 +77,8 @@ npm test
 - **esbuild IIFE**: RisuAI가 플러그인 코드를 `(async () => { ... })()`로 인라인하므로 ESM 불가.
   top-level await도 IIFE 포맷에서 빌드 에러 — `void main()` 패턴 사용.
 - **권한 팝업**: 첫 프로바이더 호출 시 유저 승인 필요 (3일 주기 재확인).
+- **백오프 토스트**: 플러그인 v3에 전용 토스트 API가 없어 `risuai.getRootDocument()`의
+  `SafeDocument` 메서드로 메인 DOM에 주입한다. 권한 거부·API 부재는 `console.warn` 후 요청을 계속한다.
 
 ## 스코프 결정
 

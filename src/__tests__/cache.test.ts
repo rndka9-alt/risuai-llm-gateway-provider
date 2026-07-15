@@ -2,17 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenAIChatCompletionsFormat, type LlmMessage } from 'llm-io';
 import {
   CACHE_ANCHOR_STATE_STORAGE_KEY,
+  CACHE_BACKOFF_EPOCH_RESET_THRESHOLD,
   DISABLED_PROMPT_CACHE_KEY,
   EXPLICIT_PROMPT_CACHE_KEY,
   createPromptCacheExtraBody,
   fingerprintMessage,
   getPromptCacheKey,
+  isCacheBackoffActive,
   loadCacheAnchorState,
   markCacheBreakpoints,
   planCacheAnchors,
+  resolveCacheBackoffTransition,
   resolvePromptCacheMode,
   saveCacheAnchorState,
   type CacheAnchorState,
+  type CacheBackoffTransition,
   type CachePlan,
 } from '../cache';
 
@@ -26,8 +30,13 @@ describe('prompt cache mode', () => {
     expect(resolvePromptCacheMode(' explicit ')).toBe('explicit');
   });
 
-  it.each([undefined, '', 'disabled', 'unknown'])('%s 값은 disabled 모드로 판별한다', (value) => {
-    expect(resolvePromptCacheMode(value)).toBe('disabled');
+  it('disabled 값만 disabled 모드로 판별한다', () => {
+    expect(resolvePromptCacheMode('disabled')).toBe('disabled');
+    expect(resolvePromptCacheMode(' disabled ')).toBe('disabled');
+  });
+
+  it.each([undefined, '', 'unknown'])('%s 값은 기본값 explicit로 판별한다', (value) => {
+    expect(resolvePromptCacheMode(value)).toBe('explicit');
   });
 });
 
@@ -232,6 +241,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     ];
     const previousState: CacheAnchorState = {
       anchorIndexes: [0, 2, 4, 6],
+      consecutiveEpochResets: 0,
       fingerprints: previousMessages.map(fingerprintMessage),
     };
     const currentMessages = [...previousMessages, makeMessage('user', 'E'.repeat(4000))];
@@ -280,6 +290,45 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(marked).not.toBe(messages);
     expect(breakpointIndexes(messages)).toEqual([]);
   });
+
+  it('공통 프리픽스 0 epoch가 3회 연속이면 백오프를 발동해 마킹을 멈춘다', () => {
+    const turns = ['A', 'B', 'C', 'D'].map((prefix) => [
+      makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'input'),
+    ]);
+    let state: CacheAnchorState | null = null;
+    const resetCounts: number[] = [];
+    let activationTransition: CacheBackoffTransition | null = null;
+
+    for (const turn of turns) {
+      const plan = planCacheAnchors(state, turn);
+      resetCounts.push(plan.nextState.consecutiveEpochResets);
+      activationTransition = resolveCacheBackoffTransition(state, plan.nextState);
+      state = plan.nextState;
+    }
+
+    expect(resetCounts).toEqual([0, 1, 2, CACHE_BACKOFF_EPOCH_RESET_THRESHOLD]);
+    expect(isCacheBackoffActive(state)).toBe(true);
+    expect(activationTransition).toBe('activated');
+    const lastTurn = turns[turns.length - 1];
+    const backoffPlan = planCacheAnchors(planTurns(turns.slice(0, -1)).nextState, lastTurn);
+    expect(breakpointIndexes(markCacheBreakpoints(lastTurn, backoffPlan))).toEqual([]);
+  });
+
+  it('백오프 중 공통 프리픽스가 돌아오면 카운터를 리셋하고 마킹을 재개한다', () => {
+    const changingTurns = ['A', 'B', 'C', 'D'].map((prefix) => [
+      makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'input'),
+    ]);
+    const activeState = planTurns(changingTurns).nextState;
+    const stableTurn = [...changingTurns[changingTurns.length - 1]];
+    const recoveredPlan = planCacheAnchors(activeState, stableTurn);
+
+    expect(recoveredPlan.nextState.consecutiveEpochResets).toBe(0);
+    expect(resolveCacheBackoffTransition(activeState, recoveredPlan.nextState)).toBe('released');
+    expect(isCacheBackoffActive(recoveredPlan.nextState)).toBe(false);
+    expect(breakpointIndexes(markCacheBreakpoints(stableTurn, recoveredPlan))).toEqual([0]);
+  });
 });
 
 describe('cache anchor state storage', () => {
@@ -302,6 +351,22 @@ describe('cache anchor state storage', () => {
 
     expect(stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
     await expect(loadCacheAnchorState()).resolves.toEqual(plan.nextState);
+  });
+
+  it('카운터가 없는 구버전 앵커 상태를 0으로 마이그레이션한다', async () => {
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async () => JSON.stringify({
+          anchorIndexes: [0],
+          fingerprints: [{ role: 'system', hash: 'x', tokenEstimate: 1200 }],
+        }),
+      },
+    });
+
+    await expect(loadCacheAnchorState()).resolves.toMatchObject({
+      anchorIndexes: [0],
+      consecutiveEpochResets: 0,
+    });
   });
 
   it.each([

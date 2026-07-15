@@ -17,11 +17,14 @@ export const CACHE_ANCHOR_STATE_STORAGE_KEY = 'llm-gateway-provider:cache-anchor
 // OpenAI는 1024토큰 미만 프리픽스를 캐시하지 않고, explicit 문서상 non-cacheable
 // 지점의 breakpoint는 400이 될 수도 있으므로 미달 추정 시 마킹을 생략한다.
 export const MIN_CACHEABLE_PREFIX_TOKENS = 1024;
+export const CACHE_BACKOFF_EPOCH_RESET_THRESHOLD = 3;
 
 export type PromptCacheMode = 'explicit' | 'disabled';
 
+// 실측으로 캐시 이득(읽기 0.1×)과 무해성(잘못된 BP는 조용한 무시)이 확인되어
+// 미지정 시 explicit을 기본값으로 켠다.
 export function resolvePromptCacheMode(value: string | undefined): PromptCacheMode {
-  return value?.trim() === 'explicit' ? 'explicit' : 'disabled';
+  return value?.trim() === 'disabled' ? 'disabled' : 'explicit';
 }
 
 export function isExplicitPromptCacheMode(mode: PromptCacheMode): boolean {
@@ -67,6 +70,7 @@ const messageFingerprintSchema = z.object({
 const cacheAnchorStateSchema = z
   .object({
     anchorIndexes: z.array(z.number().int().nonnegative()).max(4),
+    consecutiveEpochResets: z.number().int().nonnegative().default(0),
     fingerprints: z.array(messageFingerprintSchema),
   })
   .superRefine((state, context) => {
@@ -90,10 +94,28 @@ const cacheAnchorStateSchema = z
 
 export type MessageFingerprint = z.infer<typeof messageFingerprintSchema>;
 export type CacheAnchorState = z.infer<typeof cacheAnchorStateSchema>;
+export type CacheBackoffTransition = 'activated' | 'released';
 
 export interface CachePlan {
   anchorIndexes: number[];
   nextState: CacheAnchorState;
+}
+
+export function isCacheBackoffActive(state: CacheAnchorState | null): boolean {
+  return (
+    state !== null &&
+    state.consecutiveEpochResets >= CACHE_BACKOFF_EPOCH_RESET_THRESHOLD
+  );
+}
+
+export function resolveCacheBackoffTransition(
+  previousState: CacheAnchorState | null,
+  nextState: CacheAnchorState,
+): CacheBackoffTransition | null {
+  const wasActive = isCacheBackoffActive(previousState);
+  const isActive = isCacheBackoffActive(nextState);
+  if (wasActive === isActive) return null;
+  return isActive ? 'activated' : 'released';
 }
 
 function isTextPart(part: LlmContentPart): part is LlmTextPart {
@@ -178,12 +200,15 @@ function resolveFirstTurnFrontier(fingerprints: readonly MessageFingerprint[]): 
   return null;
 }
 
-function createFirstTurnPlan(fingerprints: MessageFingerprint[]): CachePlan {
+function createFirstTurnPlan(
+  fingerprints: MessageFingerprint[],
+  consecutiveEpochResets = 0,
+): CachePlan {
   const frontierIndex = resolveFirstTurnFrontier(fingerprints);
   const anchorIndexes = frontierIndex === null ? [] : [frontierIndex];
   return {
     anchorIndexes,
-    nextState: { anchorIndexes, fingerprints },
+    nextState: { anchorIndexes, consecutiveEpochResets, fingerprints },
   };
 }
 
@@ -251,7 +276,12 @@ export function planCacheAnchors(
   // 공통 프리픽스가 전혀 없으면 다른 채팅방/캐릭터로의 전면 교체다 — 이전
   // 상태를 승계하면 무의미한 폴백 앵커가 남으므로 새 epoch(첫 턴)으로 처리한다.
   if (prefixLength === 0) {
-    return createFirstTurnPlan(fingerprints);
+    // fingerprints를 새 epoch 값으로 갈아끼워도 연속 실패 횟수는 이어가야
+    // 매턴 변하는 선두 프리셋을 감지할 수 있다.
+    return createFirstTurnPlan(
+      fingerprints,
+      previousState.consecutiveEpochResets + 1,
+    );
   }
 
   const suffixLength = commonSuffixLength(previous, fingerprints, prefixLength);
@@ -271,7 +301,7 @@ export function planCacheAnchors(
     );
     return {
       anchorIndexes,
-      nextState: { anchorIndexes, fingerprints },
+      nextState: { anchorIndexes, consecutiveEpochResets: 0, fingerprints },
     };
   }
 
@@ -288,7 +318,7 @@ export function planCacheAnchors(
 
   return {
     anchorIndexes,
-    nextState: { anchorIndexes, fingerprints },
+    nextState: { anchorIndexes, consecutiveEpochResets: 0, fingerprints },
   };
 }
 
@@ -335,6 +365,12 @@ function markBreakpoint(message: LlmMessage): LlmMessage {
 }
 
 export function markCacheBreakpoints(messages: LlmMessage[], plan: CachePlan): LlmMessage[] {
+  if (isCacheBackoffActive(plan.nextState)) {
+    // 연속 epoch 리셋 중에는 쓰기 프리미엄 손실을 실시간 차단하되, plan의 diff
+    // 상태는 계속 저장해 안정 프리픽스가 돌아온 즉시 자동 복구한다.
+    return messages;
+  }
+
   const markableIndexes = new Set<number>();
   for (const anchorIndex of plan.anchorIndexes) {
     const markableIndex = toMarkableIndex(messages, anchorIndex);

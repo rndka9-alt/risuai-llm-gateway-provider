@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyCacheLedger } from '../ledger';
 import {
-  formatLedgerSummary,
+  buildLedgerDisplay,
   formatTokenCount,
   createProviderRegistrationSignature,
   createSettingsHtml,
@@ -55,10 +55,16 @@ describe('prompt cache settings', () => {
     expect(getArgument).toHaveBeenCalledWith('prompt_cache_mode');
   });
 
-  it.each([undefined, '', 'unknown'])('값이 %s이면 disabled로 불러온다', async (value) => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+  it('저장된 disabled 모드를 불러온다', async () => {
+    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('disabled') });
 
     await expect(loadPromptCacheMode()).resolves.toBe('disabled');
+  });
+
+  it.each([undefined, '', 'unknown'])('값이 %s이면 기본값 explicit로 불러온다', async (value) => {
+    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+
+    await expect(loadPromptCacheMode()).resolves.toBe('explicit');
   });
 
   it('전체 설정값을 함께 저장한다', async () => {
@@ -113,17 +119,25 @@ describe('ledger display', () => {
     expect(formatTokenCount(-1_500_000)).toBe('-1.5M');
   });
 
-  it('기록이 없으면 안내 문구를 보여준다', () => {
-    expect(formatLedgerSummary(createEmptyCacheLedger())).toBe('캐시 손익: 아직 기록 없음');
+  it('기록이 없으면 안내 문구를 중립 톤으로 보여준다', () => {
+    expect(buildLedgerDisplay(createEmptyCacheLedger())).toEqual({
+      amountText: '아직 기록 없음',
+      detailText: '',
+      tone: 'neutral',
+    });
   });
 
-  it('순절감과 읽기/쓰기 원시값을 함께 보여준다', () => {
+  it('절감 USD가 없으면 토큰 등가를 이득 톤으로 보여준다', () => {
     const ledger = { ...createEmptyCacheLedger(), readTokens: 10_000, writeTokens: 4_000 };
 
-    expect(formatLedgerSummary(ledger)).toBe('캐시 손익: +8.0k tokens (읽기 10.0k / 쓰기 4.0k)');
+    expect(buildLedgerDisplay(ledger)).toEqual({
+      amountText: '+8.0k tokens',
+      detailText: '(읽기 10.0k / 쓰기 4.0k)',
+      tone: 'gain',
+    });
   });
 
-  it('실 지출이 있으면 USD 합계를 소수점 넷째 자리까지 병기한다', () => {
+  it('실 지출은 디테일에 병기한다', () => {
     const ledger = {
       ...createEmptyCacheLedger(),
       readTokens: 10_000,
@@ -131,9 +145,29 @@ describe('ledger display', () => {
       costUsd: 1.2345,
     };
 
-    expect(formatLedgerSummary(ledger)).toBe(
-      '캐시 손익: +8.0k tokens · 지출 $1.2345 (읽기 10.0k / 쓰기 4.0k)',
-    );
+    expect(buildLedgerDisplay(ledger).detailText).toBe('(읽기 10.0k / 쓰기 4.0k / 지출 $1.2345)');
+  });
+
+  it('실측 절감액이 있으면 USD 금액을 대표값으로 쓴다', () => {
+    const ledger = {
+      ...createEmptyCacheLedger(),
+      readTokens: 10_000,
+      writeTokens: 4_000,
+      costUsd: 1.2345,
+      savedUsd: 0.45678,
+    };
+
+    const display = buildLedgerDisplay(ledger);
+    expect(display.amountText).toBe('+$0.4568');
+    expect(display.tone).toBe('gain');
+  });
+
+  it('손해면 손실 톤과 음수 금액으로 보여준다', () => {
+    const ledger = { ...createEmptyCacheLedger(), writeTokens: 4_000, savedUsd: -0.5 };
+
+    const display = buildLedgerDisplay(ledger);
+    expect(display.amountText).toBe('-$0.5000');
+    expect(display.tone).toBe('loss');
   });
 });
 
@@ -207,13 +241,21 @@ describe('settings UI', () => {
     expect(html).not.toContain('flag-hasStreaming');
   });
 
-  it.each(['Image Input', 'Image Output', 'Audio Input', 'Audio Output', 'Video Input'])(
-    '%s는 disabled 미지원 항목으로 렌더링한다',
-    (label) => {
-      const html = createSettingsHtml('gpt-5.6-sol');
-      expect(html).toContain(`<span>${label} · 미지원</span>`);
-    },
-  );
+  it('미디어 항목은 Image Input 하나만 disabled 미지원으로 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('<span>Image Input · 미지원</span>');
+    for (const removedLabel of ['Image Output', 'Audio Input', 'Audio Output', 'Video Input']) {
+      expect(html).not.toContain(removedLabel);
+    }
+  });
+
+  it('저장 버튼 없이 닫기 버튼만 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).not.toContain('id="save"');
+    expect(html).toContain('id="close"');
+  });
 
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
     expect(createProviderRegistrationSignature({
@@ -228,6 +270,13 @@ describe('settings UI', () => {
   it('저장 후 재등록 안내 문구를 포함한다', () => {
     expect(createSettingsHtml('gpt-5.6-sol')).toContain(
       '적용하려면 새로고침이 필요합니다.',
+    );
+  });
+
+  it('캐시 백오프 진단 문구를 원장 근처에 포함한다', () => {
+    expect(createSettingsHtml('gpt-5.6-sol')).toContain(
+      '⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. ' +
+      '프리셋의 {{time}}/{{random}}/확률 로어북을 확인해보세요',
     );
   });
 });

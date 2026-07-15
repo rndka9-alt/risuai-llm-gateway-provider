@@ -4,6 +4,7 @@ import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
 import { RISUAI_LLM_FLAGS } from '../options';
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
@@ -117,6 +118,7 @@ interface ProviderHarness {
   provider: ProviderFunction;
   providerOptions: ProviderOptions | undefined;
   stored: Map<string, string>;
+  toastMessages: string[];
 }
 
 async function loadProvider(
@@ -132,6 +134,7 @@ async function loadProvider(
   ]);
   let registeredProvider: ProviderFunction | undefined;
   let providerOptions: ProviderOptions | undefined;
+  const toastMessages: string[] = [];
   const nativeFetch = vi.fn(async (url: string, requestInit?: RequestInit) => {
     void url;
     void requestInit;
@@ -150,6 +153,16 @@ async function loadProvider(
       },
     },
     nativeFetch,
+    getRootDocument: async () => ({
+      createElement: () => ({
+        remove: async () => undefined,
+        setStyleAttribute: async () => undefined,
+        setTextContent: async (value: string) => {
+          toastMessages.push(value);
+        },
+      }),
+      querySelector: async () => ({ appendChild: async () => undefined }),
+    }),
     addProvider: async (
       _name: string,
       provider: ProviderFunction,
@@ -167,7 +180,7 @@ async function loadProvider(
   await import('../plugin');
   if (registeredProvider === undefined) throw new Error('Provider was not registered');
 
-  return { nativeFetch, provider: registeredProvider, providerOptions, stored };
+  return { nativeFetch, provider: registeredProvider, providerOptions, stored, toastMessages };
 }
 
 function getRequestBody(
@@ -424,5 +437,40 @@ describe('cache breakpoint fallback', () => {
     expect(harness.nativeFetch).toHaveBeenCalledOnce();
     expect(getRequestBody(harness.nativeFetch, 0)).not.toContain('prompt_cache_breakpoint');
     expect(warning).not.toHaveBeenCalled();
+  });
+});
+
+describe('cache health backoff', () => {
+  it('세 번째 연속 epoch 리셋에서 마킹을 멈추고 안정 턴에 자동 재개한다', async () => {
+    vi.useFakeTimers();
+    const harness = await loadProvider([
+      createSuccessfulResponse(),
+      createSuccessfulResponse(),
+      createSuccessfulResponse(),
+      createSuccessfulResponse(),
+      createSuccessfulResponse(),
+    ]);
+    const changingSystemTexts = ['A', 'B', 'C', 'D'].map(
+      (prefix) => `${prefix}${LONG_SYSTEM_TEXT}`,
+    );
+
+    for (const systemText of changingSystemTexts) {
+      await harness.provider(createProviderArguments(systemText));
+    }
+    await harness.provider(createProviderArguments(changingSystemTexts[3]));
+
+    expect(getRequestBody(harness.nativeFetch, 0)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.nativeFetch, 1)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.nativeFetch, 2)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.nativeFetch, 3)).not.toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.nativeFetch, 4)).toContain('prompt_cache_breakpoint');
+    expect(harness.toastMessages).toEqual([
+      'LLM Gateway: 캐시 히트 연속 3회 실패 — 캐시 마킹을 일시 중단했어요',
+      'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시 마킹을 다시 시작했어요',
+    ]);
+
+    const storedState = harness.stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY);
+    if (storedState === undefined) throw new Error('Expected cache anchor state');
+    expect(JSON.parse(storedState)).toMatchObject({ consecutiveEpochResets: 0 });
   });
 });

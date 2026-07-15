@@ -38,6 +38,7 @@ const cacheLedgerSchema = z.object({
   writeTokens: z.number(),
   // 구버전 원장은 비용 필드가 없으므로 기본값으로 제자리 마이그레이션한다.
   costUsd: z.number().default(0),
+  savedUsd: z.number().default(0),
   lastCostSample: lastCostSampleSchema.nullable().default(null),
 });
 
@@ -47,6 +48,18 @@ const usageCostDetailsSchema = z.object({
 });
 const rawServiceTierSchema = z.object({
   service_tier: lastCostSampleSchema.shape.serviceTier.nullable(),
+});
+const cacheSavingsUsageSchema = z.object({
+  cacheCreationInputTokens: z.number().nonnegative().optional(),
+  cacheReadInputTokens: z.number().nonnegative().optional(),
+  details: z.object({
+    costDetails: z.object({
+      cached_input_cost: z.number().finite(),
+      cache_write_input_cost: z.number().finite(),
+      input_cost: z.number().finite(),
+    }),
+  }),
+  inputTokens: z.number().nonnegative(),
 });
 
 export type CacheLedger = z.infer<typeof cacheLedgerSchema>;
@@ -58,6 +71,7 @@ export function createEmptyCacheLedger(): CacheLedger {
     since: new Date().toISOString(),
     writeTokens: 0,
     costUsd: 0,
+    savedUsd: 0,
     lastCostSample: null,
   };
 }
@@ -67,6 +81,27 @@ export function calculateNetSavedTokens(ledger: CacheLedger): number {
   return Math.round(
     ledger.readTokens * CACHE_READ_SAVING_RATE - ledger.writeTokens * CACHE_WRITE_PREMIUM_RATE,
   );
+}
+
+export function calculateSavedUsd(usage: LlmUsage | undefined): number | undefined {
+  const result = cacheSavingsUsageSchema.safeParse(usage);
+  // 스트리밍 등에서 costDetails가 빠지면 실제 단가와 캐시 비용을 알 수 없다.
+  // 추정값으로 원장을 오염시키지 않고 이 응답의 USD 절감 누적만 건너뛴다.
+  if (!result.success) return undefined;
+
+  const readTokens = result.data.cacheReadInputTokens ?? 0;
+  const writeTokens = result.data.cacheCreationInputTokens ?? 0;
+  const regularInputTokens = result.data.inputTokens - readTokens - writeTokens;
+  // 일반 입력 토큰이 없으면 input_cost에서 단가를 역산할 수 없다. 토큰 원장은
+  // 별도로 누적되므로 USD 절감만 건너뛰어 0 나눗셈과 잘못된 값을 막는다.
+  if (regularInputTokens <= 0) return undefined;
+
+  const unitPrice = result.data.details.costDetails.input_cost / regularInputTokens;
+  const readSavings =
+    readTokens * unitPrice - result.data.details.costDetails.cached_input_cost;
+  const writePremium =
+    result.data.details.costDetails.cache_write_input_cost - writeTokens * unitPrice;
+  return readSavings - writePremium;
 }
 
 // 손상·부재 원장은 0에서 새로 시작하는 것이 안전한 기본값이다. 여기서 throw하면
@@ -122,11 +157,13 @@ export async function accumulateCacheUsage(
   const writeTokens = usage?.cacheCreationInputTokens ?? 0;
   const usageCostResult = usageCostSchema.safeParse(usage?.details);
   const cost = usageCostResult.success ? usageCostResult.data.cost : undefined;
+  const savedUsd = calculateSavedUsd(usage);
 
   const ledger = await loadCacheLedger();
   ledger.readTokens += readTokens;
   ledger.writeTokens += writeTokens;
   if (cost !== undefined) ledger.costUsd += cost;
+  if (savedUsd !== undefined) ledger.savedUsd += savedUsd;
   ledger.lastCostSample = createLastCostSample(usage, rawResponse, model);
   await saveCacheLedger(ledger);
 }
