@@ -1,0 +1,21 @@
+{
+  "name": "risuai-llm-gateway-provider",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "llm-io": "github:rndka9-alt/llm-io"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25",
+    "terser": "^5",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
