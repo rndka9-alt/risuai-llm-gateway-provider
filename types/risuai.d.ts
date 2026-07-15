@@ -1163,6 +1163,8 @@ interface ProviderOptions {
         name: string;
         flags: number[];
         parameters: Array<'temperature' | 'top_p' | 'frequency_penalty' | 'presence_penalty'>;
+        /** RisuAI LLMTokenizer numeric value */
+        tokenizer?: number;
     };
 }
 

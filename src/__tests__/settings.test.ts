@@ -14,6 +14,7 @@ import {
   loadStreamingMode,
   loadVerbosity,
   saveApiKey,
+  saveConfigurableLlmFlagNames,
   saveSettings,
 } from '../settings';
 
@@ -78,7 +79,7 @@ describe('prompt cache settings', () => {
       promptCacheMode: 'explicit',
       reasoningEffort: 'xhigh',
       serviceTier: 'flex',
-      streamingMode: 'stream',
+      streamingMode: 'decoupled',
       verbosity: 'low',
     });
 
@@ -88,7 +89,7 @@ describe('prompt cache settings', () => {
     expect(setArgument).toHaveBeenCalledWith('service_tier', 'flex');
     expect(setArgument).toHaveBeenCalledWith('reasoning_effort', 'xhigh');
     expect(setArgument).toHaveBeenCalledWith('verbosity', 'low');
-    expect(setArgument).toHaveBeenCalledWith('streaming_mode', 'stream');
+    expect(setArgument).toHaveBeenCalledWith('streaming_mode', 'decoupled');
     expect(setArgument).toHaveBeenCalledWith(
       'flags',
       'hasFullSystemPrompt,poolSupported',
@@ -213,6 +214,12 @@ describe('generation option settings', () => {
     await expect(loadStreamingMode()).resolves.toBe('off');
   });
 
+  it('기존 stream 저장값은 decoupled로 불러온다', async () => {
+    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('stream') });
+
+    await expect(loadStreamingMode()).resolves.toBe('decoupled');
+  });
+
   it('flags 미지정 기본값과 저장값을 판별한다', async () => {
     const getArgument = vi.fn()
       .mockResolvedValueOnce(undefined)
@@ -225,6 +232,19 @@ describe('generation option settings', () => {
       'poolSupported',
     ]);
   });
+
+  it('모든 flags 해제 상태를 none sentinel로 저장하고 복원한다', async () => {
+    const setArgument = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('risuai', {
+      getArgument: vi.fn().mockResolvedValue('none'),
+      setArgument,
+    });
+
+    await saveConfigurableLlmFlagNames([]);
+
+    expect(setArgument).toHaveBeenCalledWith('flags', 'none');
+    await expect(loadConfigurableLlmFlagNames()).resolves.toEqual([]);
+  });
 });
 
 describe('settings UI', () => {
@@ -236,6 +256,9 @@ describe('settings UI', () => {
     expect(html).toContain('id="verbosity"');
     expect(html).toContain('Verbosity · 지정 안 함');
     expect(html).toContain('id="streaming-mode"');
+    expect(html).toContain('<option value="off">스트리밍 끄기</option>');
+    expect(html).toContain('<option value="decoupled">모아서 받기</option>');
+    expect(html).not.toContain('<option value="stream">');
     expect(html).toContain('id="flag-hasFullSystemPrompt"');
     expect(html).toContain('id="flag-poolSupported"');
     expect(html).not.toContain('flag-hasStreaming');

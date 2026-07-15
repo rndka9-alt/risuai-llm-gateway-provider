@@ -13,10 +13,10 @@
 | `api_key` | LLM Gateway API 키 (`llmgtwy_...`) |
 | `prompt_cache_mode` | 프롬프트 캐시 모드 (`explicit` 또는 `disabled`, 기본값 `explicit`) |
 | `service_tier` | (선택) 서비스 티어 (`default` 또는 `flex`). 비우면 provider 기본(auto) |
-| `reasoning_effort` | (선택) 추론 강도 (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). 비우면 body에서 생략 |
+| `reasoning_effort` | (선택) 추론 강도 (`none`, `low`, `medium`, `high`, `xhigh`, `max`). 비우면 body에서 생략 |
 | `verbosity` | (선택) 응답 자세함 (`low`, `medium`, `high`). 비우면 body에서 생략 |
-| `streaming_mode` | 스트리밍 모드 (`off`, `decoupled`, `stream`, 기본값 `off`) |
-| `flags` | LLM flag 이름의 콤마 구분 목록: `hasFullSystemPrompt`, `hasFirstSystemPrompt`, `requiresAlternateRole`, `mustStartWithUserInput`, `poolSupported`. 기본값 `hasFullSystemPrompt` |
+| `streaming_mode` | 스트리밍 모드 (`off`, `decoupled`, 기본값 `off`) |
+| `flags` | LLM flag 이름의 콤마 구분 목록: `hasFullSystemPrompt`, `hasFirstSystemPrompt`, `requiresAlternateRole`, `mustStartWithUserInput`, `poolSupported`. 기본값 `hasFullSystemPrompt`, 모두 해제하면 `none` |
 | `model` | 모델 ID (예: `gpt-5.6-sol`) — 설정 UI에서 sol/terra/luna 선택 가능 |
 | `base_url` | (선택) 셀프호스팅 endpoint. 비우면 `https://api.llmgateway.io/v1` |
 
@@ -30,10 +30,9 @@
 - 스트리밍 모드:
   - `off`: JSON 응답을 한 번에 반환
   - `decoupled`: upstream은 스트리밍으로 소비하고 RisuAI에는 완성 문자열 반환
-  - `stream`: text delta를 RisuAI `ReadableStream<string>`으로 전달
-- RisuAI 모델 메타에 선택한 flags와 sampler slider 목록을 등록하며, 스트리밍 모드에서는 `hasStreaming`을 자동 포함
+- RisuAI 모델 메타에 선택한 flags, sampler slider 목록, o200k tokenizer를 등록
 - 미디어 flags는 텍스트 전용 변환에서 데이터가 유실될 수 있어 설정 UI에서 비활성화
-- `flags` 또는 `streaming_mode` 변경은 플러그인 재등록이 필요하므로 저장 후 새로고침 또는 플러그인 재활성화
+- `flags` 또는 `streaming_mode` 변경은 플러그인 재등록이 필요하므로 저장 후 새로고침
 
 ## 프롬프트 캐시 관측
 

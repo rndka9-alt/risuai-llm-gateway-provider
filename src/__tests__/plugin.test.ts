@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
-import { RISUAI_LLM_FLAGS } from '../options';
+import {
+  RISUAI_LLM_FLAGS,
+  RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
+} from '../options';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -70,47 +73,22 @@ function createStreamingResponse(
   });
 }
 
-interface ControlledStreamingResponse {
-  releaseCompletion(): void;
-  response: Response;
-}
-
-function createControlledStreamingResponse(): ControlledStreamingResponse {
-  let resolveCompletion: (() => void) | undefined;
-  const completion = new Promise<void>((resolve) => {
-    resolveCompletion = resolve;
-  });
+function createAbortingStreamingResponse(abortController: AbortController): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
-    start(controller) {
+    pull(controller) {
       controller.enqueue(encoder.encode(
         `data: ${JSON.stringify({ choices: [{ delta: { content: 'first' }, index: 0 }] })}\n\n`,
       ));
-      void completion.then(() => {
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({
-            choices: [],
-            usage: {
-              prompt_tokens_details: { cached_tokens: 100 },
-              prompt_tokens: 100,
-            },
-          })}\n\ndata: [DONE]\n\n`,
-        ));
-        controller.close();
-      });
+      abortController.abort();
+      controller.close();
     },
-  });
+  }, { highWaterMark: 0 });
 
-  return {
-    releaseCompletion() {
-      if (resolveCompletion === undefined) throw new Error('Completion gate was not initialized');
-      resolveCompletion();
-    },
-    response: new Response(body, {
-      status: 200,
-      headers: { 'content-type': 'text/event-stream' },
-    }),
-  };
+  return new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
 }
 
 interface ProviderHarness {
@@ -207,25 +185,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function collectTextStream(stream: ReadableStream<string>): Promise<string> {
-  const reader = stream.getReader();
-  let text = '';
-  try {
-    while (true) {
-      const result = await reader.read();
-      if (result.done) return text;
-      text += result.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 describe('provider registration metadata', () => {
-  it('본체 숫자 flags, sampler parameters, o200k tokenizer를 등록한다', async () => {
+  it('본체 숫자 flags, sampler parameters, V3와 legacy o200k tokenizer를 등록한다', async () => {
     const harness = await loadProvider([], {
       flags: 'hasFirstSystemPrompt,poolSupported',
-      streaming_mode: 'stream',
+      streaming_mode: 'decoupled',
     });
 
     expect(harness.providerOptions).toEqual({
@@ -235,9 +199,9 @@ describe('provider registration metadata', () => {
         flags: [
           RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
           RISUAI_LLM_FLAGS.poolSupported,
-          RISUAI_LLM_FLAGS.hasStreaming,
         ],
         parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'],
+        tokenizer: RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
       },
     });
   });
@@ -249,9 +213,23 @@ describe('provider registration metadata', () => {
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
     ]);
   });
+
+  it('none sentinel이면 빈 flags 메타를 등록한다', async () => {
+    const harness = await loadProvider([], { flags: 'none' });
+
+    expect(harness.providerOptions?.model?.flags).toEqual([]);
+  });
 });
 
 describe('request body options', () => {
+  it('model 인자가 비어 있으면 UI 표시값과 같은 기본 모델로 요청한다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()], { model: '' });
+
+    await harness.provider(createProviderArguments());
+
+    expect(parseRequestBody(harness.nativeFetch, 0).model).toBe('gpt-5.6-sol');
+  });
+
   it('플러그인 선택값과 RisuAI penalty를 Chat Completions extra body로 전달한다', async () => {
     const harness = await loadProvider([createSuccessfulResponse()], {
       reasoning_effort: 'xhigh',
@@ -302,6 +280,7 @@ describe('streaming modes', () => {
 
   it('decoupled는 streaming 연결을 끝까지 소비하고 완성 문자열과 usage를 반영한다', async () => {
     const harness = await loadProvider([createStreamingResponse()], {
+      service_tier: 'flex',
       streaming_mode: 'decoupled',
     });
 
@@ -319,124 +298,32 @@ describe('streaming modes', () => {
       readTokens: 1200,
       writeTokens: 200,
       costUsd: 0.01,
+      lastCostSample: { requestedServiceTier: 'flex' },
     });
   });
 
-  it('stream은 text delta stream을 반환하고 완료 후 상태와 usage를 반영한다', async () => {
-    const harness = await loadProvider([createStreamingResponse(['a', 'b', 'c'])], {
+  it('기존 stream 저장값도 decoupled 완성 문자열로 반환한다', async () => {
+    const harness = await loadProvider([createStreamingResponse(['legacy'])], {
       streaming_mode: 'stream',
     });
 
     const response = await harness.provider(createProviderArguments());
-    if (typeof response.content === 'string') throw new Error('Expected streaming content');
 
-    await expect(collectTextStream(response.content)).resolves.toBe('abc');
-    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
-    expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(true);
+    expect(response).toEqual({ success: true, content: 'legacy' });
   });
 
-  it('stream의 앵커와 원장은 upstream 완료 전에는 저장하지 않는다', async () => {
-    const controlled = createControlledStreamingResponse();
-    const harness = await loadProvider([controlled.response], {
-      streaming_mode: 'stream',
-    });
+  it('decoupled 소비 중 abort되면 실패하고 앵커와 원장을 저장하지 않는다', async () => {
+    const abortController = new AbortController();
+    const harness = await loadProvider([
+      createAbortingStreamingResponse(abortController),
+    ], { streaming_mode: 'decoupled' });
 
-    const response = await harness.provider(createProviderArguments());
-    if (typeof response.content === 'string') throw new Error('Expected streaming content');
-    const reader = response.content.getReader();
-    const first = await reader.read();
+    const response = await harness.provider(createProviderArguments(), abortController.signal);
 
-    expect(first).toEqual({ done: false, value: 'first' });
+    expect(response.success).toBe(false);
+    expect(harness.nativeFetch).toHaveBeenCalledOnce();
     expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
     expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(false);
-
-    controlled.releaseCompletion();
-    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
-    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
-    expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(true);
-    reader.releaseLock();
-  });
-
-  it.each(['decoupled', 'stream'])('%s도 cache marker 400이면 원본으로 재시도한다', async (mode) => {
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const harness = await loadProvider([
-      new Response('invalid prompt_cache breakpoint', { status: 400 }),
-      createStreamingResponse(['retry-ok']),
-    ], { streaming_mode: mode });
-
-    const response = await harness.provider(createProviderArguments());
-    const content = typeof response.content === 'string'
-      ? response.content
-      : await collectTextStream(response.content);
-
-    expect(response.success).toBe(true);
-    expect(content).toBe('retry-ok');
-    expect(harness.nativeFetch).toHaveBeenCalledTimes(2);
-    expect(getRequestBody(harness.nativeFetch, 0)).toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 1)).not.toContain('prompt_cache_breakpoint');
-    expect(warning).toHaveBeenCalledOnce();
-  });
-});
-
-describe('cache breakpoint fallback', () => {
-  it('마커 관련 400이면 원본 messages로 한 번 재시도하고 성공 뒤 앵커를 저장한다', async () => {
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const harness = await loadProvider([
-      new Response('invalid prompt_cache breakpoint', { status: 400 }),
-      createSuccessfulResponse(),
-    ]);
-
-    const response = await harness.provider(createProviderArguments());
-
-    expect(response).toEqual({ success: true, content: 'ok' });
-    expect(harness.nativeFetch).toHaveBeenCalledTimes(2);
-    expect(getRequestBody(harness.nativeFetch, 0)).toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 1)).not.toContain('prompt_cache_breakpoint');
-    expect(warning).toHaveBeenCalledOnce();
-    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
-  });
-
-  it('재시도도 실패하면 세 번째 요청 없이 오류를 반환한다', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const harness = await loadProvider([
-      new Response('cache breakpoint rejected', { status: 400 }),
-      new Response('cache breakpoint still rejected', { status: 400 }),
-      createSuccessfulResponse(),
-    ]);
-
-    const response = await harness.provider(createProviderArguments());
-
-    expect(response.success).toBe(false);
-    expect(harness.nativeFetch).toHaveBeenCalledTimes(2);
-    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
-  });
-
-  it('마커와 무관한 400은 재시도하지 않고 실패한 diff 상태도 저장하지 않는다', async () => {
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const harness = await loadProvider([
-      new Response('invalid max_completion_tokens', { status: 400 }),
-    ]);
-
-    const response = await harness.provider(createProviderArguments());
-
-    expect(response.success).toBe(false);
-    expect(harness.nativeFetch).toHaveBeenCalledOnce();
-    expect(warning).not.toHaveBeenCalled();
-    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
-  });
-
-  it('마커 관련 400이어도 1024토큰 가드로 마킹하지 않은 요청은 재시도하지 않는다', async () => {
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const harness = await loadProvider([
-      new Response('invalid prompt_cache breakpoint', { status: 400 }),
-    ]);
-
-    const response = await harness.provider(createProviderArguments('short system prompt'));
-
-    expect(response.success).toBe(false);
-    expect(harness.nativeFetch).toHaveBeenCalledOnce();
-    expect(getRequestBody(harness.nativeFetch, 0)).not.toContain('prompt_cache_breakpoint');
-    expect(warning).not.toHaveBeenCalled();
   });
 });
 

@@ -27,6 +27,7 @@ const lastCostSampleSchema = z.object({
   cost: z.number().optional(),
   costDetails: jsonObjectSchema.optional(),
   serviceTier: z.string().optional(),
+  requestedServiceTier: z.string().optional(),
   model: z.string(),
   // 관측 시각 하나의 형식 오류로 누적 원장 전체를 0으로 되돌리는 것은 실익보다 손실이 크다.
   at: z.string(),
@@ -54,9 +55,9 @@ const cacheSavingsUsageSchema = z.object({
   cacheReadInputTokens: z.number().nonnegative().optional(),
   details: z.object({
     costDetails: z.object({
-      cached_input_cost: z.number().finite(),
-      cache_write_input_cost: z.number().finite(),
-      input_cost: z.number().finite(),
+      cached_input_cost: z.number().finite().optional(),
+      cache_write_input_cost: z.number().finite().optional(),
+      input_cost: z.number().finite().optional(),
     }),
   }),
   inputTokens: z.number().nonnegative(),
@@ -96,11 +97,15 @@ export function calculateSavedUsd(usage: LlmUsage | undefined): number | undefin
   // 별도로 누적되므로 USD 절감만 건너뛰어 0 나눗셈과 잘못된 값을 막는다.
   if (regularInputTokens <= 0) return undefined;
 
-  const unitPrice = result.data.details.costDetails.input_cost / regularInputTokens;
+  // llmgateway는 활동이 없는 비용 필드를 생략하므로 각 부재 값은 0으로 계산한다.
+  const inputCost = result.data.details.costDetails.input_cost ?? 0;
+  const cachedInputCost = result.data.details.costDetails.cached_input_cost ?? 0;
+  const cacheWriteInputCost = result.data.details.costDetails.cache_write_input_cost ?? 0;
+  const unitPrice = inputCost / regularInputTokens;
   const readSavings =
-    readTokens * unitPrice - result.data.details.costDetails.cached_input_cost;
+    readTokens * unitPrice - cachedInputCost;
   const writePremium =
-    result.data.details.costDetails.cache_write_input_cost - writeTokens * unitPrice;
+    cacheWriteInputCost - writeTokens * unitPrice;
   return readSavings - writePremium;
 }
 
@@ -129,6 +134,7 @@ function createLastCostSample(
   usage: LlmUsage | undefined,
   rawResponse: unknown,
   model: string,
+  requestedServiceTier: string | undefined,
 ): LastCostSample {
   const usageCostResult = usageCostSchema.safeParse(usage?.details);
   const usageCostDetailsResult = usageCostDetailsSchema.safeParse(usage?.details);
@@ -142,6 +148,7 @@ function createLastCostSample(
     serviceTier: rawServiceTierResult.success
       ? (rawServiceTierResult.data.service_tier ?? undefined)
       : undefined,
+    ...(requestedServiceTier === undefined ? {} : { requestedServiceTier }),
     model,
     at: new Date().toISOString(),
   };
@@ -151,6 +158,7 @@ export async function accumulateCacheUsage(
   usage: LlmUsage | undefined,
   rawResponse: unknown,
   model: string,
+  requestedServiceTier?: string,
 ): Promise<void> {
   // usage 부재·캐시 필드 부재 = 이 응답엔 캐시 활동이 없었다는 뜻이라 0으로 취급한다.
   const readTokens = usage?.cacheReadInputTokens ?? 0;
@@ -164,7 +172,7 @@ export async function accumulateCacheUsage(
   ledger.writeTokens += writeTokens;
   if (cost !== undefined) ledger.costUsd += cost;
   if (savedUsd !== undefined) ledger.savedUsd += savedUsd;
-  ledger.lastCostSample = createLastCostSample(usage, rawResponse, model);
+  ledger.lastCostSample = createLastCostSample(usage, rawResponse, model, requestedServiceTier);
   await saveCacheLedger(ledger);
 }
 

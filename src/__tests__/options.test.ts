@@ -44,12 +44,16 @@ describe('buildModelOptionList', () => {
 });
 
 describe('OpenAI request option resolvers', () => {
-  it.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])(
+  it.each(['none', 'low', 'medium', 'high', 'xhigh', 'max'])(
     'reasoning_effort %s를 허용한다',
     (value) => {
       expect(resolveReasoningEffort(value)).toBe(value);
     },
   );
+
+  it('실측에서 400으로 거절된 minimal은 생략 처리한다', () => {
+    expect(resolveReasoningEffort('minimal')).toBeUndefined();
+  });
 
   it.each(['low', 'medium', 'high'])('verbosity %s를 허용한다', (value) => {
     expect(resolveVerbosity(value)).toBe(value);
@@ -60,8 +64,12 @@ describe('OpenAI request option resolvers', () => {
     expect(resolveVerbosity(value)).toBeUndefined();
   });
 
-  it.each(['off', 'decoupled', 'stream'])('streaming_mode %s를 판별한다', (value) => {
+  it.each(['off', 'decoupled'])('streaming_mode %s를 판별한다', (value) => {
     expect(resolveStreamingMode(value)).toBe(value);
+  });
+
+  it('기존 stream 저장값은 decoupled로 정규화한다', () => {
+    expect(resolveStreamingMode('stream')).toBe('decoupled');
   });
 
   it.each([undefined, '', 'unknown'])('streaming_mode %s는 off로 정규화한다', (value) => {
@@ -74,6 +82,13 @@ describe('RisuAI LLM flags', () => {
     expect(resolveConfigurableLlmFlagNames(undefined)).toEqual(
       DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES,
     );
+    expect(resolveConfigurableLlmFlagNames('')).toEqual(
+      DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES,
+    );
+  });
+
+  it('none sentinel은 모든 flag가 해제된 상태로 복원한다', () => {
+    expect(resolveConfigurableLlmFlagNames('none')).toEqual([]);
   });
 
   it('지원 flag만 중복 없이 파싱하고 미디어 및 알 수 없는 이름은 제외한다', () => {
@@ -82,19 +97,14 @@ describe('RisuAI LLM flags', () => {
     )).toEqual(['hasFirstSystemPrompt', 'poolSupported']);
   });
 
-  it('이름을 본체 숫자로 변환하고 streaming_mode가 켜지면 hasStreaming을 자동 추가한다', () => {
+  it('선택한 이름만 본체 숫자로 변환하고 hasStreaming은 자동 추가하지 않는다', () => {
     const flagNames = resolveConfigurableLlmFlagNames(
       'hasFullSystemPrompt,requiresAlternateRole',
     );
 
-    expect(resolveProviderLlmFlags(flagNames, 'off')).toEqual([
+    expect(resolveProviderLlmFlags(flagNames)).toEqual([
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
       RISUAI_LLM_FLAGS.requiresAlternateRole,
-    ]);
-    expect(resolveProviderLlmFlags(flagNames, 'stream')).toEqual([
-      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
-      RISUAI_LLM_FLAGS.requiresAlternateRole,
-      RISUAI_LLM_FLAGS.hasStreaming,
     ]);
   });
 
@@ -103,5 +113,6 @@ describe('RisuAI LLM flags', () => {
       'hasFullSystemPrompt',
       'mustStartWithUserInput',
     ])).toBe('hasFullSystemPrompt,mustStartWithUserInput');
+    expect(serializeConfigurableLlmFlagNames([])).toBe('none');
   });
 });

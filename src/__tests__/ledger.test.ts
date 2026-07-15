@@ -61,6 +61,21 @@ describe('calculateSavedUsd', () => {
     expect(savedUsd).toBeCloseTo(0.775);
   });
 
+  it('캐시 쓰기 비용이 생략된 read-only 응답도 읽기 절감을 계산한다', () => {
+    const savedUsd = calculateSavedUsd({
+      cacheReadInputTokens: 200,
+      inputTokens: 1000,
+      details: {
+        costDetails: {
+          input_cost: 0.008,
+          cached_input_cost: 0.0002,
+        },
+      },
+    });
+
+    expect(savedUsd).toBeCloseTo(0.0018);
+  });
+
   it('비용 필드가 없거나 일반 입력 토큰이 0이면 계산을 건너뛴다', () => {
     expect(calculateSavedUsd({ inputTokens: 1000 })).toBeUndefined();
     expect(calculateSavedUsd({
@@ -108,6 +123,7 @@ describe('accumulateCacheUsage', () => {
       },
       { service_tier: 'flex' },
       'gpt-5.6-terra',
+      'default',
     );
 
     const ledger = await loadCacheLedger();
@@ -116,6 +132,7 @@ describe('accumulateCacheUsage', () => {
       cost: 1.2345,
       costDetails: { prompt: 0.75, nested: { provider: 'llmgateway' } },
       serviceTier: 'flex',
+      requestedServiceTier: 'default',
       model: 'gpt-5.6-terra',
       at: '2026-07-16T01:02:03.000Z',
     });
@@ -151,7 +168,7 @@ describe('accumulateCacheUsage', () => {
     expect((await loadCacheLedger()).savedUsd).toBeCloseTo(1.55);
   });
 
-  it('비용 상세 필드가 없으면 토큰은 누적하고 USD 절감만 건너뛴다', async () => {
+  it('costDetails가 없으면 토큰은 누적하고 USD 절감만 건너뛴다', async () => {
     stubPluginStorage();
 
     await accumulateCacheUsage(
@@ -159,7 +176,7 @@ describe('accumulateCacheUsage', () => {
         cacheReadInputTokens: 1200,
         cacheCreationInputTokens: 300,
         inputTokens: 2000,
-        details: { costDetails: { input_cost: 0.0025 } },
+        details: {},
       },
       {},
       'gpt-5.6-sol',

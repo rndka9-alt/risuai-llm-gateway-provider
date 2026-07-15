@@ -4,7 +4,6 @@ import {
   LLMGatewayProvider,
   OpenAIChatCompletionsFormat,
   type LlmMessage,
-  type LlmOutput,
   type LlmRequestOptions,
   type LlmUsage,
   type OpenAIChatCompletionsExtraBody,
@@ -26,8 +25,10 @@ import {
 import { toLlmMessages } from './convert';
 import { accumulateCacheUsage } from './ledger';
 import {
+  DEFAULT_MODEL,
   FLAGS_ARGUMENT,
   REASONING_EFFORT_ARGUMENT,
+  RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
   SERVICE_TIER_ARGUMENT,
   STREAMING_MODE_ARGUMENT,
   VERBOSITY_ARGUMENT,
@@ -47,18 +48,12 @@ declare const __VERSION__: string;
 
 const PROVIDER_NAME = 'LLM Gateway';
 
-// 실제 오류 문구가 충분히 쌓이면 조건을 좁힐 수 있도록 감지 문자열을 한곳에 둔다.
-const PROMPT_CACHE_ERROR_HINT = 'prompt_cache';
-const CACHE_ERROR_HINT = 'cache';
-const BREAKPOINT_ERROR_HINT = 'breakpoint';
-
 type GatewayClient = Llm<OpenAIChatCompletionsRaw>;
 
 interface GatewayRequestContext {
   abortSignal: AbortSignal | undefined;
   gatewayClient: GatewayClient;
-  markedMessages: readonly LlmMessage[];
-  originalMessages: readonly LlmMessage[];
+  messages: readonly LlmMessage[];
   requestOptions: LlmRequestOptions;
 }
 
@@ -90,62 +85,11 @@ function toFailureContent(error: unknown): string {
   return `LLM Gateway 요청 실패: ${String(error)}`;
 }
 
-function containsCacheBreakpoint(messages: readonly LlmMessage[]): boolean {
-  return messages.some((message) =>
-    message.content.some(
-      (part) => part.type === 'text' && part.cacheBreakpoint !== undefined,
-    ),
-  );
-}
-
-function shouldRetryWithoutCacheBreakpoints(error: unknown, markedBreakpoints: boolean): boolean {
-  if (!markedBreakpoints || !(error instanceof LlmHttpError) || error.status !== 400) return false;
-
-  const normalizedBody = error.body.toLowerCase();
-  return (
-    normalizedBody.includes(PROMPT_CACHE_ERROR_HINT) ||
-    (normalizedBody.includes(CACHE_ERROR_HINT) && normalizedBody.includes(BREAKPOINT_ERROR_HINT))
-  );
-}
-
-function warnCacheBreakpointRetry(): void {
-  console.warn(
-    '[llm-gateway-provider] cache breakpoint rejected; retrying once without breakpoints',
-  );
-}
-
-async function generateWithCacheRetry(
-  context: GatewayRequestContext,
-): Promise<LlmOutput<OpenAIChatCompletionsRaw>> {
-  try {
-    return await context.gatewayClient.generate({
-      messages: context.markedMessages,
-      options: context.requestOptions,
-      signal: context.abortSignal,
-    });
-  } catch (error) {
-    if (!shouldRetryWithoutCacheBreakpoints(
-      error,
-      containsCacheBreakpoint(context.markedMessages),
-    )) {
-      throw error;
-    }
-    warnCacheBreakpointRetry();
-    return context.gatewayClient.generate({
-      messages: context.originalMessages,
-      options: context.requestOptions,
-      signal: context.abortSignal,
-    });
-  }
-}
-
 async function consumeGatewayStream(
   context: GatewayRequestContext,
-  messages: readonly LlmMessage[],
-  onTextDelta?: (text: string) => void,
 ): Promise<StreamConsumptionResult> {
   const stream = context.gatewayClient.stream({
-    messages,
+    messages: context.messages,
     options: context.requestOptions,
     signal: context.abortSignal,
   });
@@ -155,13 +99,14 @@ async function consumeGatewayStream(
 
   try {
     while (true) {
+      context.abortSignal?.throwIfAborted();
       const result = await reader.read();
+      context.abortSignal?.throwIfAborted();
       if (result.done) break;
 
       const event = result.value;
       if (event.type === 'text-delta') {
         text += event.text;
-        onTextDelta?.(event.text);
       } else if (event.type === 'usage') {
         usage = event.usage;
       } else if (event.type === 'done' && event.usage !== undefined) {
@@ -169,28 +114,16 @@ async function consumeGatewayStream(
       }
     }
   } finally {
-    reader.releaseLock();
+    try {
+      if (context.abortSignal?.aborted === true) {
+        await reader.cancel(context.abortSignal.reason);
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   return { text, usage };
-}
-
-async function consumeStreamWithCacheRetry(
-  context: GatewayRequestContext,
-  onTextDelta?: (text: string) => void,
-): Promise<StreamConsumptionResult> {
-  try {
-    return await consumeGatewayStream(context, context.markedMessages, onTextDelta);
-  } catch (error) {
-    if (!shouldRetryWithoutCacheBreakpoints(
-      error,
-      containsCacheBreakpoint(context.markedMessages),
-    )) {
-      throw error;
-    }
-    warnCacheBreakpointRetry();
-    return consumeGatewayStream(context, context.originalMessages, onTextDelta);
-  }
 }
 
 async function completeSuccessfulRequest(
@@ -199,6 +132,7 @@ async function completeSuccessfulRequest(
   usage: LlmUsage | undefined,
   rawResponse: unknown,
   model: string,
+  requestedServiceTier: string | undefined,
 ): Promise<void> {
   if (nextCacheAnchorState !== null) {
     try {
@@ -213,39 +147,11 @@ async function completeSuccessfulRequest(
   }
 
   try {
-    await accumulateCacheUsage(usage, rawResponse, model);
+    await accumulateCacheUsage(usage, rawResponse, model, requestedServiceTier);
   } catch (error) {
     // 손익 집계 실패로 응답 전달을 막지 않는다.
     console.error('[llm-gateway-provider] cache ledger update failed', error);
   }
-}
-
-function createProviderTextStream(
-  context: GatewayRequestContext,
-  nextCacheAnchorState: CacheAnchorState | null,
-  cacheBackoffTransition: CacheBackoffTransition | null,
-  model: string,
-): ReadableStream<string> {
-  return new ReadableStream<string>({
-    async start(controller) {
-      try {
-        const result = await consumeStreamWithCacheRetry(
-          context,
-          (text) => controller.enqueue(text),
-        );
-        await completeSuccessfulRequest(
-          nextCacheAnchorState,
-          cacheBackoffTransition,
-          result.usage,
-          undefined,
-          model,
-        );
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-  });
 }
 
 async function requestLLMGateway(
@@ -254,14 +160,17 @@ async function requestLLMGateway(
   abortSignal?: AbortSignal,
 ): Promise<ProviderResponse> {
   const apiKey = await readArgument('api_key');
-  const model = await readArgument('model');
 
-  if (apiKey === undefined || model === undefined) {
+  if (apiKey === undefined) {
     return {
       success: false,
-      content: '플러그인 설정에서 api_key와 model 인자를 입력해주세요.',
+      content: '플러그인 설정에서 api_key를 입력해주세요.',
     };
   }
+
+  // 설정 UI는 모델 기본값을 표시만 하고 사용자가 바꾸기 전엔 저장하지 않으므로
+  // (change 시점 즉시 저장), 미설정이면 표시값과 같은 기본 모델을 사용한다.
+  const model = (await readArgument('model')) ?? DEFAULT_MODEL;
 
   const baseUrl = await readArgument('base_url');
   const promptCacheMode = resolvePromptCacheMode(await readArgument(PROMPT_CACHE_MODE_ARGUMENT));
@@ -324,46 +233,37 @@ async function requestLLMGateway(
   const context: GatewayRequestContext = {
     abortSignal,
     gatewayClient,
-    markedMessages: requestMessages,
-    originalMessages: messages,
+    messages: requestMessages,
     requestOptions,
   };
 
   try {
-    if (streamingMode === 'stream') {
-      // llm-io stream을 그대로 노출하지 않고 text delta만 전달한다. usage는 옆으로 빼
-      // 원장에 반영하고, 앵커 상태는 upstream stream이 끝난 뒤에만 확정한다.
-      return {
-        success: true,
-        content: createProviderTextStream(
-          context,
-          nextCacheAnchorState,
-          cacheBackoffTransition,
-          model,
-        ),
-      };
-    }
-
     if (streamingMode === 'decoupled') {
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
-      const result = await consumeStreamWithCacheRetry(context);
+      const result = await consumeGatewayStream(context);
       await completeSuccessfulRequest(
         nextCacheAnchorState,
         cacheBackoffTransition,
         result.usage,
         undefined,
         model,
+        serviceTier,
       );
       return { success: true, content: result.text };
     }
 
-    const output = await generateWithCacheRetry(context);
+    const output = await context.gatewayClient.generate({
+      messages: context.messages,
+      options: context.requestOptions,
+      signal: context.abortSignal,
+    });
     await completeSuccessfulRequest(
       nextCacheAnchorState,
       cacheBackoffTransition,
       output.usage,
       output.raw,
       model,
+      serviceTier,
     );
     return { success: true, content: output.message.text };
   } catch (error) {
@@ -385,11 +285,9 @@ async function main(): Promise<void> {
       tokenizer: 'o200k_base',
       model: {
         name: PROVIDER_NAME,
-        flags: resolveProviderLlmFlags(
-          registrationSettings.flagNames,
-          registrationSettings.streamingMode,
-        ),
+        flags: resolveProviderLlmFlags(registrationSettings.flagNames),
         parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'],
+        tokenizer: RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
       },
     },
   );

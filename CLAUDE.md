@@ -40,7 +40,9 @@ npm test
 - 동일 요청(리롤)은 현재 길이 안의 기존 앵커를 유지하고, 직전 요청의 프리픽스로 축소된 요청은
   첫 턴 정책으로 다시 추정한다.
 - **assistant 메시지엔 마킹 금지**: llm-io가 assistant를 문자열 content로 직렬화해
-  breakpoint가 와이어에서 유실된다(to-openai-message.ts). system/user로 물러나 마킹.
+  breakpoint가 와이어에서 유실된다(to-openai-message.ts). 실측에서도 llmgateway는 assistant 지점
+  마커를 200으로 수락하지만 1,531토큰 프리픽스의 cache write가 0이라 엔트리를 만들지 않았다.
+  system/user로 물러나 마킹.
 - 직전 요청은 원문이 아닌 **메시지별 fingerprint(FNV-1a 해시 + 토큰 추정)**로
   `pluginStorage`(`llm-gateway-provider:cache-anchor-state`)에 저장 — 평문 비노출,
   용량 고정, database.bin 동기화를 타고 다른 기기에서도 이어진다.
@@ -55,6 +57,7 @@ npm test
 - 토큰 등가 순절감은 `0.9 × readTokens − 0.25 × writeTokens`로 표시한다.
 - 실측 USD 절감은 일반 입력 토큰의 `input_cost` 단가를 역산한 뒤 캐시 읽기 절감에서 캐시 쓰기 프리미엄을 뺀다.
 - `cost_details`가 없거나 일반 입력 토큰이 0이면 해당 응답의 `savedUsd`만 누적하지 않고 읽기/쓰기 토큰은 유지한다.
+  `input_cost`/`cached_input_cost`/`cache_write_input_cost` 개별 부재는 0으로 취급한다.
 - 구버전 원장의 `costUsd`, `savedUsd`, `lastCostSample`은 Zod 기본값으로 제자리 마이그레이션한다.
 
 ## 런타임 환경 / 제약
@@ -69,14 +72,15 @@ npm test
 - **reasoning/verbosity 경로**: RisuAI는 플러그인 provider 인자를 하드코딩해 두 값을 전달하지 않는다.
   플러그인 인자에서 읽어 llm-io `OpenAIChatCompletionsExtraBody`로 보내는 경로가 유일하다.
 - **스트리밍 등록 스냅샷**: `streaming_mode`와 flags는 플러그인 로드 때 읽어 provider 동작과
-  model metadata를 함께 고정한다. 설정 변경 후에는 새로고침 또는 플러그인 재활성화가 필요하다.
+  model metadata를 함께 고정한다. 설정 변경 후에는 새로고침이 필요하다.
 - **LLMFlags 숫자 동기화**: `src/options.ts`의 이름→숫자 매핑은 RisuAI
   `src/ts/model/types.ts`의 `LLMFlags`가 출처다. 본체 값 변경 시 반드시 함께 갱신한다.
-- **tokenizer**: RisuAI `src/ts/tokenizer.ts`가 custom provider의 `o200k_base` 문자열을 직접
-  소비하므로 addProvider top-level tokenizer로 지정한다.
+- **tokenizer**: legacy custom 경로용 addProvider top-level `o200k_base`와 V3 모델 메타용
+  `LLMTokenizer.tiktokenO200Base`(2)를 함께 지정한다.
 - **esbuild IIFE**: RisuAI가 플러그인 코드를 `(async () => { ... })()`로 인라인하므로 ESM 불가.
   top-level await도 IIFE 포맷에서 빌드 에러 — `void main()` 패턴 사용.
-- **권한 팝업**: 첫 프로바이더 호출 시 유저 승인 필요 (3일 주기 재확인).
+- **권한 팝업**: 첫 프로바이더 호출 시 유저 승인을 요청하고 3일 주기로 재확인한다.
+  거부 미차단 본체 버그는 아래 알려진 제한 참고.
 - **백오프 토스트**: 플러그인 v3에 전용 토스트 API가 없어 `risuai.getRootDocument()`의
   `SafeDocument` 메서드로 메인 DOM에 주입한다. 권한 거부·API 부재는 `console.warn` 후 요청을 계속한다.
 
@@ -86,10 +90,21 @@ npm test
   `anthropic-messages`(→ `/messages`)만 라우팅한다. OpenAIResponses는 `throwUnsupportedFormat`.
   llmgateway.io 서비스 자체는 `/v1/responses`를 지원하므로(Codex CLI 가이드, 데이터 보존 설정 필요),
   Responses 지원은 llm-io에 경로 매핑을 추가하면 가능 — 보류 상태.
-- **스트리밍 3모드**: `off`는 `generate()`, `decoupled`는 `stream()`을 끝까지 소비한 완성 문자열,
-  `stream`은 text delta `ReadableStream<string>`을 반환한다. streaming usage와 앵커 상태는 완료 시 반영한다.
+- **스트리밍 2모드**: `off`는 `generate()`, `decoupled`는 `stream()`을 끝까지 소비한 완성 문자열을
+  반환한다. streaming usage와 앵커 상태는 완료 시 반영한다. 과거 `stream` 저장값은 `decoupled`로 정규화한다.
 - **미디어 flags 비활성화**: `convert.ts`가 텍스트 전용이므로 Image/Audio/Video flags는 설정 UI에서
   disabled 상태다. 멀티모달 변환 구현 전 활성화하면 데이터가 조용히 유실될 수 있다.
+
+## 알려진 제한
+
+- 캐시 원장과 앵커 상태는 read-modify-write가 비원자적이라 동시 요청 시 갱신이 유실될 수 있다.
+  RisuAI의 `doingChat` 락으로 실사용 채팅 요청은 순차 실행되므로 별도 잠금은 두지 않는다.
+- decoupled 소비 루프는 body chunk 사이에서 abort를 확인해 중단하고 앵커·원장을 저장하지 않는다.
+  다만 헤더 수신 뒤 abort가 본체 브릿지의 response body까지 전달되지 않아, 다음 chunk가 오기 전까지
+  `reader.read()`를 즉시 깨우지 못한다.
+- RisuAI 본체의 provider 권한 확인은 반환값을 무시해 사용자가 권한을 거부해도 호출을 차단하지 않는다.
+- RisuAI 본체의 `customV3ProviderMetaStore`는 재활성화 때 이전 메타를 제거하지 않고 누적한다.
+  옛 flags가 계속 사용될 수 있으므로 설정 변경 적용은 플러그인 재활성화가 아니라 새로고침을 사용한다.
 
 ## Git
 

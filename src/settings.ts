@@ -382,8 +382,7 @@ export function createSettingsHtml(currentModel: string): string {
         '</select>' +
         '<select id="streaming-mode" aria-label="스트리밍 모드">' +
           '<option value="off">스트리밍 끄기</option>' +
-          '<option value="decoupled">분리 스트리밍</option>' +
-          '<option value="stream">실시간 스트리밍</option>' +
+          '<option value="decoupled">모아서 받기</option>' +
         '</select>' +
         '<select id="prompt-cache-mode" aria-label="프롬프트 캐시 모드">' +
           '<option value="explicit">명시적 캐시 사용</option>' +
