@@ -28,7 +28,8 @@ const lastCostSampleSchema = z.object({
   costDetails: jsonObjectSchema.optional(),
   serviceTier: z.string().optional(),
   model: z.string(),
-  at: z.string().datetime(),
+  // 관측 시각 하나의 형식 오류로 누적 원장 전체를 0으로 되돌리는 것은 실익보다 손실이 크다.
+  at: z.string(),
 });
 
 const cacheLedgerSchema = z.object({
@@ -45,7 +46,7 @@ const usageCostDetailsSchema = z.object({
   costDetails: lastCostSampleSchema.shape.costDetails,
 });
 const rawServiceTierSchema = z.object({
-  service_tier: lastCostSampleSchema.shape.serviceTier,
+  service_tier: lastCostSampleSchema.shape.serviceTier.nullable(),
 });
 
 export type CacheLedger = z.infer<typeof cacheLedgerSchema>;
@@ -104,7 +105,7 @@ function createLastCostSample(
       ? usageCostDetailsResult.data.costDetails
       : undefined,
     serviceTier: rawServiceTierResult.success
-      ? rawServiceTierResult.data.service_tier
+      ? (rawServiceTierResult.data.service_tier ?? undefined)
       : undefined,
     model,
     at: new Date().toISOString(),

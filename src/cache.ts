@@ -37,7 +37,11 @@ export function createPromptCacheExtraBody(
 ): OpenAIChatCompletionsExtraBody {
   return {
     prompt_cache_key: getPromptCacheKey(mode),
-    prompt_cache_options: { mode: 'explicit' },
+    prompt_cache_options: {
+      mode: 'explicit',
+      // 현재 지원되는 유일한 값이자 기본값이지만, 정책이 요청에 드러나도록 명시한다.
+      ttl: '30m',
+    },
   };
 }
 
@@ -58,18 +62,37 @@ const messageFingerprintSchema = z.object({
   tokenEstimate: z.number(),
 });
 
-const cacheAnchorStateSchema = z.object({
-  deepestDivergenceIndex: z.number().nullable(),
-  fingerprints: z.array(messageFingerprintSchema),
-  frontierIndex: z.number().nullable(),
-});
+// 구버전 frontierIndex 상태는 anchorIndexes가 없어 파싱에 실패하고 새 epoch로
+// 회복한다. 캐시 최적화 상태라 손실이 무해하고, 경계를 추측해 승계하는 것보다 안전하다.
+const cacheAnchorStateSchema = z
+  .object({
+    anchorIndexes: z.array(z.number().int().nonnegative()).max(4),
+    fingerprints: z.array(messageFingerprintSchema),
+  })
+  .superRefine((state, context) => {
+    state.anchorIndexes.forEach((anchorIndex, position) => {
+      if (anchorIndex >= state.fingerprints.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'anchor index must reference a fingerprint',
+          path: ['anchorIndexes', position],
+        });
+      }
+      if (position > 0 && state.anchorIndexes[position - 1] >= anchorIndex) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'anchor indexes must be strictly ascending',
+          path: ['anchorIndexes', position],
+        });
+      }
+    });
+  });
 
 export type MessageFingerprint = z.infer<typeof messageFingerprintSchema>;
 export type CacheAnchorState = z.infer<typeof cacheAnchorStateSchema>;
 
 export interface CachePlan {
-  fallbackIndex: number | null;
-  frontierIndex: number | null;
+  anchorIndexes: number[];
   nextState: CacheAnchorState;
 }
 
@@ -157,11 +180,59 @@ function resolveFirstTurnFrontier(fingerprints: readonly MessageFingerprint[]): 
 
 function createFirstTurnPlan(fingerprints: MessageFingerprint[]): CachePlan {
   const frontierIndex = resolveFirstTurnFrontier(fingerprints);
+  const anchorIndexes = frontierIndex === null ? [] : [frontierIndex];
   return {
-    fallbackIndex: null,
-    frontierIndex,
-    nextState: { deepestDivergenceIndex: null, fingerprints, frontierIndex },
+    anchorIndexes,
+    nextState: { anchorIndexes, fingerprints },
   };
+}
+
+function sumTokenEstimatesBetween(
+  fingerprints: readonly MessageFingerprint[],
+  leftAnchorIndex: number,
+  rightAnchorIndex: number,
+): number {
+  let total = 0;
+  for (let index = leftAnchorIndex + 1; index <= rightAnchorIndex; index += 1) {
+    total += fingerprints[index].tokenEstimate;
+  }
+  return total;
+}
+
+function evictClosestAnchors(
+  anchorIndexes: readonly number[],
+  fingerprints: readonly MessageFingerprint[],
+): number[] {
+  const retainedIndexes = [...anchorIndexes];
+  while (retainedIndexes.length > 4) {
+    let closestPairStart = 0;
+    let closestPairTokenGap = Number.POSITIVE_INFINITY;
+    for (let position = 0; position < retainedIndexes.length - 1; position += 1) {
+      const tokenGap = sumTokenEstimatesBetween(
+        fingerprints,
+        retainedIndexes[position],
+        retainedIndexes[position + 1],
+      );
+      if (tokenGap < closestPairTokenGap) {
+        closestPairStart = position;
+        closestPairTokenGap = tokenGap;
+      }
+    }
+
+    const rightPosition = closestPairStart + 1;
+    const positionToRemove =
+      rightPosition === retainedIndexes.length - 1 ? closestPairStart : rightPosition;
+    retainedIndexes.splice(positionToRemove, 1);
+  }
+  return retainedIndexes;
+}
+
+function normalizeAnchorIndexes(
+  candidates: readonly number[],
+  fingerprints: readonly MessageFingerprint[],
+): number[] {
+  const sortedIndexes = [...new Set(candidates)].sort((left, right) => left - right);
+  return evictClosestAnchors(sortedIndexes, fingerprints);
 }
 
 export function planCacheAnchors(
@@ -184,43 +255,40 @@ export function planCacheAnchors(
   }
 
   const suffixLength = commonSuffixLength(previous, fingerprints, prefixLength);
-
-  let frontierIndex: number | null;
   if (prefixLength >= fingerprints.length) {
     // 현재 요청이 직전 요청의 프리픽스에 통째로 포함되는 경우(주의: 직전이
     // 현재의 프리픽스인 일반 성장과 반대 방향이다):
-    // - 길이까지 같으면 동일 요청(리롤) — 이전 frontier를 유지해 후행 블록이
-    //   캐시에 실리지 않게 한다.
-    // - 더 짧아졌으면(브랜치 삭제·요약 교체 등) 이전 frontier가 범위를 벗어날
+    // - 길이까지 같으면 동일 요청(리롤) — 현재 범위의 기존 앵커를 유지해
+    //   후행 블록이 캐시에 실리지 않게 한다.
+    // - 더 짧아졌으면(브랜치 삭제·요약 교체 등) 기존 앵커가 범위를 벗어날
     //   수 있어 첫 턴 정책으로 재추정한다.
-    frontierIndex =
-      previousState.frontierIndex !== null && previousState.frontierIndex < fingerprints.length
-        ? previousState.frontierIndex
-        : resolveFirstTurnFrontier(fingerprints);
-  } else {
-    frontierIndex = fingerprints.length - suffixLength - 1;
+    if (fingerprints.length < previous.length) {
+      return createFirstTurnPlan(fingerprints);
+    }
+
+    const anchorIndexes = previousState.anchorIndexes.filter(
+      (anchorIndex) => anchorIndex < fingerprints.length,
+    );
+    return {
+      anchorIndexes,
+      nextState: { anchorIndexes, fingerprints },
+    };
   }
 
-  // 안정 구간이라 믿었던 지점(이전 frontier) 안쪽이 깨지면 분기 이벤트 —
-  // 관측된 가장 얕은 일치 경계를 폴백 앵커로 남겨 다음 분기 때 부분 히트를 노린다.
-  let deepestDivergenceIndex = previousState.deepestDivergenceIndex;
-  if (previousState.frontierIndex !== null && prefixLength <= previousState.frontierIndex) {
-    const candidate = prefixLength - 1;
-    deepestDivergenceIndex =
-      deepestDivergenceIndex === null ? candidate : Math.min(deepestDivergenceIndex, candidate);
+  const candidates = previousState.anchorIndexes.filter(
+    (anchorIndex) => anchorIndex < prefixLength,
+  );
+  const previousFrontierIndex = previousState.anchorIndexes.at(-1);
+  if (previousFrontierIndex !== undefined && prefixLength <= previousFrontierIndex) {
+    candidates.push(prefixLength - 1);
   }
+  candidates.push(fingerprints.length - suffixLength - 1);
 
-  const fallbackIndex =
-    deepestDivergenceIndex !== null &&
-    frontierIndex !== null &&
-    deepestDivergenceIndex < frontierIndex
-      ? deepestDivergenceIndex
-      : null;
+  const anchorIndexes = normalizeAnchorIndexes(candidates, fingerprints);
 
   return {
-    fallbackIndex,
-    frontierIndex,
-    nextState: { deepestDivergenceIndex, fingerprints, frontierIndex },
+    anchorIndexes,
+    nextState: { anchorIndexes, fingerprints },
   };
 }
 
@@ -268,8 +336,7 @@ function markBreakpoint(message: LlmMessage): LlmMessage {
 
 export function markCacheBreakpoints(messages: LlmMessage[], plan: CachePlan): LlmMessage[] {
   const markableIndexes = new Set<number>();
-  for (const anchorIndex of [plan.fallbackIndex, plan.frontierIndex]) {
-    if (anchorIndex === null) continue;
+  for (const anchorIndex of plan.anchorIndexes) {
     const markableIndex = toMarkableIndex(messages, anchorIndex);
     if (
       markableIndex !== null &&

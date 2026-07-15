@@ -5,6 +5,7 @@ import {
   DISABLED_PROMPT_CACHE_KEY,
   EXPLICIT_PROMPT_CACHE_KEY,
   createPromptCacheExtraBody,
+  fingerprintMessage,
   getPromptCacheKey,
   loadCacheAnchorState,
   markCacheBreakpoints,
@@ -44,7 +45,7 @@ describe('prompt cache request wiring', () => {
     (mode, promptCacheKey) => {
       expect(createPromptCacheExtraBody(mode)).toEqual({
         prompt_cache_key: promptCacheKey,
-        prompt_cache_options: { mode: 'explicit' },
+        prompt_cache_options: { mode: 'explicit', ttl: '30m' },
       });
     },
   );
@@ -94,7 +95,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     ];
 
     const plan = planTurns([firstTurn]);
-    expect(plan.frontierIndex).toBe(1);
+    expect(plan.anchorIndexes).toEqual([1]);
     // index 1은 assistant — llm-io가 문자열로 직렬화해 marker가 유실되므로 system(0)으로 물러난다.
     expect(markedIndexesOfLastTurn([firstTurn])).toEqual([0]);
   });
@@ -120,7 +121,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('user', 'input 2'),
     ];
 
-    expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([3]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([0, 3]);
   });
 
   it('중간 삽입형이면 공통 서픽스(후행 블록) 직전에 frontier를 찍는다', () => {
@@ -138,10 +139,10 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       trailingBlock,
     ];
 
-    expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([3]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([0, 3]);
   });
 
-  it('직전 요청과 동일하면(리롤) 이전 frontier 위치를 유지한다', () => {
+  it('직전 요청과 동일하면(리롤) 현재 길이 안의 기존 앵커를 유지한다', () => {
     const messages = [
       makeMessage('system', LONG_SYSTEM_TEXT),
       makeMessage('user', 'stable input'),
@@ -150,7 +151,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const rerollTurn = messages.map((message) => ({ ...message }));
 
     const plan = planTurns([messages, rerollTurn]);
-    expect(plan.frontierIndex).toBe(1);
+    expect(plan.anchorIndexes).toEqual([1]);
   });
 
   it('요청이 직전의 프리픽스로 축소되면 첫 턴 정책으로 재추정한다', () => {
@@ -163,7 +164,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const shrunkenTurn = [...firstTurn];
 
     const plan = planTurns([firstTurn, secondTurn, shrunkenTurn]);
-    expect(plan.frontierIndex).toBe(0);
+    expect(plan.anchorIndexes).toEqual([0]);
   });
 
   it('공통 프리픽스가 없으면(채팅방 전환) 새 epoch로 초기화한다', () => {
@@ -181,14 +182,21 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('user', 'room B input'),
     ];
 
-    // 방 A의 분기로 deepestDivergenceIndex가 생긴 상태에서 방 B로 전환한다.
     const plan = planTurns([roomATurn1, roomATurn2, roomBTurn]);
-    expect(plan.frontierIndex).toBe(1);
-    expect(plan.fallbackIndex).toBeNull();
-    expect(plan.nextState.deepestDivergenceIndex).toBeNull();
+    expect(plan.anchorIndexes).toEqual([1]);
+    expect(plan.nextState.anchorIndexes).toEqual([1]);
   });
 
-  it('안정 구간이 깨지면 분기 지점을 폴백 앵커로 남긴다', () => {
+  it('일치 프리픽스 안의 기존 앵커를 생존시키고 새 frontier를 증분 추가한다', () => {
+    const firstTurn = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input 1')];
+    const secondTurn = [...firstTurn, makeMessage('user', 'input 2')];
+    const thirdTurn = [...secondTurn, makeMessage('user', 'input 3')];
+
+    expect(planTurns([firstTurn, secondTurn]).anchorIndexes).toEqual([0, 2]);
+    expect(planTurns([firstTurn, secondTurn, thirdTurn]).anchorIndexes).toEqual([0, 2, 3]);
+  });
+
+  it('분기 시 범위를 벗어난 앵커를 버리고 일치 경계와 새 frontier를 추가한다', () => {
     const firstTurn = [
       makeMessage('system', LONG_SYSTEM_TEXT),
       makeMessage('user', 'stable input'),
@@ -202,11 +210,46 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const divergedTurn = [
       makeMessage('system', LONG_SYSTEM_TEXT),
       makeMessage('user', 'stable input'),
-      makeMessage('user', 'edited input'),
+      makeMessage('user', 'input 1'),
+      makeMessage('assistant', 'edited reply'),
       makeMessage('user', 'input 3'),
     ];
 
-    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, divergedTurn])).toEqual([1, 3]);
+    const plan = planTurns([firstTurn, secondTurn, divergedTurn]);
+    expect(plan.anchorIndexes).toEqual([1, 2, 4]);
+    expect(breakpointIndexes(markCacheBreakpoints(divergedTurn, plan))).toEqual([1, 2, 4]);
+  });
+
+  it('5개 후보는 토큰 간격이 가장 좁은 내부 앵커를 제거해 경계 2개를 보존한다', () => {
+    const previousMessages = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'A'.repeat(400)),
+      makeMessage('user', 'B'.repeat(400)),
+      makeMessage('user', ''),
+      makeMessage('user', ''),
+      makeMessage('user', 'C'.repeat(400)),
+      makeMessage('user', 'D'.repeat(400)),
+    ];
+    const previousState: CacheAnchorState = {
+      anchorIndexes: [0, 2, 4, 6],
+      fingerprints: previousMessages.map(fingerprintMessage),
+    };
+    const currentMessages = [...previousMessages, makeMessage('user', 'E'.repeat(4000))];
+
+    const plan = planCacheAnchors(previousState, currentMessages);
+
+    expect(plan.anchorIndexes).toEqual([0, 2, 6, 7]);
+  });
+
+  it('최대 4개 앵커를 모두 1024토큰 가드와 markable role 규칙으로 마킹한다', () => {
+    const firstTurn = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input 1')];
+    const secondTurn = [...firstTurn, makeMessage('user', 'input 2')];
+    const thirdTurn = [...secondTurn, makeMessage('user', 'input 3')];
+    const fourthTurn = [...thirdTurn, makeMessage('user', 'input 4')];
+
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, thirdTurn, fourthTurn])).toEqual([
+      0, 2, 3, 4,
+    ]);
   });
 
   it('마킹된 breakpoint가 실제 요청 body까지 직렬화된다', () => {
@@ -266,7 +309,8 @@ describe('cache anchor state storage', () => {
     '',
     '{broken json',
     '{"unexpected":"shape"}',
-    '{"deepestDivergenceIndex":null,"fingerprints":[{"role":"invalid","hash":"x","tokenEstimate":1}],"frontierIndex":null}',
+    '{"deepestDivergenceIndex":null,"fingerprints":[{"role":"system","hash":"x","tokenEstimate":1}],"frontierIndex":0}',
+    '{"anchorIndexes":[1,0],"fingerprints":[{"role":"system","hash":"x","tokenEstimate":1},{"role":"user","hash":"y","tokenEstimate":1}]}',
   ])(
     '저장 값이 %s이면 새 epoch(null)로 시작한다',
     async (raw) => {

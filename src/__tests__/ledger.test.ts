@@ -108,6 +108,14 @@ describe('accumulateCacheUsage', () => {
     expect(ledger.lastCostSample?.model).toBe('gpt-5.6-luna');
     expect(ledger.lastCostSample).not.toHaveProperty('serviceTier');
   });
+
+  it('응답 service_tier가 null이면 샘플에는 티어를 기록하지 않는다', async () => {
+    stubPluginStorage();
+
+    await accumulateCacheUsage(undefined, { service_tier: null }, 'gpt-5.6-sol');
+
+    expect((await loadCacheLedger()).lastCostSample).not.toHaveProperty('serviceTier');
+  });
 });
 
 describe('loadCacheLedger / resetCacheLedger', () => {
@@ -115,7 +123,6 @@ describe('loadCacheLedger / resetCacheLedger', () => {
     '',
     '{broken json',
     '{"unexpected":"shape"}',
-    '{"readTokens":1,"writeTokens":2,"since":"valid","costUsd":3,"lastCostSample":{"model":"gpt","at":"not-iso"}}',
   ])(
     '손상된 저장 값(%s)은 빈 원장으로 자가 회복한다',
     async (raw) => {
@@ -127,6 +134,25 @@ describe('loadCacheLedger / resetCacheLedger', () => {
       expect(ledger.costUsd).toBe(0);
     },
   );
+
+  it('마지막 샘플 at이 datetime 형식이 아니어도 누적 원장을 보존한다', async () => {
+    stubPluginStorage(
+      JSON.stringify({
+        readTokens: 120,
+        since: '2026-07-01T00:00:00.000Z',
+        writeTokens: 30,
+        costUsd: 0.5,
+        lastCostSample: { model: 'gpt-5.6-sol', at: 'provider-local-time' },
+      }),
+    );
+
+    const ledger = await loadCacheLedger();
+
+    expect(ledger.readTokens).toBe(120);
+    expect(ledger.writeTokens).toBe(30);
+    expect(ledger.costUsd).toBe(0.5);
+    expect(ledger.lastCostSample?.at).toBe('provider-local-time');
+  });
 
   it('비용 필드가 없는 구버전 원장을 기본값으로 마이그레이션해 이어 쓴다', async () => {
     const since = '2026-07-01T00:00:00.000Z';
