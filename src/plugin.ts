@@ -1,5 +1,6 @@
 import { Llm, LlmHttpError, LLMGatewayProvider, OpenAIChatCompletionsFormat } from 'llm-io';
 import { toLlmMessages } from './convert';
+import { openSettings } from './settings';
 
 declare const __VERSION__: string;
 
@@ -66,6 +67,14 @@ async function requestLLMGateway(
 
 async function main(): Promise<void> {
   await risuai.addProvider(PROVIDER_NAME, requestLLMGateway);
+  const settingsRegistration = await risuai.registerSetting(
+    'LLM Gateway',
+    openSettings,
+    '&#x1f511;',
+    'html',
+    'llm-gateway-settings',
+  );
+  await risuai.onUnload(() => risuai.unregisterUIPart(settingsRegistration.id));
   console.log(`[llm-gateway-provider] v${__VERSION__} loaded`);
 }
 
