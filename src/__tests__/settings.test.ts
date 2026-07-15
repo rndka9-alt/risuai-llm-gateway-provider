@@ -124,7 +124,6 @@ describe('ledger display', () => {
   it('기록이 없으면 안내 문구를 중립 톤으로 보여준다', () => {
     expect(buildLedgerDisplay(createEmptyCacheLedger())).toEqual({
       amountText: '아직 기록 없음',
-      detailText: '',
       tone: 'neutral',
     });
   });
@@ -134,20 +133,8 @@ describe('ledger display', () => {
 
     expect(buildLedgerDisplay(ledger)).toEqual({
       amountText: '+8.0k tokens',
-      detailText: '(읽기 10.0k / 쓰기 4.0k)',
       tone: 'gain',
     });
-  });
-
-  it('실 지출은 디테일에 병기한다', () => {
-    const ledger = {
-      ...createEmptyCacheLedger(),
-      readTokens: 10_000,
-      writeTokens: 4_000,
-      costUsd: 1.2345,
-    };
-
-    expect(buildLedgerDisplay(ledger).detailText).toBe('(읽기 10.0k / 쓰기 4.0k / 지출 $1.2345)');
   });
 
   it('실측 절감액이 있으면 USD 금액을 대표값으로 쓴다', () => {
@@ -327,7 +314,8 @@ describe('settings UI', () => {
     // 읽기/쓰기 원시값은 상시 노출이 아니라 팝오버 상세로만 보여준다.
     expect(html).not.toContain('ledger-read-summary');
     expect(html).toContain('<span>읽기</span><span id="ledger-read-detail">0</span>');
-    expect(html).toContain('<span>지출</span><span id="ledger-cost-detail">$0.0000</span>');
+    // 지출 행은 UI에서 제거됨 — 누적(costUsd) 자체는 원장에 계속 쌓인다.
+    expect(html).not.toContain('ledger-cost-detail');
     expect(html).toContain('<span>캐시 손익</span><span id="ledger-amount"></span>');
     expect(resetButton).toBeGreaterThan(-1);
     expect(resetButton).toBeLessThan(popoverStart);

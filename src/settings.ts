@@ -314,12 +314,11 @@ export function formatTokenCount(value: number): string {
 
 export interface LedgerDisplay {
   amountText: string;
-  detailText: string;
   tone: 'gain' | 'loss' | 'neutral';
 }
 
 // 손익을 대표값 하나로 보여준다 — 실측 절감 USD가 있으면 그것을, 없으면
-// 입력 정가 토큰 등가(0.9R − 0.25W)를 쓴다. 원시 읽기/쓰기는 검산용 디테일로.
+// 입력 정가 토큰 등가(0.9R − 0.25W)를 쓴다. 원시 읽기/쓰기는 팝오버 상세로.
 export function buildLedgerDisplay(ledger: CacheLedger): LedgerDisplay {
   const hasRecords =
     ledger.readTokens !== 0 ||
@@ -327,7 +326,7 @@ export function buildLedgerDisplay(ledger: CacheLedger): LedgerDisplay {
     ledger.costUsd !== 0 ||
     ledger.savedUsd !== 0;
   if (!hasRecords) {
-    return { amountText: '아직 기록 없음', detailText: '', tone: 'neutral' };
+    return { amountText: '아직 기록 없음', tone: 'neutral' };
   }
 
   const useUsd = ledger.savedUsd !== 0;
@@ -338,15 +337,8 @@ export function buildLedgerDisplay(ledger: CacheLedger): LedgerDisplay {
     ? `${sign}$${absolute.toFixed(4)}`
     : `${sign}${formatTokenCount(absolute)} tokens`;
 
-  const detailParts = [
-    `읽기 ${formatTokenCount(ledger.readTokens)}`,
-    `쓰기 ${formatTokenCount(ledger.writeTokens)}`,
-  ];
-  if (ledger.costUsd !== 0) detailParts.push(`지출 $${ledger.costUsd.toFixed(4)}`);
-
   return {
     amountText,
-    detailText: `(${detailParts.join(' / ')})`,
     tone: amountValue >= 0 ? 'gain' : 'loss',
   };
 }
@@ -475,7 +467,6 @@ export function createSettingsHtml(currentModel: string): string {
               '<div id="ledger-detail" class="ledger-detail">' +
                 '<div class="ledger-row"><span>읽기</span><span id="ledger-read-detail">0</span></div>' +
                 '<div class="ledger-row"><span>쓰기</span><span id="ledger-write-detail">0</span></div>' +
-                '<div class="ledger-row"><span>지출</span><span id="ledger-cost-detail">$0.0000</span></div>' +
                 '<div class="ledger-row ledger-result"><span>캐시 손익</span><span id="ledger-amount"></span></div>' +
               '</div>' +
             '</div>' +
@@ -556,7 +547,6 @@ export async function openSettings(
   const ledgerElements: LedgerElements = {
     amount: requireElement('ledger-amount'),
     amountSummary: requireElement('ledger-amount-summary'),
-    costDetail: requireElement('ledger-cost-detail'),
     readDetail: requireElement('ledger-read-detail'),
     writeDetail: requireElement('ledger-write-detail'),
   };
@@ -664,7 +654,6 @@ export async function openSettings(
 interface LedgerElements {
   amount: HTMLElement;
   amountSummary: HTMLElement;
-  costDetail: HTMLElement;
   readDetail: HTMLElement;
   writeDetail: HTMLElement;
 }
@@ -676,7 +665,6 @@ function renderLedger(elements: LedgerElements, ledger: CacheLedger): void {
   elements.amountSummary.className = `amount ${display.tone}`;
   elements.readDetail.textContent = formatTokenCount(ledger.readTokens);
   elements.writeDetail.textContent = formatTokenCount(ledger.writeTokens);
-  elements.costDetail.textContent = `$${ledger.costUsd.toFixed(4)}`;
   elements.amount.textContent = display.amountText;
   elements.amount.className = `amount ${display.tone}`;
 }
