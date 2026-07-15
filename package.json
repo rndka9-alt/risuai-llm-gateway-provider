@@ -1,6 +1,7 @@
 {
   "name": "risuai-llm-gateway-provider",
   "private": true,
+  "license": "CC0-1.0",
   "type": "module",
   "version": "0.1.0",
   "scripts": {
