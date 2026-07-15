@@ -64,7 +64,6 @@ interface StreamConsumptionResult {
 
 interface ProviderRegistrationSettings {
   flagNames: readonly ConfigurableLlmFlagName[];
-  streamingMode: StreamingMode;
 }
 
 async function readArgument(key: string): Promise<string | undefined> {
@@ -156,9 +155,11 @@ async function completeSuccessfulRequest(
 
 async function requestLLMGateway(
   providerArguments: ProviderArguments,
-  streamingMode: StreamingMode,
   abortSignal?: AbortSignal,
 ): Promise<ProviderResponse> {
+  // hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌으므로,
+  // 스트리밍 모드는 매 요청 라이브로 읽어 저장 즉시 반영한다 (새로고침 불필요).
+  const streamingMode = resolveStreamingMode(await readArgument(STREAMING_MODE_ARGUMENT));
   const apiKey = await readArgument('api_key');
 
   if (apiKey === undefined) {
@@ -274,12 +275,10 @@ async function requestLLMGateway(
 async function main(): Promise<void> {
   const registrationSettings: ProviderRegistrationSettings = {
     flagNames: resolveConfigurableLlmFlagNames(await readArgument(FLAGS_ARGUMENT)),
-    streamingMode: resolveStreamingMode(await readArgument(STREAMING_MODE_ARGUMENT)),
   };
   await risuai.addProvider(
     PROVIDER_NAME,
-    (providerArguments, abortSignal) =>
-      requestLLMGateway(providerArguments, registrationSettings.streamingMode, abortSignal),
+    (providerArguments, abortSignal) => requestLLMGateway(providerArguments, abortSignal),
     {
       // RisuAI src/ts/tokenizer.ts가 custom provider의 o200k_base 문자열을 직접 소비한다.
       tokenizer: 'o200k_base',

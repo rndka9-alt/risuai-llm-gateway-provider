@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STYLES } from '../constants';
 import { createEmptyCacheLedger } from '../ledger';
 import {
   buildLedgerDisplay,
@@ -248,20 +249,56 @@ describe('generation option settings', () => {
 });
 
 describe('settings UI', () => {
-  it('선택 인자와 활성 flag 체크박스를 렌더링한다', () => {
+  it('필드 캡션과 활성 flag 체크박스를 렌더링한다', () => {
     const html = createSettingsHtml('gpt-5.6-sol');
 
+    for (const caption of [
+      'API 키',
+      '캐시 모드',
+      'Reasoning effort',
+      'Verbosity',
+      '스트리밍',
+      '고급',
+      '모델',
+      '티어',
+      'LLM flags',
+    ]) {
+      expect(html).toContain(`>${caption}<`);
+    }
     expect(html).toContain('id="reasoning-effort"');
-    expect(html).toContain('Reasoning effort · 지정 안 함');
     expect(html).toContain('id="verbosity"');
-    expect(html).toContain('Verbosity · 지정 안 함');
-    expect(html).toContain('id="streaming-mode"');
-    expect(html).toContain('<option value="off">스트리밍 끄기</option>');
-    expect(html).toContain('<option value="decoupled">모아서 받기</option>');
-    expect(html).not.toContain('<option value="stream">');
     expect(html).toContain('id="flag-hasFullSystemPrompt"');
     expect(html).toContain('id="flag-poolSupported"');
     expect(html).not.toContain('flag-hasStreaming');
+  });
+
+  it('API key를 password 입력과 표시 토글로 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('<input id="api-key" type="password"');
+    expect(html).toContain('id="api-key-visibility"');
+    expect(html).toContain('aria-label="API 키 표시"');
+    expect(html).toContain('<svg viewBox="0 0 24 24" aria-hidden="true">');
+  });
+
+  it('스트리밍을 off와 decoupled 사이의 스위치로 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain(
+      '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch"',
+    );
+    expect(html).toContain('<span id="streaming-mode-label">끄기</span>');
+    expect(html).not.toContain('<select id="streaming-mode"');
+    expect(html).not.toContain('<option value="stream">');
+  });
+
+  it('서비스 티어를 Flex와 Default 세그먼트 버튼으로 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('class="segment-control" role="group"');
+    expect(html).toContain('id="service-tier-flex"');
+    expect(html).toContain('id="service-tier-default"');
+    expect(html).not.toContain('<select id="service-tier"');
   });
 
   it('미디어 항목은 Image Input 하나만 disabled 미지원으로 렌더링한다', () => {
@@ -277,16 +314,41 @@ describe('settings UI', () => {
     const html = createSettingsHtml('gpt-5.6-sol');
 
     expect(html).not.toContain('id="save"');
-    expect(html).toContain('id="close"');
+    expect(html).toContain('id="close" class="close-button"');
+  });
+
+  it('상시 노출은 손익 대표 금액이고 리셋 버튼은 팝오버 밖 요약 옆에 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+    const popoverStart = html.indexOf('id="ledger-popover"');
+    const resetButton = html.indexOf('id="ledger-reset"');
+
+    expect(html).toContain('aria-label="캐시 손익 상세"');
+    expect(html).toContain('<span id="ledger-amount-summary" class="amount neutral"></span>');
+    // 읽기/쓰기 원시값은 상시 노출이 아니라 팝오버 상세로만 보여준다.
+    expect(html).not.toContain('ledger-read-summary');
+    expect(html).toContain('<span>읽기</span><span id="ledger-read-detail">0</span>');
+    expect(html).toContain('<span>지출</span><span id="ledger-cost-detail">$0.0000</span>');
+    expect(html).toContain('<span>캐시 손익</span><span id="ledger-amount"></span>');
+    expect(resetButton).toBeGreaterThan(-1);
+    expect(resetButton).toBeLessThan(popoverStart);
+  });
+
+  it('accent 강조와 대비형 닫기 버튼을 테마 변수로 구성한다', () => {
+    expect(STYLES).toContain(
+      'background:color-mix(in srgb,var(--accent) 22%,var(--background))',
+    );
+    expect(STYLES).toContain(
+      'background:color-mix(in srgb,var(--text) 88%,var(--background))',
+    );
+    expect(STYLES).toContain('.ledger .amount.gain { color:#4ade80; }');
+    expect(STYLES).toContain('.ledger .amount.loss { color:#f87171; }');
   });
 
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
     expect(createProviderRegistrationSignature({
       flagNames: ['poolSupported', 'hasFullSystemPrompt'],
-      streamingMode: 'decoupled',
     })).toBe(createProviderRegistrationSignature({
       flagNames: ['hasFullSystemPrompt', 'poolSupported'],
-      streamingMode: 'decoupled',
     }));
   });
 

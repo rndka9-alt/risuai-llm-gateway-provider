@@ -54,9 +54,10 @@ const FLAG_OPTIONS: readonly FlagOption[] = [
 ];
 
 
+// streaming_mode는 요청 시 라이브로 읽혀 등록과 무관하므로, 재등록(새로고침)이
+// 필요한 항목은 addProvider 시점에 굳는 flags뿐이다.
 export interface ProviderRegistrationSettings {
   flagNames: readonly ConfigurableLlmFlagName[];
-  streamingMode: StreamingMode;
 }
 
 export async function loadApiKey(): Promise<string> {
@@ -255,14 +256,20 @@ interface FlagInput {
   name: ConfigurableLlmFlagName;
 }
 
+// 세그먼트 버튼에는 form value가 없으므로 각 DOM과 저장할 service_tier 값을 함께 묶는다.
+interface ServiceTierButton {
+  button: HTMLButtonElement;
+  value: ServiceTier;
+}
+
 interface SettingsFormElements {
   apiKeyInput: HTMLInputElement;
   flagInputs: readonly FlagInput[];
   modelSelect: HTMLSelectElement;
   promptCacheModeSelect: HTMLSelectElement;
   reasoningEffortSelect: HTMLSelectElement;
-  serviceTierSelect: HTMLSelectElement;
-  streamingModeSelect: HTMLSelectElement;
+  serviceTierButtons: readonly ServiceTierButton[];
+  streamingModeInput: HTMLInputElement;
   verbositySelect: HTMLSelectElement;
 }
 
@@ -272,11 +279,30 @@ function readSelectedFlagNames(
   return flagInputs.filter((flagInput) => flagInput.input.checked).map((flagInput) => flagInput.name);
 }
 
+function setServiceTierSelection(
+  serviceTierButtons: readonly ServiceTierButton[],
+  selectedTier: ServiceTier,
+): void {
+  for (const serviceTierButton of serviceTierButtons) {
+    const selected = serviceTierButton.value === selectedTier;
+    serviceTierButton.button.classList.toggle('selected', selected);
+    serviceTierButton.button.setAttribute('aria-pressed', String(selected));
+  }
+}
+
+function resolveStreamingModeInput(input: HTMLInputElement): StreamingMode {
+  return input.checked ? 'decoupled' : 'off';
+}
+
+function renderStreamingModeLabel(input: HTMLInputElement, label: HTMLElement): void {
+  label.textContent = input.checked ? '모아서 받기' : '끄기';
+}
+
 export function createProviderRegistrationSignature(
   settings: ProviderRegistrationSettings,
 ): string {
   const sortedFlagNames = [...settings.flagNames].sort();
-  return `${settings.streamingMode}:${serializeConfigurableLlmFlagNames(sortedFlagNames)}`;
+  return serializeConfigurableLlmFlagNames(sortedFlagNames);
 }
 
 export function formatTokenCount(value: number): string {
@@ -368,49 +394,94 @@ export function createSettingsHtml(currentModel: string): string {
   return (
     '<main id="app">' +
       '<form id="settings-form">' +
-        '<input id="api-key" type="password" aria-label="API key" placeholder="API key" autocomplete="off" spellcheck="false">' +
-        '<select id="model" aria-label="모델">' +
-          renderModelOptionsHtml(currentModel) +
-        '</select>' +
-        '<select id="reasoning-effort" aria-label="Reasoning effort">' +
-          '<option value="">Reasoning effort · 지정 안 함</option>' +
-          renderReasoningEffortOptionsHtml() +
-        '</select>' +
-        '<select id="verbosity" aria-label="Verbosity">' +
-          '<option value="">Verbosity · 지정 안 함</option>' +
-          renderVerbosityOptionsHtml() +
-        '</select>' +
-        '<select id="streaming-mode" aria-label="스트리밍 모드">' +
-          '<option value="off">스트리밍 끄기</option>' +
-          '<option value="decoupled">모아서 받기</option>' +
-        '</select>' +
-        '<select id="prompt-cache-mode" aria-label="프롬프트 캐시 모드">' +
-          '<option value="explicit">명시적 캐시 사용</option>' +
-          '<option value="disabled">캐시 끄기</option>' +
-        '</select>' +
-        '<select id="service-tier" aria-label="서비스 티어">' +
-          '<option value="default">스탠다드 티어</option>' +
-          '<option value="flex">Flex 티어</option>' +
-        '</select>' +
-        '<fieldset class="flags">' +
-          '<legend>LLM flags</legend>' +
-          renderFlagOptionsHtml() +
-        '</fieldset>' +
-        '<p id="reload-notice" class="notice" hidden>적용하려면 새로고침이 필요합니다.</p>' +
-        '<p id="save-error" class="notice" hidden>저장에 실패했어요 — 콘솔을 확인해주세요.</p>' +
-        '<div class="ledger">' +
-          '<span>캐시 손익:</span>' +
-          '<span id="ledger-amount"></span>' +
-          '<button id="ledger-reset" type="button" aria-label="캐시 손익 초기화">×</button>' +
-          '<span id="ledger-detail"></span>' +
+        '<div class="settings-content">' +
+          '<div class="field">' +
+            '<label class="field-caption" for="api-key">API 키</label>' +
+            '<div class="secret-control">' +
+              '<input id="api-key" type="password" aria-label="API key" autocomplete="off" spellcheck="false">' +
+              '<button id="api-key-visibility" class="visibility-toggle" type="button" aria-label="API 키 표시" aria-pressed="false">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+                  '<path d="M2.5 12c2.1-3.8 5.2-6 9.5-6s7.4 2.2 9.5 6c-2.1 3.8-5.2 6-9.5 6S4.6 15.8 2.5 12Z"></path>' +
+                  '<circle cx="12" cy="12" r="2.75"></circle>' +
+                  '<path class="eye-slash" d="m4 4 16 16"></path>' +
+                '</svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="field cache-mode-field">' +
+            '<label class="field-caption" for="prompt-cache-mode">캐시 모드</label>' +
+            '<select id="prompt-cache-mode" aria-label="프롬프트 캐시 모드">' +
+              '<option value="explicit">명시적 캐시 사용</option>' +
+              '<option value="disabled">캐시 끄기</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label class="field-caption" for="reasoning-effort">Reasoning effort</label>' +
+            '<select id="reasoning-effort" aria-label="Reasoning effort">' +
+              '<option value="">지정 안 함</option>' +
+              renderReasoningEffortOptionsHtml() +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label class="field-caption" for="verbosity">Verbosity</label>' +
+            '<select id="verbosity" aria-label="Verbosity">' +
+              '<option value="">지정 안 함</option>' +
+              renderVerbosityOptionsHtml() +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<span class="field-caption">스트리밍</span>' +
+            '<label class="toggle-control" for="streaming-mode">' +
+              '<span id="streaming-mode-label">끄기</span>' +
+              '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch" aria-label="스트리밍 모드">' +
+              '<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>' +
+            '</label>' +
+          '</div>' +
+          '<div class="advanced-divider"><span>고급</span></div>' +
+          '<div class="field">' +
+            '<label class="field-caption" for="model">모델</label>' +
+            '<select id="model" aria-label="모델">' +
+              renderModelOptionsHtml(currentModel) +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<span id="service-tier-label" class="field-caption">티어</span>' +
+            '<div class="segment-control" role="group" aria-labelledby="service-tier-label">' +
+              '<button id="service-tier-flex" type="button" aria-pressed="false">Flex</button>' +
+              '<button id="service-tier-default" type="button" aria-pressed="false">Default</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="field">' +
+            '<span id="llm-flags-label" class="field-caption">LLM flags</span>' +
+            '<fieldset class="flags" aria-labelledby="llm-flags-label">' +
+              renderFlagOptionsHtml() +
+            '</fieldset>' +
+          '</div>' +
+          '<p id="reload-notice" class="notice" hidden>적용하려면 새로고침이 필요합니다.</p>' +
+          '<p id="save-error" class="notice" hidden>저장에 실패했어요 — 콘솔을 확인해주세요.</p>' +
+          '<p id="cache-backoff-diagnostic" class="cache-diagnostic" hidden>' +
+            '⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. ' +
+            '프리셋의 {{time}}/{{random}}/확률 로어북을 확인해보세요' +
+          '</p>' +
         '</div>' +
-        '<p id="cache-backoff-diagnostic" class="cache-diagnostic" hidden>' +
-          '⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. ' +
-          '프리셋의 {{time}}/{{random}}/확률 로어북을 확인해보세요' +
-        '</p>' +
-        '<div class="actions">' +
-          '<button id="close" type="button">닫기</button>' +
-        '</div>' +
+        '<footer class="settings-footer">' +
+          '<div id="ledger" class="ledger">' +
+            '<button id="ledger-summary" class="ledger-trigger" type="button" aria-label="캐시 손익 상세" aria-expanded="false" aria-controls="ledger-popover">' +
+              '<span id="ledger-amount-summary" class="amount neutral"></span>' +
+              '<span class="info-icon" aria-hidden="true">ⓘ</span>' +
+            '</button>' +
+            '<button id="ledger-reset" class="ledger-reset" type="button" aria-label="캐시 손익 초기화" title="캐시 손익 초기화">×</button>' +
+            '<div id="ledger-popover" class="ledger-popover" role="dialog" aria-label="캐시 손익 상세 내역">' +
+              '<div id="ledger-detail" class="ledger-detail">' +
+                '<div class="ledger-row"><span>읽기</span><span id="ledger-read-detail">0</span></div>' +
+                '<div class="ledger-row"><span>쓰기</span><span id="ledger-write-detail">0</span></div>' +
+                '<div class="ledger-row"><span>지출</span><span id="ledger-cost-detail">$0.0000</span></div>' +
+                '<div class="ledger-row ledger-result"><span>캐시 손익</span><span id="ledger-amount"></span></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<button id="close" class="close-button" type="button">닫기</button>' +
+        '</footer>' +
       '</form>' +
     '</main>'
   );
@@ -463,38 +534,52 @@ export async function openSettings(
     input: requireCheckbox(`flag-${flagName}`),
     name: flagName,
   }));
+  const serviceTierButtons: readonly ServiceTierButton[] = [
+    { button: requireButton('service-tier-flex'), value: 'flex' },
+    { button: requireButton('service-tier-default'), value: 'default' },
+  ];
   const elements: SettingsFormElements = {
     apiKeyInput: requireApiKeyInput(),
     flagInputs,
     modelSelect: requireSelect('model'),
     promptCacheModeSelect: requireSelect('prompt-cache-mode'),
     reasoningEffortSelect: requireSelect('reasoning-effort'),
-    serviceTierSelect: requireSelect('service-tier'),
-    streamingModeSelect: requireSelect('streaming-mode'),
+    serviceTierButtons,
+    streamingModeInput: requireCheckbox('streaming-mode'),
     verbositySelect: requireSelect('verbosity'),
   };
+  const apiKeyVisibilityButton = requireButton('api-key-visibility');
   const closeButton = requireButton('close');
+  const ledgerContainer = requireElement('ledger');
   const ledgerResetButton = requireButton('ledger-reset');
-  const ledgerAmount = requireElement('ledger-amount');
-  const ledgerDetail = requireElement('ledger-detail');
+  const ledgerSummaryButton = requireButton('ledger-summary');
+  const ledgerElements: LedgerElements = {
+    amount: requireElement('ledger-amount'),
+    amountSummary: requireElement('ledger-amount-summary'),
+    costDetail: requireElement('ledger-cost-detail'),
+    readDetail: requireElement('ledger-read-detail'),
+    writeDetail: requireElement('ledger-write-detail'),
+  };
   const cacheBackoffDiagnostic = requireElement('cache-backoff-diagnostic');
   const reloadNotice = requireElement('reload-notice');
   const saveErrorNotice = requireElement('save-error');
+  const streamingModeLabel = requireElement('streaming-mode-label');
   const form = requireSettingsForm();
 
   elements.apiKeyInput.value = apiKey;
   elements.modelSelect.value = model;
   elements.promptCacheModeSelect.value = promptCacheMode;
   elements.reasoningEffortSelect.value = reasoningEffort ?? '';
-  elements.serviceTierSelect.value = serviceTier;
-  elements.streamingModeSelect.value = streamingMode;
+  setServiceTierSelection(elements.serviceTierButtons, serviceTier);
+  elements.streamingModeInput.checked = streamingMode === 'decoupled';
+  renderStreamingModeLabel(elements.streamingModeInput, streamingModeLabel);
   elements.verbositySelect.value = verbosity ?? '';
   for (const flagInput of flagInputs) {
     flagInput.input.checked = flagNames.includes(flagInput.name);
   }
   elements.apiKeyInput.focus();
 
-  renderLedger(ledgerAmount, ledgerDetail, cacheLedger);
+  renderLedger(ledgerElements, cacheLedger);
   cacheBackoffDiagnostic.hidden = !isCacheBackoffActive(cacheAnchorState);
   const registeredSignature = createProviderRegistrationSignature(registrationSettings);
 
@@ -512,16 +597,21 @@ export async function openSettings(
     );
   };
 
-  // addProvider metadata와 streaming 동작은 플러그인 로드 때 한 번 고정되므로
+  // addProvider metadata(flags)는 플러그인 로드 때 한 번 고정되므로
   // 등록 스냅샷과 달라지는 즉시 재등록(새로고침) 필요를 알린다.
   const updateReloadNotice = (): void => {
     const currentSignature = createProviderRegistrationSignature({
       flagNames: readSelectedFlagNames(flagInputs),
-      streamingMode: resolveStreamingMode(elements.streamingModeSelect.value),
     });
     reloadNotice.hidden = currentSignature === registeredSignature;
   };
 
+  apiKeyVisibilityButton.addEventListener('click', () => {
+    const revealApiKey = elements.apiKeyInput.type === 'password';
+    elements.apiKeyInput.type = revealApiKey ? 'text' : 'password';
+    apiKeyVisibilityButton.setAttribute('aria-pressed', String(revealApiKey));
+    apiKeyVisibilityButton.setAttribute('aria-label', revealApiKey ? 'API 키 숨기기' : 'API 키 표시');
+  });
   elements.apiKeyInput.addEventListener('change', () => {
     persist(() => saveApiKey(elements.apiKeyInput.value));
   });
@@ -531,18 +621,21 @@ export async function openSettings(
   elements.promptCacheModeSelect.addEventListener('change', () => {
     persist(() => savePromptCacheMode(resolvePromptCacheMode(elements.promptCacheModeSelect.value)));
   });
-  elements.serviceTierSelect.addEventListener('change', () => {
-    persist(() => saveServiceTier(resolveServiceTier(elements.serviceTierSelect.value) ?? 'default'));
-  });
+  for (const serviceTierButton of elements.serviceTierButtons) {
+    serviceTierButton.button.addEventListener('click', () => {
+      setServiceTierSelection(elements.serviceTierButtons, serviceTierButton.value);
+      persist(() => saveServiceTier(serviceTierButton.value));
+    });
+  }
   elements.reasoningEffortSelect.addEventListener('change', () => {
     persist(() => saveReasoningEffort(resolveReasoningEffort(elements.reasoningEffortSelect.value)));
   });
   elements.verbositySelect.addEventListener('change', () => {
     persist(() => saveVerbosity(resolveVerbosity(elements.verbositySelect.value)));
   });
-  elements.streamingModeSelect.addEventListener('change', () => {
-    updateReloadNotice();
-    persist(() => saveStreamingMode(resolveStreamingMode(elements.streamingModeSelect.value)));
+  elements.streamingModeInput.addEventListener('change', () => {
+    renderStreamingModeLabel(elements.streamingModeInput, streamingModeLabel);
+    persist(() => saveStreamingMode(resolveStreamingModeInput(elements.streamingModeInput)));
   });
   for (const flagInput of flagInputs) {
     flagInput.input.addEventListener('change', () => {
@@ -555,38 +648,51 @@ export async function openSettings(
   form.addEventListener('submit', (event) => {
     event.preventDefault();
   });
+  ledgerSummaryButton.addEventListener('click', () => {
+    const expanded = ledgerContainer.classList.toggle('is-open');
+    ledgerSummaryButton.setAttribute('aria-expanded', String(expanded));
+  });
   ledgerResetButton.addEventListener('click', () => {
-    void resetLedgerFromForm(ledgerAmount, ledgerDetail, ledgerResetButton);
+    void resetLedgerFromForm(ledgerElements, ledgerResetButton);
   });
   closeButton.addEventListener('click', () => {
     void risuai.hideContainer();
   });
 }
 
-function renderLedger(
-  amountElement: HTMLElement,
-  detailElement: HTMLElement,
-  ledger: CacheLedger,
-): void {
+// 요약과 팝오버가 항상 같은 원장 스냅샷을 표시하도록 갱신 대상을 한 묶음으로 전달한다.
+interface LedgerElements {
+  amount: HTMLElement;
+  amountSummary: HTMLElement;
+  costDetail: HTMLElement;
+  readDetail: HTMLElement;
+  writeDetail: HTMLElement;
+}
+
+function renderLedger(elements: LedgerElements, ledger: CacheLedger): void {
   const display = buildLedgerDisplay(ledger);
-  amountElement.textContent = display.amountText;
-  amountElement.className = `amount ${display.tone}`;
-  detailElement.textContent = display.detailText;
+  // 상시 노출은 대표 손익 금액 하나 — 색과 부호만으로 읽히므로 라벨은 팝오버에만 둔다.
+  elements.amountSummary.textContent = display.amountText;
+  elements.amountSummary.className = `amount ${display.tone}`;
+  elements.readDetail.textContent = formatTokenCount(ledger.readTokens);
+  elements.writeDetail.textContent = formatTokenCount(ledger.writeTokens);
+  elements.costDetail.textContent = `$${ledger.costUsd.toFixed(4)}`;
+  elements.amount.textContent = display.amountText;
+  elements.amount.className = `amount ${display.tone}`;
 }
 
 async function resetLedgerFromForm(
-  amountElement: HTMLElement,
-  detailElement: HTMLElement,
+  elements: LedgerElements,
   button: HTMLButtonElement,
 ): Promise<void> {
   button.disabled = true;
 
   try {
     await resetCacheLedger();
-    renderLedger(amountElement, detailElement, await loadCacheLedger());
+    renderLedger(elements, await loadCacheLedger());
   } catch (error) {
-    amountElement.textContent = '초기화 실패';
-    amountElement.className = 'amount loss';
+    elements.amount.textContent = '초기화 실패';
+    elements.amount.className = 'amount loss';
     console.error('[llm-gateway-provider] Failed to reset cache ledger', error);
   } finally {
     button.disabled = false;
