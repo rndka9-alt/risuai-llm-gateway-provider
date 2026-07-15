@@ -1,5 +1,13 @@
 import { Llm, LlmHttpError, LLMGatewayProvider, OpenAIChatCompletionsFormat } from 'llm-io';
+import {
+  PROMPT_CACHE_MODE_ARGUMENT,
+  applyCacheBreakpoints,
+  createPromptCacheExtraBody,
+  isExplicitPromptCacheMode,
+  resolvePromptCacheMode,
+} from './cache';
 import { toLlmMessages } from './convert';
+import { SERVICE_TIER_ARGUMENT, resolveServiceTier } from './options';
 import { openSettings } from './settings';
 
 declare const __VERSION__: string;
@@ -39,9 +47,21 @@ async function requestLLMGateway(
   }
 
   const baseUrl = await readArgument('base_url');
+  const promptCacheMode = resolvePromptCacheMode(await readArgument(PROMPT_CACHE_MODE_ARGUMENT));
+  const serviceTier = resolveServiceTier(await readArgument(SERVICE_TIER_ARGUMENT));
+  const messages = toLlmMessages(args.prompt_chat);
+  const messagesWithCacheBreakpoints = isExplicitPromptCacheMode(promptCacheMode)
+    ? applyCacheBreakpoints(messages)
+    : messages;
 
   const llm = new Llm({
-    format: new OpenAIChatCompletionsFormat({ model }),
+    format: new OpenAIChatCompletionsFormat({
+      model,
+      extraBody: {
+        ...createPromptCacheExtraBody(promptCacheMode),
+        ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
+      },
+    }),
     provider: new LLMGatewayProvider(baseUrl === undefined ? { apiKey } : { apiKey, baseUrl }),
     // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
     // RisuAI 브릿지를 경유한다.
@@ -50,7 +70,7 @@ async function requestLLMGateway(
 
   try {
     const output = await llm.generate({
-      messages: toLlmMessages(args.prompt_chat),
+      messages: messagesWithCacheBreakpoints,
       options: {
         maxTokens: args.max_tokens,
         temperature: args.temperature,

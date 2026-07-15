@@ -11,7 +11,9 @@
 | 인자 | 설명 |
 | --- | --- |
 | `api_key` | LLM Gateway API 키 (`llmgtwy_...`) |
-| `model` | 모델 ID (예: `gpt-5.6`) |
+| `prompt_cache_mode` | 프롬프트 캐시 모드 (`explicit` 또는 `disabled`, 기본값 `disabled`) |
+| `service_tier` | (선택) 서비스 티어 (`default` 또는 `flex`). 비우면 provider 기본(auto) |
+| `model` | 모델 ID (예: `gpt-5.6-sol`) — 설정 UI에서 sol/terra/luna 선택 가능 |
 | `base_url` | (선택) 셀프호스팅 endpoint. 비우면 `https://api.llmgateway.io/v1` |
 
 3. 모델 선택에서 `LLM Gateway`를 선택한다.

@@ -10,7 +10,9 @@ const BANNER = `/*!
 //@version ${version}
 //@api 3.0
 //@arg api_key string LLM Gateway API 키 (llmgtwy_...)
-//@arg model string 모델 ID (예: gpt-5.6)
+//@arg prompt_cache_mode string 프롬프트 캐시 모드 (explicit 또는 disabled)
+//@arg service_tier string 서비스 티어 (default 또는 flex). 비우면 provider 기본(auto)
+//@arg model string 모델 ID (예: gpt-5.6-sol)
 //@arg base_url string 셀프호스팅 endpoint. 비우면 https://api.llmgateway.io/v1
 //@update-url https://raw.githubusercontent.com/rndka9-alt/risuai-llm-gateway-provider/main/plugin.min.js
 */`;
