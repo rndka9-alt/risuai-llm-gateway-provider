@@ -21,7 +21,7 @@ npm test
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰 누적, 0.9R − 0.25W 순절감 계산)
-- `src/options.ts` — 모델 프리셋(sol/terra/luna)·서비스 티어 인자
+- `src/options.ts` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자
 - `src/settings.ts` + `src/theme.ts` + `src/constants.ts` — 설정 UI (인자 편집 + 손익 표시/리셋)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
@@ -54,7 +54,16 @@ npm test
 - **프로바이더 인자 실체**: `ProviderArguments`의 샘플러 값들은 d.ts와 달리 런타임에 누락될 수 있다
   (RisuAI `applyParameters`가 -1000 "off" 값을 skip). llm-io가 undefined를 omit하므로 그대로 통과시킨다.
 - **temperature 스케일**: RisuAI가 이미 /100 해서 API 스케일(0~2)로 넘겨준다. 추가 변환 금지.
+- **penalty 스케일**: frequency/presence penalty도 RisuAI가 이미 /100 해서 넘겨준다. `extraBody`에 그대로 전달한다.
 - **max_tokens**: llm-io ChatCompletions 포맷이 `max_completion_tokens`로 직렬화한다 (GPT-5.6 대응).
+- **reasoning/verbosity 경로**: RisuAI는 플러그인 provider 인자를 하드코딩해 두 값을 전달하지 않는다.
+  플러그인 인자에서 읽어 llm-io `OpenAIChatCompletionsExtraBody`로 보내는 경로가 유일하다.
+- **스트리밍 등록 스냅샷**: `streaming_mode`와 flags는 플러그인 로드 때 읽어 provider 동작과
+  model metadata를 함께 고정한다. 설정 변경 후에는 새로고침 또는 플러그인 재활성화가 필요하다.
+- **LLMFlags 숫자 동기화**: `src/options.ts`의 이름→숫자 매핑은 RisuAI
+  `src/ts/model/types.ts`의 `LLMFlags`가 출처다. 본체 값 변경 시 반드시 함께 갱신한다.
+- **tokenizer**: RisuAI `src/ts/tokenizer.ts`가 custom provider의 `o200k_base` 문자열을 직접
+  소비하므로 addProvider top-level tokenizer로 지정한다.
 - **esbuild IIFE**: RisuAI가 플러그인 코드를 `(async () => { ... })()`로 인라인하므로 ESM 불가.
   top-level await도 IIFE 포맷에서 빌드 에러 — `void main()` 패턴 사용.
 - **권한 팝업**: 첫 프로바이더 호출 시 유저 승인 필요 (3일 주기 재확인).
@@ -65,9 +74,10 @@ npm test
   `anthropic-messages`(→ `/messages`)만 라우팅한다. OpenAIResponses는 `throwUnsupportedFormat`.
   llmgateway.io 서비스 자체는 `/v1/responses`를 지원하므로(Codex CLI 가이드, 데이터 보존 설정 필요),
   Responses 지원은 llm-io에 경로 매핑을 추가하면 가능 — 보류 상태.
-- **논스트리밍 v1**: 브릿지가 스트림을 통과시키므로 `llm.streamText` 기반 스트리밍이 기술적으로 가능. 추후 작업.
-- **frequency/presence penalty 미전달**: llm-io `LlmRequestOptions`가 maxTokens/temperature/topP만 노출.
-  필요해지면 `extraBody`로 전달.
+- **스트리밍 3모드**: `off`는 `generate()`, `decoupled`는 `stream()`을 끝까지 소비한 완성 문자열,
+  `stream`은 text delta `ReadableStream<string>`을 반환한다. streaming usage와 앵커 상태는 완료 시 반영한다.
+- **미디어 flags 비활성화**: `convert.ts`가 텍스트 전용이므로 Image/Audio/Video flags는 설정 UI에서
+  disabled 상태다. 멀티모달 변환 구현 전 활성화하면 데이터가 조용히 유실될 수 있다.
 
 ## Git
 

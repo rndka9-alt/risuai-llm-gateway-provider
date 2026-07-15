@@ -11,16 +11,60 @@ import {
   type CacheLedger,
 } from './ledger';
 import {
+  CONFIGURABLE_LLM_FLAG_NAMES,
   DEFAULT_MODEL,
+  FLAGS_ARGUMENT,
   MODEL_ARGUMENT,
   MODEL_OPTIONS,
+  REASONING_EFFORT_ARGUMENT,
+  REASONING_EFFORT_OPTIONS,
   SERVICE_TIER_ARGUMENT,
+  STREAMING_MODE_ARGUMENT,
+  UNSUPPORTED_MEDIA_LLM_FLAG_NAMES,
+  VERBOSITY_ARGUMENT,
+  VERBOSITY_OPTIONS,
+  resolveConfigurableLlmFlagNames,
+  resolveReasoningEffort,
   resolveServiceTier,
+  resolveStreamingMode,
+  resolveVerbosity,
+  serializeConfigurableLlmFlagNames,
+  type ConfigurableLlmFlagName,
+  type ReasoningEffort,
   type ServiceTier,
+  type StreamingMode,
+  type UnsupportedMediaLlmFlagName,
+  type Verbosity,
 } from './options';
 import { applyTheme, resolveScheme } from './theme';
 
 const API_KEY_ARGUMENT = 'api_key';
+
+interface FlagOption {
+  label: string;
+  name: ConfigurableLlmFlagName;
+}
+
+const FLAG_OPTIONS: readonly FlagOption[] = [
+  { label: 'Full System Prompt', name: 'hasFullSystemPrompt' },
+  { label: 'First System Prompt', name: 'hasFirstSystemPrompt' },
+  { label: 'Alternate Role', name: 'requiresAlternateRole' },
+  { label: 'Must Start With User', name: 'mustStartWithUserInput' },
+  { label: 'Pool Supported', name: 'poolSupported' },
+];
+
+const UNSUPPORTED_MEDIA_FLAG_LABELS: Record<UnsupportedMediaLlmFlagName, string> = {
+  hasImageInput: 'Image Input',
+  hasImageOutput: 'Image Output',
+  hasAudioInput: 'Audio Input',
+  hasAudioOutput: 'Audio Output',
+  hasVideoInput: 'Video Input',
+};
+
+export interface ProviderRegistrationSettings {
+  flagNames: readonly ConfigurableLlmFlagName[];
+  streamingMode: StreamingMode;
+}
 
 export async function loadApiKey(): Promise<string> {
   const value = await risuai.getArgument(API_KEY_ARGUMENT);
@@ -75,11 +119,69 @@ export async function saveServiceTier(value: ServiceTier): Promise<void> {
   await risuai.setArgument(SERVICE_TIER_ARGUMENT, value);
 }
 
+export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined> {
+  const value = await risuai.getArgument(REASONING_EFFORT_ARGUMENT);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') {
+    throw new TypeError('reasoning_effort argument must be a string');
+  }
+  return resolveReasoningEffort(value);
+}
+
+export async function saveReasoningEffort(value: ReasoningEffort | undefined): Promise<void> {
+  await risuai.setArgument(REASONING_EFFORT_ARGUMENT, value ?? '');
+}
+
+export async function loadVerbosity(): Promise<Verbosity | undefined> {
+  const value = await risuai.getArgument(VERBOSITY_ARGUMENT);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') {
+    throw new TypeError('verbosity argument must be a string');
+  }
+  return resolveVerbosity(value);
+}
+
+export async function saveVerbosity(value: Verbosity | undefined): Promise<void> {
+  await risuai.setArgument(VERBOSITY_ARGUMENT, value ?? '');
+}
+
+export async function loadStreamingMode(): Promise<StreamingMode> {
+  const value = await risuai.getArgument(STREAMING_MODE_ARGUMENT);
+  if (value === undefined) return 'off';
+  if (typeof value !== 'string') {
+    throw new TypeError('streaming_mode argument must be a string');
+  }
+  return resolveStreamingMode(value);
+}
+
+export async function saveStreamingMode(value: StreamingMode): Promise<void> {
+  await risuai.setArgument(STREAMING_MODE_ARGUMENT, value);
+}
+
+export async function loadConfigurableLlmFlagNames(): Promise<readonly ConfigurableLlmFlagName[]> {
+  const value = await risuai.getArgument(FLAGS_ARGUMENT);
+  if (value === undefined) return resolveConfigurableLlmFlagNames(undefined);
+  if (typeof value !== 'string') {
+    throw new TypeError('flags argument must be a string');
+  }
+  return resolveConfigurableLlmFlagNames(value);
+}
+
+export async function saveConfigurableLlmFlagNames(
+  flagNames: readonly ConfigurableLlmFlagName[],
+): Promise<void> {
+  await risuai.setArgument(FLAGS_ARGUMENT, serializeConfigurableLlmFlagNames(flagNames));
+}
+
 export interface SettingsValues {
   apiKey: string;
+  flagNames: readonly ConfigurableLlmFlagName[];
   model: string;
   promptCacheMode: PromptCacheMode;
+  reasoningEffort: ReasoningEffort | undefined;
   serviceTier: ServiceTier;
+  streamingMode: StreamingMode;
+  verbosity: Verbosity | undefined;
 }
 
 export async function saveSettings(values: SettingsValues): Promise<void> {
@@ -88,6 +190,10 @@ export async function saveSettings(values: SettingsValues): Promise<void> {
     saveModel(values.model),
     savePromptCacheMode(values.promptCacheMode),
     saveServiceTier(values.serviceTier),
+    saveReasoningEffort(values.reasoningEffort),
+    saveVerbosity(values.verbosity),
+    saveStreamingMode(values.streamingMode),
+    saveConfigurableLlmFlagNames(values.flagNames),
   ]);
 }
 
@@ -107,6 +213,14 @@ function requireApiKeyInput(): HTMLInputElement {
   const element = document.getElementById('api-key');
   if (!(element instanceof HTMLInputElement)) {
     throw new Error('API key input was not rendered');
+  }
+  return element;
+}
+
+function requireCheckbox(id: string): HTMLInputElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLInputElement) || element.type !== 'checkbox') {
+    throw new Error(`${id} checkbox was not rendered`);
   }
   return element;
 }
@@ -143,28 +257,69 @@ function requireLedgerSummary(): HTMLElement {
   return element;
 }
 
+function requireReloadNotice(): HTMLElement {
+  const element = document.getElementById('reload-notice');
+  if (!(element instanceof HTMLElement)) {
+    throw new Error('Reload notice was not rendered');
+  }
+  return element;
+}
+
+interface FlagInput {
+  input: HTMLInputElement;
+  name: ConfigurableLlmFlagName;
+}
+
 interface SettingsFormElements {
   apiKeyInput: HTMLInputElement;
+  flagInputs: readonly FlagInput[];
   modelSelect: HTMLSelectElement;
   promptCacheModeSelect: HTMLSelectElement;
+  reasoningEffortSelect: HTMLSelectElement;
   serviceTierSelect: HTMLSelectElement;
+  streamingModeSelect: HTMLSelectElement;
+  verbositySelect: HTMLSelectElement;
+}
+
+function readSelectedFlagNames(
+  flagInputs: readonly FlagInput[],
+): readonly ConfigurableLlmFlagName[] {
+  return flagInputs.filter((flagInput) => flagInput.input.checked).map((flagInput) => flagInput.name);
+}
+
+export function createProviderRegistrationSignature(
+  settings: ProviderRegistrationSettings,
+): string {
+  const sortedFlagNames = [...settings.flagNames].sort();
+  return `${settings.streamingMode}:${serializeConfigurableLlmFlagNames(sortedFlagNames)}`;
 }
 
 async function saveFromForm(
   elements: SettingsFormElements,
   button: HTMLButtonElement,
+  reloadNotice: HTMLElement,
+  registeredSignature: string,
 ): Promise<void> {
   button.disabled = true;
   button.textContent = '저장 중...';
 
+  const values: SettingsValues = {
+    apiKey: elements.apiKeyInput.value,
+    flagNames: readSelectedFlagNames(elements.flagInputs),
+    model: elements.modelSelect.value,
+    promptCacheMode: resolvePromptCacheMode(elements.promptCacheModeSelect.value),
+    reasoningEffort: resolveReasoningEffort(elements.reasoningEffortSelect.value),
+    serviceTier: resolveServiceTier(elements.serviceTierSelect.value) ?? 'default',
+    streamingMode: resolveStreamingMode(elements.streamingModeSelect.value),
+    verbosity: resolveVerbosity(elements.verbositySelect.value),
+  };
+
   try {
-    await saveSettings({
-      apiKey: elements.apiKeyInput.value,
-      model: elements.modelSelect.value,
-      promptCacheMode: resolvePromptCacheMode(elements.promptCacheModeSelect.value),
-      serviceTier: resolveServiceTier(elements.serviceTierSelect.value) ?? 'default',
-    });
+    await saveSettings(values);
     button.textContent = '저장됨';
+    // addProvider metadata와 streaming 동작은 플러그인 로드 때 한 번 고정되므로
+    // 저장값이 등록 스냅샷과 달라지면 재등록이 필요하다는 사실을 즉시 알린다.
+    reloadNotice.hidden = createProviderRegistrationSignature(values) === registeredSignature;
   } catch (error) {
     button.textContent = '저장 실패';
     console.error('[llm-gateway-provider] Failed to save settings', error);
@@ -207,20 +362,56 @@ function renderModelOptionsHtml(currentModel: string): string {
     .join('');
 }
 
-function renderSettings(currentModel: string): void {
-  if (!document.getElementById('llm-gateway-styles')) {
-    const style = document.createElement('style');
-    style.id = 'llm-gateway-styles';
-    style.textContent = STYLES;
-    document.head.appendChild(style);
-  }
+function renderReasoningEffortOptionsHtml(): string {
+  return REASONING_EFFORT_OPTIONS
+    .map((effort) => `<option value="${effort}">${effort}</option>`)
+    .join('');
+}
 
-  document.body.innerHTML =
+function renderVerbosityOptionsHtml(): string {
+  return VERBOSITY_OPTIONS
+    .map((verbosity) => `<option value="${verbosity}">${verbosity}</option>`)
+    .join('');
+}
+
+function renderFlagOptionsHtml(): string {
+  const configurable = FLAG_OPTIONS
+    .map((option) =>
+      `<label class="checkbox"><input id="flag-${option.name}" type="checkbox">` +
+      `<span>${option.label}</span></label>`,
+    )
+    .join('');
+  // convert.ts는 현재 텍스트만 보존한다. 미디어 flag를 켜면 입력이 조용히 유실되므로
+  // 멀티모달 변환을 구현할 때까지 설정 자체를 활성화하지 않는다.
+  const unsupportedMedia = UNSUPPORTED_MEDIA_LLM_FLAG_NAMES
+    .map((flagName) =>
+      '<label class="checkbox unsupported"><input type="checkbox" disabled>' +
+      `<span>${UNSUPPORTED_MEDIA_FLAG_LABELS[flagName]} · 미지원</span></label>`,
+    )
+    .join('');
+  return configurable + unsupportedMedia;
+}
+
+export function createSettingsHtml(currentModel: string): string {
+  return (
     '<main id="app">' +
       '<form id="settings-form">' +
         '<input id="api-key" type="password" aria-label="API key" placeholder="API key" autocomplete="off" spellcheck="false">' +
         '<select id="model" aria-label="모델">' +
           renderModelOptionsHtml(currentModel) +
+        '</select>' +
+        '<select id="reasoning-effort" aria-label="Reasoning effort">' +
+          '<option value="">Reasoning effort · 지정 안 함</option>' +
+          renderReasoningEffortOptionsHtml() +
+        '</select>' +
+        '<select id="verbosity" aria-label="Verbosity">' +
+          '<option value="">Verbosity · 지정 안 함</option>' +
+          renderVerbosityOptionsHtml() +
+        '</select>' +
+        '<select id="streaming-mode" aria-label="스트리밍 모드">' +
+          '<option value="off">스트리밍 끄기</option>' +
+          '<option value="decoupled">분리 스트리밍</option>' +
+          '<option value="stream">실시간 스트리밍</option>' +
         '</select>' +
         '<select id="prompt-cache-mode" aria-label="프롬프트 캐시 모드">' +
           '<option value="explicit">명시적 캐시 사용</option>' +
@@ -230,6 +421,12 @@ function renderSettings(currentModel: string): void {
           '<option value="default">스탠다드 티어</option>' +
           '<option value="flex">Flex 티어</option>' +
         '</select>' +
+        '<fieldset class="flags">' +
+          '<legend>LLM flags</legend>' +
+          renderFlagOptionsHtml() +
+          '<p class="help">미디어 입출력은 텍스트 전용 변환 때문에 현재 미지원입니다.</p>' +
+        '</fieldset>' +
+        '<p id="reload-notice" class="notice" hidden>적용하려면 새로고침이 필요합니다.</p>' +
         '<div class="ledger">' +
           '<span id="ledger-summary"></span>' +
           '<button id="ledger-reset" type="button" aria-label="캐시 손익 초기화">🗑</button>' +
@@ -239,45 +436,88 @@ function renderSettings(currentModel: string): void {
           '<button id="close" type="button">닫기</button>' +
         '</div>' +
       '</form>' +
-    '</main>';
+    '</main>'
+  );
 }
 
-export async function openSettings(): Promise<void> {
+function renderSettings(currentModel: string): void {
+  if (!document.getElementById('llm-gateway-styles')) {
+    const style = document.createElement('style');
+    style.id = 'llm-gateway-styles';
+    style.textContent = STYLES;
+    document.head.appendChild(style);
+  }
+
+  document.body.innerHTML = createSettingsHtml(currentModel);
+}
+
+export async function openSettings(
+  registrationSettings: ProviderRegistrationSettings,
+): Promise<void> {
   await risuai.showContainer('fullscreen');
 
-  const [apiKey, model, promptCacheMode, serviceTier] = await Promise.all([
+  const [
+    apiKey,
+    model,
+    promptCacheMode,
+    serviceTier,
+    reasoningEffort,
+    verbosity,
+    streamingMode,
+    flagNames,
+  ] = await Promise.all([
     loadApiKey(),
     loadModel(),
     loadPromptCacheMode(),
     loadServiceTier(),
+    loadReasoningEffort(),
+    loadVerbosity(),
+    loadStreamingMode(),
+    loadConfigurableLlmFlagNames(),
   ]);
 
   renderSettings(model);
   applyTheme(await resolveScheme());
 
+  const flagInputs = CONFIGURABLE_LLM_FLAG_NAMES.map((flagName) => ({
+    input: requireCheckbox(`flag-${flagName}`),
+    name: flagName,
+  }));
   const elements: SettingsFormElements = {
     apiKeyInput: requireApiKeyInput(),
+    flagInputs,
     modelSelect: requireSelect('model'),
     promptCacheModeSelect: requireSelect('prompt-cache-mode'),
+    reasoningEffortSelect: requireSelect('reasoning-effort'),
     serviceTierSelect: requireSelect('service-tier'),
+    streamingModeSelect: requireSelect('streaming-mode'),
+    verbositySelect: requireSelect('verbosity'),
   };
   const saveButton = requireButton('save');
   const closeButton = requireButton('close');
   const ledgerResetButton = requireButton('ledger-reset');
   const ledgerSummary = requireLedgerSummary();
+  const reloadNotice = requireReloadNotice();
   const form = requireSettingsForm();
 
   elements.apiKeyInput.value = apiKey;
   elements.modelSelect.value = model;
   elements.promptCacheModeSelect.value = promptCacheMode;
+  elements.reasoningEffortSelect.value = reasoningEffort ?? '';
   elements.serviceTierSelect.value = serviceTier;
+  elements.streamingModeSelect.value = streamingMode;
+  elements.verbositySelect.value = verbosity ?? '';
+  for (const flagInput of flagInputs) {
+    flagInput.input.checked = flagNames.includes(flagInput.name);
+  }
   elements.apiKeyInput.focus();
 
   ledgerSummary.textContent = formatLedgerSummary(await loadCacheLedger());
+  const registeredSignature = createProviderRegistrationSignature(registrationSettings);
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void saveFromForm(elements, saveButton);
+    void saveFromForm(elements, saveButton, reloadNotice, registeredSignature);
   });
   ledgerResetButton.addEventListener('click', () => {
     void resetLedgerFromForm(ledgerSummary, ledgerResetButton);

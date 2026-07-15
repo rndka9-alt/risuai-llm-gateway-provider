@@ -1117,11 +1117,11 @@ interface ProviderArguments {
     /** Maximum tokens to generate */
     max_tokens: number;
     /** Frequency penalty */
-    frequency_penalty: number;
+    frequency_penalty?: number;
     /** Minimum probability */
     min_p: number;
     /** Presence penalty */
-    presence_penalty: number;
+    presence_penalty?: number;
     /** Repetition penalty */
     repetition_penalty: number;
     /** Top-K sampling */
@@ -1158,6 +1158,12 @@ interface ProviderOptions {
     tokenizer?: string;
     /** Custom tokenizer function */
     tokenizerFunc?: (content: string) => number[] | Promise<number[]>;
+    /** Model metadata shown in the RisuAI model settings UI */
+    model?: {
+        name: string;
+        flags: number[];
+        parameters: Array<'temperature' | 'top_p' | 'frequency_penalty' | 'presence_penalty'>;
+    };
 }
 
 // ============================================================================

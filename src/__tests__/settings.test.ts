@@ -3,10 +3,16 @@ import { createEmptyCacheLedger } from '../ledger';
 import {
   formatLedgerSummary,
   formatTokenCount,
+  createProviderRegistrationSignature,
+  createSettingsHtml,
   loadApiKey,
+  loadConfigurableLlmFlagNames,
   loadModel,
   loadPromptCacheMode,
+  loadReasoningEffort,
   loadServiceTier,
+  loadStreamingMode,
+  loadVerbosity,
   saveApiKey,
   saveSettings,
 } from '../settings';
@@ -55,21 +61,32 @@ describe('prompt cache settings', () => {
     await expect(loadPromptCacheMode()).resolves.toBe('disabled');
   });
 
-  it('API key·모델·캐시 모드·서비스 티어를 함께 저장한다', async () => {
+  it('전체 설정값을 함께 저장한다', async () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('risuai', { setArgument });
 
     await saveSettings({
       apiKey: 'llmgtwy_new_secret',
+      flagNames: ['hasFullSystemPrompt', 'poolSupported'],
       model: 'gpt-5.6-luna',
       promptCacheMode: 'explicit',
+      reasoningEffort: 'xhigh',
       serviceTier: 'flex',
+      streamingMode: 'stream',
+      verbosity: 'low',
     });
 
     expect(setArgument).toHaveBeenCalledWith('api_key', 'llmgtwy_new_secret');
     expect(setArgument).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
     expect(setArgument).toHaveBeenCalledWith('prompt_cache_mode', 'explicit');
     expect(setArgument).toHaveBeenCalledWith('service_tier', 'flex');
+    expect(setArgument).toHaveBeenCalledWith('reasoning_effort', 'xhigh');
+    expect(setArgument).toHaveBeenCalledWith('verbosity', 'low');
+    expect(setArgument).toHaveBeenCalledWith('streaming_mode', 'stream');
+    expect(setArgument).toHaveBeenCalledWith(
+      'flags',
+      'hasFullSystemPrompt,poolSupported',
+    );
   });
 });
 
@@ -133,5 +150,84 @@ describe('service tier settings', () => {
     vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
 
     await expect(loadServiceTier()).resolves.toBe('default');
+  });
+});
+
+describe('generation option settings', () => {
+  it('reasoning_effort와 verbosity 선택값을 불러온다', async () => {
+    const getArgument = vi.fn(async (key: string) => {
+      if (key === 'reasoning_effort') return 'high';
+      if (key === 'verbosity') return 'medium';
+      return undefined;
+    });
+    vi.stubGlobal('risuai', { getArgument });
+
+    await expect(loadReasoningEffort()).resolves.toBe('high');
+    await expect(loadVerbosity()).resolves.toBe('medium');
+  });
+
+  it('미지정 선택값은 undefined로 불러온다', async () => {
+    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('') });
+
+    await expect(loadReasoningEffort()).resolves.toBeUndefined();
+    await expect(loadVerbosity()).resolves.toBeUndefined();
+  });
+
+  it('streaming_mode 기본값은 off다', async () => {
+    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(undefined) });
+
+    await expect(loadStreamingMode()).resolves.toBe('off');
+  });
+
+  it('flags 미지정 기본값과 저장값을 판별한다', async () => {
+    const getArgument = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce('hasFirstSystemPrompt,poolSupported');
+    vi.stubGlobal('risuai', { getArgument });
+
+    await expect(loadConfigurableLlmFlagNames()).resolves.toEqual(['hasFullSystemPrompt']);
+    await expect(loadConfigurableLlmFlagNames()).resolves.toEqual([
+      'hasFirstSystemPrompt',
+      'poolSupported',
+    ]);
+  });
+});
+
+describe('settings UI', () => {
+  it('선택 인자와 활성 flag 체크박스를 렌더링한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('id="reasoning-effort"');
+    expect(html).toContain('Reasoning effort · 지정 안 함');
+    expect(html).toContain('id="verbosity"');
+    expect(html).toContain('Verbosity · 지정 안 함');
+    expect(html).toContain('id="streaming-mode"');
+    expect(html).toContain('id="flag-hasFullSystemPrompt"');
+    expect(html).toContain('id="flag-poolSupported"');
+    expect(html).not.toContain('flag-hasStreaming');
+  });
+
+  it.each(['Image Input', 'Image Output', 'Audio Input', 'Audio Output', 'Video Input'])(
+    '%s는 disabled 미지원 항목으로 렌더링한다',
+    (label) => {
+      const html = createSettingsHtml('gpt-5.6-sol');
+      expect(html).toContain(`<span>${label} · 미지원</span>`);
+    },
+  );
+
+  it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
+    expect(createProviderRegistrationSignature({
+      flagNames: ['poolSupported', 'hasFullSystemPrompt'],
+      streamingMode: 'decoupled',
+    })).toBe(createProviderRegistrationSignature({
+      flagNames: ['hasFullSystemPrompt', 'poolSupported'],
+      streamingMode: 'decoupled',
+    }));
+  });
+
+  it('저장 후 재등록 안내 문구를 포함한다', () => {
+    expect(createSettingsHtml('gpt-5.6-sol')).toContain(
+      '적용하려면 새로고침이 필요합니다.',
+    );
   });
 });
