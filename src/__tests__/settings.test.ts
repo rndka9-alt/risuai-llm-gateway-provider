@@ -301,6 +301,16 @@ describe('settings UI', () => {
     expect(html).not.toContain('<option value="stream">');
   });
 
+  it('응답 방식 도움말에 스트리밍 수신과 일괄 전달 동작을 설명한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('aria-describedby="streaming-mode-tooltip"');
+    expect(html).toContain('id="streaming-mode-tooltip" class="help-tooltip-content" role="tooltip"');
+    expect(html).toContain(
+      '응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.',
+    );
+  });
+
   it('서비스 티어를 Gateway 기본과 Flex 사이의 스위치로 렌더링한다', () => {
     const html = createSettingsHtml('gpt-5.6-sol');
 
@@ -310,6 +320,16 @@ describe('settings UI', () => {
     expect(html).toContain('<span id="service-tier-label">Gateway 기본</span>');
     expect(html).not.toContain('id="service-tier-default"');
     expect(html).not.toContain('<select id="service-tier"');
+  });
+
+  it('서비스 티어 도움말에 Flex 비용과 지연·실패 가능성을 설명한다', () => {
+    const html = createSettingsHtml('gpt-5.6-sol');
+
+    expect(html).toContain('aria-describedby="service-tier-tooltip"');
+    expect(html).toContain('id="service-tier-tooltip" class="help-tooltip-content" role="tooltip"');
+    expect(html).toContain(
+      '입력·출력 비용이 절반으로 줄어듭니다. 대신 서버 상황에 따라 응답이 늦어지거나 실패할 수 있습니다.',
+    );
   });
 
   it('미디어 항목은 Image Input 하나만 disabled 미지원으로 렌더링한다', () => {
@@ -334,6 +354,9 @@ describe('settings UI', () => {
     const resetButton = html.indexOf('id="ledger-reset"');
 
     expect(html).toContain('aria-label="캐시 손익 상세"');
+    expect(html).toContain('aria-describedby="ledger-popover"');
+    expect(html).not.toContain('aria-expanded="false"');
+    expect(html).toContain('id="ledger-popover" class="ledger-popover" role="tooltip"');
     expect(html).toContain('<span id="ledger-amount-summary" class="amount neutral"></span>');
     // 읽기/쓰기 원시값은 상시 노출이 아니라 팝오버 상세로만 보여준다.
     expect(html).not.toContain('ledger-read-summary');
@@ -343,6 +366,16 @@ describe('settings UI', () => {
     expect(html).toContain('<span>캐시 손익</span><span id="ledger-amount"></span>');
     expect(resetButton).toBeGreaterThan(-1);
     expect(resetButton).toBeLessThan(popoverStart);
+  });
+
+  it('도움말을 hover와 keyboard focus 동안 표시하고 고정 토글 상태를 사용하지 않는다', () => {
+    expect(STYLES).toContain(
+      '.help-tooltip:hover .help-tooltip-content, .help-tooltip:focus-within .help-tooltip-content',
+    );
+    expect(STYLES).toContain(
+      '.ledger:hover .ledger-popover, .ledger:focus-within .ledger-popover',
+    );
+    expect(STYLES).not.toContain('.ledger.is-open');
   });
 
   it('accent 강조와 대비형 닫기 버튼을 테마 변수로 구성한다', () => {

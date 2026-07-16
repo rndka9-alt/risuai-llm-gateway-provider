@@ -413,7 +413,17 @@ export function createSettingsHtml(currentModel: string): string {
             '</select>' +
           '</div>' +
           '<div class="field">' +
-            '<span class="field-caption">응답 방식</span>' +
+            '<span class="field-caption-row">' +
+              '<span class="field-caption">응답 방식</span>' +
+              '<span class="help-tooltip">' +
+                '<button class="help-tooltip-trigger" type="button" aria-label="응답 방식 도움말" aria-describedby="streaming-mode-tooltip">' +
+                  '<span aria-hidden="true">ⓘ</span>' +
+                '</button>' +
+                '<span id="streaming-mode-tooltip" class="help-tooltip-content" role="tooltip">' +
+                  '응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.' +
+                '</span>' +
+              '</span>' +
+            '</span>' +
             '<label class="toggle-control" for="streaming-mode">' +
               '<span id="streaming-mode-label">일반 요청</span>' +
               '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch" aria-label="응답 방식">' +
@@ -428,7 +438,17 @@ export function createSettingsHtml(currentModel: string): string {
             '</select>' +
           '</div>' +
           '<div class="field">' +
-            '<span class="field-caption">서비스 티어</span>' +
+            '<span class="field-caption-row">' +
+              '<span class="field-caption">서비스 티어</span>' +
+              '<span class="help-tooltip">' +
+                '<button class="help-tooltip-trigger" type="button" aria-label="Flex 서비스 티어 도움말" aria-describedby="service-tier-tooltip">' +
+                  '<span aria-hidden="true">ⓘ</span>' +
+                '</button>' +
+                '<span id="service-tier-tooltip" class="help-tooltip-content" role="tooltip">' +
+                  '입력·출력 비용이 절반으로 줄어듭니다. 대신 서버 상황에 따라 응답이 늦어지거나 실패할 수 있습니다.' +
+                '</span>' +
+              '</span>' +
+            '</span>' +
             '<label class="toggle-control" for="service-tier">' +
               '<span id="service-tier-label">Gateway 기본</span>' +
               '<input id="service-tier" class="switch-input" type="checkbox" role="switch" aria-label="Flex 서비스 티어 사용">' +
@@ -450,12 +470,12 @@ export function createSettingsHtml(currentModel: string): string {
         '</div>' +
         '<footer class="settings-footer">' +
           '<div id="ledger" class="ledger">' +
-            '<button id="ledger-summary" class="ledger-trigger" type="button" aria-label="캐시 손익 상세" aria-expanded="false" aria-controls="ledger-popover">' +
+            '<button id="ledger-summary" class="ledger-trigger" type="button" aria-label="캐시 손익 상세" aria-describedby="ledger-popover">' +
               '<span id="ledger-amount-summary" class="amount neutral"></span>' +
               '<span class="info-icon" aria-hidden="true">ⓘ</span>' +
             '</button>' +
             '<button id="ledger-reset" class="ledger-reset" type="button" aria-label="캐시 손익 초기화" title="캐시 손익 초기화">×</button>' +
-            '<div id="ledger-popover" class="ledger-popover" role="dialog" aria-label="캐시 손익 상세 내역">' +
+            '<div id="ledger-popover" class="ledger-popover" role="tooltip">' +
               '<div id="ledger-detail" class="ledger-detail">' +
                 '<div class="ledger-row"><span>읽기</span><span id="ledger-read-detail">0</span></div>' +
                 '<div class="ledger-row"><span>쓰기</span><span id="ledger-write-detail">0</span></div>' +
@@ -529,9 +549,7 @@ export async function openSettings(
   };
   const apiKeyVisibilityButton = requireButton('api-key-visibility');
   const closeButton = requireButton('close');
-  const ledgerContainer = requireElement('ledger');
   const ledgerResetButton = requireButton('ledger-reset');
-  const ledgerSummaryButton = requireButton('ledger-summary');
   const ledgerElements: LedgerElements = {
     amount: requireElement('ledger-amount'),
     amountSummary: requireElement('ledger-amount-summary'),
@@ -624,10 +642,6 @@ export async function openSettings(
   // 저장 버튼이 없으므로 Enter 키의 기본 submit(페이지 이동)만 막는다.
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-  });
-  ledgerSummaryButton.addEventListener('click', () => {
-    const expanded = ledgerContainer.classList.toggle('is-open');
-    ledgerSummaryButton.setAttribute('aria-expanded', String(expanded));
   });
   ledgerResetButton.addEventListener('click', () => {
     void resetLedgerFromForm(ledgerElements, ledgerResetButton);
