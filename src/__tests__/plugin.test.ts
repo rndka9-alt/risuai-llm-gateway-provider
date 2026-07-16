@@ -246,6 +246,28 @@ describe('request body options', () => {
     });
   });
 
+  it('Flex 서비스 티어를 명시적으로 전달한다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()], {
+      service_tier: 'flex',
+    });
+
+    await harness.provider(createProviderArguments());
+
+    expect(parseRequestBody(harness.nativeFetch, 0)).toMatchObject({
+      service_tier: 'flex',
+    });
+  });
+
+  it('구버전 default 서비스 티어는 Gateway 기본값을 따르도록 생략한다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()], {
+      service_tier: 'default',
+    });
+
+    await harness.provider(createProviderArguments());
+
+    expect(parseRequestBody(harness.nativeFetch, 0)).not.toHaveProperty('service_tier');
+  });
+
   it('미지정 reasoning_effort, verbosity, penalties는 body에서 생략한다', async () => {
     const harness = await loadProvider([createSuccessfulResponse()]);
 

@@ -14,15 +14,15 @@ import {
 import { buildModelOptionList } from '../settings';
 
 describe('resolveServiceTier', () => {
-  it.each(['flex', 'default'])('%s 값을 그대로 반환한다', (value) => {
-    expect(resolveServiceTier(value)).toBe(value);
+  it('flex 값을 반환한다', () => {
+    expect(resolveServiceTier('flex')).toBe('flex');
   });
 
   it('공백을 제거하고 판별한다', () => {
     expect(resolveServiceTier(' flex ')).toBe('flex');
   });
 
-  it.each([undefined, '', 'auto', 'priority'])(
+  it.each([undefined, '', 'auto', 'default', 'priority'])(
     '지원하지 않는 값(%s)은 undefined를 반환해 body에서 생략되게 한다',
     (value) => {
       expect(resolveServiceTier(value)).toBeUndefined();

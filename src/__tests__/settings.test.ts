@@ -16,6 +16,7 @@ import {
   loadVerbosity,
   saveApiKey,
   saveConfigurableLlmFlagNames,
+  saveServiceTier,
   saveSettings,
 } from '../settings';
 
@@ -169,10 +170,31 @@ describe('service tier settings', () => {
     expect(getArgument).toHaveBeenCalledWith('service_tier');
   });
 
-  it.each([undefined, '', 'unknown'])('값이 %s이면 default로 불러온다', async (value) => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+  it.each([undefined, '', 'default', 'unknown'])(
+    '값이 %s이면 Gateway 기본값을 따르도록 미지정으로 불러온다',
+    async (value) => {
+      vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
 
-    await expect(loadServiceTier()).resolves.toBe('default');
+      await expect(loadServiceTier()).resolves.toBeUndefined();
+    },
+  );
+
+  it('Flex 비활성화는 저장값을 비워 요청에서 생략되게 한다', async () => {
+    const setArgument = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('risuai', { setArgument });
+
+    await saveServiceTier(undefined);
+
+    expect(setArgument).toHaveBeenCalledWith('service_tier', '');
+  });
+
+  it('Flex 활성화는 flex를 저장한다', async () => {
+    const setArgument = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('risuai', { setArgument });
+
+    await saveServiceTier('flex');
+
+    expect(setArgument).toHaveBeenCalledWith('service_tier', 'flex');
   });
 });
 
@@ -244,10 +266,10 @@ describe('settings UI', () => {
       '캐시 모드',
       'Reasoning effort',
       'Verbosity',
-      '스트리밍',
+      '응답 방식',
       '고급',
       '모델',
-      '티어',
+      '서비스 티어',
       'LLM flags',
     ]) {
       expect(html).toContain(`>${caption}<`);
@@ -274,17 +296,19 @@ describe('settings UI', () => {
     expect(html).toContain(
       '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch"',
     );
-    expect(html).toContain('<span id="streaming-mode-label">끄기</span>');
+    expect(html).toContain('<span id="streaming-mode-label">일반 요청</span>');
     expect(html).not.toContain('<select id="streaming-mode"');
     expect(html).not.toContain('<option value="stream">');
   });
 
-  it('서비스 티어를 Flex와 Default 세그먼트 버튼으로 렌더링한다', () => {
+  it('서비스 티어를 Gateway 기본과 Flex 사이의 스위치로 렌더링한다', () => {
     const html = createSettingsHtml('gpt-5.6-sol');
 
-    expect(html).toContain('class="segment-control" role="group"');
-    expect(html).toContain('id="service-tier-flex"');
-    expect(html).toContain('id="service-tier-default"');
+    expect(html).toContain(
+      '<input id="service-tier" class="switch-input" type="checkbox" role="switch"',
+    );
+    expect(html).toContain('<span id="service-tier-label">Gateway 기본</span>');
+    expect(html).not.toContain('id="service-tier-default"');
     expect(html).not.toContain('<select id="service-tier"');
   });
 

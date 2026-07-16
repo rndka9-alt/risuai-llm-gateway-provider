@@ -48,11 +48,6 @@ export const STYLES = [
   '.advanced-divider::before, .advanced-divider::after { content:""; height:0; border-top:1px dashed var(--border2); }',
   '.advanced-divider::before { flex:0 0 8px; }',
   '.advanced-divider::after { flex:1; }',
-  '.segment-control { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }',
-  '.segment-control button { height:33px; padding:0 12px; border:1px solid var(--border2); border-radius:8px; background:transparent; color:var(--text2); font:inherit; font-size:12px; cursor:pointer; }',
-  // 선택/비선택이 같은 톤이면 구분이 안 돼, 선택 쪽은 accent 채도·휘도를 크게 올린다.
-  '.segment-control button.selected { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 52%,var(--background)); color:var(--text); font-weight:700; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent); }',
-  '.segment-control button:focus-visible { outline:2px solid color-mix(in srgb,var(--accent) 45%,transparent); outline-offset:1px; }',
   '.flags { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 10px; margin:0; padding:0; border:0; }',
   '.checkbox { display:flex; align-items:center; gap:7px; min-width:0; font-size:12px; color:var(--text); }',
   '.checkbox input { width:16px; height:16px; flex:0 0 auto; margin:0; padding:0; accent-color:var(--accent); }',

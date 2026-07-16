@@ -163,14 +163,13 @@ export function resolveProviderLlmFlags(
   return flagNames.map((flagName) => RISUAI_LLM_FLAGS[flagName]);
 }
 
-// llm-io OpenAIChatCompletionsServiceTier 중 이 플러그인이 노출하는 부분집합.
-export type ServiceTier = 'default' | 'flex';
+// 플러그인은 Flex 요청만 명시하고, 비활성 상태에서는 provider 기본값을 따른다.
+export type ServiceTier = 'flex';
 
-// 미지정·알 수 없는 값이면 undefined를 반환해 body에서 service_tier를 생략한다
-// (생략 시 provider 기본 동작 auto를 따른다).
+// 구버전의 default 저장값을 포함해 Flex 외 값은 undefined로 정규화해
+// body에서 service_tier를 생략한다 (생략 시 provider 기본 동작을 따른다).
 export function resolveServiceTier(value: string | undefined): ServiceTier | undefined {
   const trimmed = value?.trim();
   if (trimmed === 'flex') return 'flex';
-  if (trimmed === 'default') return 'default';
   return undefined;
 }

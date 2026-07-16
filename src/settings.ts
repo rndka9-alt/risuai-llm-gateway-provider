@@ -100,17 +100,17 @@ export async function saveModel(value: string): Promise<void> {
   await risuai.setArgument(MODEL_ARGUMENT, value);
 }
 
-export async function loadServiceTier(): Promise<ServiceTier> {
+export async function loadServiceTier(): Promise<ServiceTier | undefined> {
   const value = await risuai.getArgument(SERVICE_TIER_ARGUMENT);
-  if (value === undefined) return 'default';
+  if (value === undefined) return undefined;
   if (typeof value !== 'string') {
     throw new TypeError('service_tier argument must be a string');
   }
-  return resolveServiceTier(value) ?? 'default';
+  return resolveServiceTier(value);
 }
 
-export async function saveServiceTier(value: ServiceTier): Promise<void> {
-  await risuai.setArgument(SERVICE_TIER_ARGUMENT, value);
+export async function saveServiceTier(value: ServiceTier | undefined): Promise<void> {
+  await risuai.setArgument(SERVICE_TIER_ARGUMENT, value === 'flex' ? 'flex' : '');
 }
 
 export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined> {
@@ -173,7 +173,7 @@ export interface SettingsValues {
   model: string;
   promptCacheMode: PromptCacheMode;
   reasoningEffort: ReasoningEffort | undefined;
-  serviceTier: ServiceTier;
+  serviceTier: ServiceTier | undefined;
   streamingMode: StreamingMode;
   verbosity: Verbosity | undefined;
 }
@@ -256,19 +256,13 @@ interface FlagInput {
   name: ConfigurableLlmFlagName;
 }
 
-// 세그먼트 버튼에는 form value가 없으므로 각 DOM과 저장할 service_tier 값을 함께 묶는다.
-interface ServiceTierButton {
-  button: HTMLButtonElement;
-  value: ServiceTier;
-}
-
 interface SettingsFormElements {
   apiKeyInput: HTMLInputElement;
   flagInputs: readonly FlagInput[];
   modelSelect: HTMLSelectElement;
   promptCacheModeSelect: HTMLSelectElement;
   reasoningEffortSelect: HTMLSelectElement;
-  serviceTierButtons: readonly ServiceTierButton[];
+  serviceTierInput: HTMLInputElement;
   streamingModeInput: HTMLInputElement;
   verbositySelect: HTMLSelectElement;
 }
@@ -279,15 +273,12 @@ function readSelectedFlagNames(
   return flagInputs.filter((flagInput) => flagInput.input.checked).map((flagInput) => flagInput.name);
 }
 
-function setServiceTierSelection(
-  serviceTierButtons: readonly ServiceTierButton[],
-  selectedTier: ServiceTier,
-): void {
-  for (const serviceTierButton of serviceTierButtons) {
-    const selected = serviceTierButton.value === selectedTier;
-    serviceTierButton.button.classList.toggle('selected', selected);
-    serviceTierButton.button.setAttribute('aria-pressed', String(selected));
-  }
+function resolveServiceTierInput(input: HTMLInputElement): ServiceTier | undefined {
+  return input.checked ? 'flex' : undefined;
+}
+
+function renderServiceTierLabel(input: HTMLInputElement, label: HTMLElement): void {
+  label.textContent = input.checked ? 'Flex' : 'Gateway 기본';
 }
 
 function resolveStreamingModeInput(input: HTMLInputElement): StreamingMode {
@@ -295,7 +286,7 @@ function resolveStreamingModeInput(input: HTMLInputElement): StreamingMode {
 }
 
 function renderStreamingModeLabel(input: HTMLInputElement, label: HTMLElement): void {
-  label.textContent = input.checked ? '모아서 받기' : '끄기';
+  label.textContent = input.checked ? '스트리밍 연결 · 완료 후 표시' : '일반 요청';
 }
 
 export function createProviderRegistrationSignature(
@@ -422,10 +413,10 @@ export function createSettingsHtml(currentModel: string): string {
             '</select>' +
           '</div>' +
           '<div class="field">' +
-            '<span class="field-caption">스트리밍</span>' +
+            '<span class="field-caption">응답 방식</span>' +
             '<label class="toggle-control" for="streaming-mode">' +
-              '<span id="streaming-mode-label">끄기</span>' +
-              '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch" aria-label="스트리밍 모드">' +
+              '<span id="streaming-mode-label">일반 요청</span>' +
+              '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch" aria-label="응답 방식">' +
               '<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>' +
             '</label>' +
           '</div>' +
@@ -437,11 +428,12 @@ export function createSettingsHtml(currentModel: string): string {
             '</select>' +
           '</div>' +
           '<div class="field">' +
-            '<span id="service-tier-label" class="field-caption">티어</span>' +
-            '<div class="segment-control" role="group" aria-labelledby="service-tier-label">' +
-              '<button id="service-tier-flex" type="button" aria-pressed="false">Flex</button>' +
-              '<button id="service-tier-default" type="button" aria-pressed="false">Default</button>' +
-            '</div>' +
+            '<span class="field-caption">서비스 티어</span>' +
+            '<label class="toggle-control" for="service-tier">' +
+              '<span id="service-tier-label">Gateway 기본</span>' +
+              '<input id="service-tier" class="switch-input" type="checkbox" role="switch" aria-label="Flex 서비스 티어 사용">' +
+              '<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>' +
+            '</label>' +
           '</div>' +
           '<div class="field">' +
             '<span id="llm-flags-label" class="field-caption">LLM flags</span>' +
@@ -525,17 +517,13 @@ export async function openSettings(
     input: requireCheckbox(`flag-${flagName}`),
     name: flagName,
   }));
-  const serviceTierButtons: readonly ServiceTierButton[] = [
-    { button: requireButton('service-tier-flex'), value: 'flex' },
-    { button: requireButton('service-tier-default'), value: 'default' },
-  ];
   const elements: SettingsFormElements = {
     apiKeyInput: requireApiKeyInput(),
     flagInputs,
     modelSelect: requireSelect('model'),
     promptCacheModeSelect: requireSelect('prompt-cache-mode'),
     reasoningEffortSelect: requireSelect('reasoning-effort'),
-    serviceTierButtons,
+    serviceTierInput: requireCheckbox('service-tier'),
     streamingModeInput: requireCheckbox('streaming-mode'),
     verbositySelect: requireSelect('verbosity'),
   };
@@ -553,6 +541,7 @@ export async function openSettings(
   const cacheBackoffDiagnostic = requireElement('cache-backoff-diagnostic');
   const reloadNotice = requireElement('reload-notice');
   const saveErrorNotice = requireElement('save-error');
+  const serviceTierLabel = requireElement('service-tier-label');
   const streamingModeLabel = requireElement('streaming-mode-label');
   const form = requireSettingsForm();
 
@@ -560,7 +549,8 @@ export async function openSettings(
   elements.modelSelect.value = model;
   elements.promptCacheModeSelect.value = promptCacheMode;
   elements.reasoningEffortSelect.value = reasoningEffort ?? '';
-  setServiceTierSelection(elements.serviceTierButtons, serviceTier);
+  elements.serviceTierInput.checked = serviceTier === 'flex';
+  renderServiceTierLabel(elements.serviceTierInput, serviceTierLabel);
   elements.streamingModeInput.checked = streamingMode === 'decoupled';
   renderStreamingModeLabel(elements.streamingModeInput, streamingModeLabel);
   elements.verbositySelect.value = verbosity ?? '';
@@ -610,12 +600,10 @@ export async function openSettings(
   elements.promptCacheModeSelect.addEventListener('change', () => {
     persist(() => savePromptCacheMode(resolvePromptCacheMode(elements.promptCacheModeSelect.value)));
   });
-  for (const serviceTierButton of elements.serviceTierButtons) {
-    serviceTierButton.button.addEventListener('click', () => {
-      setServiceTierSelection(elements.serviceTierButtons, serviceTierButton.value);
-      persist(() => saveServiceTier(serviceTierButton.value));
-    });
-  }
+  elements.serviceTierInput.addEventListener('change', () => {
+    renderServiceTierLabel(elements.serviceTierInput, serviceTierLabel);
+    persist(() => saveServiceTier(resolveServiceTierInput(elements.serviceTierInput)));
+  });
   elements.reasoningEffortSelect.addEventListener('change', () => {
     persist(() => saveReasoningEffort(resolveReasoningEffort(elements.reasoningEffortSelect.value)));
   });
