@@ -332,6 +332,13 @@ describe('settings UI', () => {
     expect(STYLES).toContain('.ledger .amount.loss { color:#f87171; }');
   });
 
+  it('손익과 닫기 영역을 스크롤 컨테이너 하단에 고정한다', () => {
+    expect(STYLES).toContain(
+      '.settings-footer { position:sticky; z-index:1; bottom:0;',
+    );
+    expect(STYLES).toContain('background:var(--background2); }');
+  });
+
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
     expect(createProviderRegistrationSignature({
       flagNames: ['poolSupported', 'hasFullSystemPrompt'],

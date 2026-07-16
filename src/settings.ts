@@ -567,7 +567,6 @@ export async function openSettings(
   for (const flagInput of flagInputs) {
     flagInput.input.checked = flagNames.includes(flagInput.name);
   }
-  elements.apiKeyInput.focus();
 
   renderLedger(ledgerElements, cacheLedger);
   cacheBackoffDiagnostic.hidden = !isCacheBackoffActive(cacheAnchorState);

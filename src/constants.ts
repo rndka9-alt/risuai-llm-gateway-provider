@@ -62,7 +62,8 @@ export const STYLES = [
   '.notice[hidden] { display:none; }',
   '.cache-diagnostic { margin:0; color:var(--text2); font-size:.8em; line-height:1.45; }',
   '.cache-diagnostic[hidden] { display:none; }',
-  '.settings-footer { display:flex; align-items:center; justify-content:space-between; min-height:56px; padding:10px 16px; border-top:1px solid var(--border2); }',
+  // 모바일에서 설정을 스크롤해도 손익과 닫기 동작에 바로 접근할 수 있게 하단에 고정한다.
+  '.settings-footer { position:sticky; z-index:1; bottom:0; display:flex; align-items:center; justify-content:space-between; min-height:56px; padding:10px 16px; border-top:1px solid var(--border2); background:var(--background2); }',
   '.ledger { --popover-background:color-mix(in srgb,var(--text) 90%,var(--background)); position:relative; display:flex; align-items:center; gap:2px; min-width:0; }',
   '.ledger-trigger { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 2px 4px 0; border:0; background:transparent; color:var(--text2); font:inherit; font-size:11px; cursor:pointer; }',
   '.ledger-trigger .amount { font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; }',
