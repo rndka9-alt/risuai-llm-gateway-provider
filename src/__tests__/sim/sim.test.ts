@@ -1,3 +1,4 @@
+import type { LlmMessage } from 'llm-io';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CACHE_READ_SAVING_RATE,
@@ -9,8 +10,12 @@ import {
 } from './fake-gateway';
 import { createGoldenTrajectories } from './golden-trajectories';
 import {
+  createAdaptiveTwoStrikeCachePolicy,
+  createAdaptiveTwoStrikeRerollAwareCachePolicy,
+  createFirstTurnSafeCachePolicy,
   createNoCachePolicy,
   createProductionCachePolicy,
+  type ReplayCachePolicy,
 } from './policy';
 import {
   formatScoreboard,
@@ -27,6 +32,21 @@ const KERNEL_PRESETS = [
 const trajectories = createGoldenTrajectories();
 const pluginStorage = new Map<string, string>();
 const replayResults: ReplayResult[] = [];
+const POLICY_FACTORIES: readonly (() => ReplayCachePolicy)[] = [
+  createProductionCachePolicy,
+  createAdaptiveTwoStrikeCachePolicy,
+  createAdaptiveTwoStrikeRerollAwareCachePolicy,
+  createFirstTurnSafeCachePolicy,
+  createNoCachePolicy,
+];
+const POLICY_NAMES = [
+  'production',
+  'adaptive-2strike',
+  'adaptive-2strike-reroll-aware',
+  'first-turn-safe',
+  'no-cache',
+] as const;
+type PolicyName = (typeof POLICY_NAMES)[number];
 
 function stubPluginStorage(): void {
   vi.stubGlobal('risuai', {
@@ -42,7 +62,7 @@ function stubPluginStorage(): void {
 function requireReplayResult(
   trajectory: GoldenTrajectory,
   kernelName: FakeGatewayKernelPreset,
-  policyName: 'production' | 'no-cache',
+  policyName: PolicyName,
 ): ReplayResult {
   const result = replayResults.find(
     (candidate) =>
@@ -174,23 +194,17 @@ beforeAll(async () => {
   stubPluginStorage();
   for (const trajectory of trajectories) {
     for (const kernelPreset of KERNEL_PRESETS) {
-      pluginStorage.clear();
-      replayResults.push(
-        await replayTrajectory({
-          kernel: createFakeGatewayKernel(kernelPreset),
-          policy: createProductionCachePolicy(),
-          trajectory,
-        }),
-      );
-
-      pluginStorage.clear();
-      replayResults.push(
-        await replayTrajectory({
-          kernel: createFakeGatewayKernel(kernelPreset),
-          policy: createNoCachePolicy(),
-          trajectory,
-        }),
-      );
+      for (const createPolicy of POLICY_FACTORIES) {
+        // planner 상태와 wrapper 클로저를 정책·커널 실행마다 함께 격리한다.
+        pluginStorage.clear();
+        replayResults.push(
+          await replayTrajectory({
+            kernel: createFakeGatewayKernel(kernelPreset),
+            policy: createPolicy(),
+            trajectory,
+          }),
+        );
+      }
     }
   }
   console.log(formatScoreboard(replayResults));
@@ -207,10 +221,12 @@ describe('deterministic replay golden trajectories', () => {
 
   describe.each(trajectories)('$id $label', (trajectory) => {
     it.each(KERNEL_PRESETS)('%s kernel의 회계·와이어 불변식을 지킨다', (kernelPreset) => {
-      const production = requireReplayResult(trajectory, kernelPreset, 'production');
+      POLICY_NAMES.forEach((policyName) => {
+        expectCommonInvariants(
+          requireReplayResult(trajectory, kernelPreset, policyName),
+        );
+      });
       const noCache = requireReplayResult(trajectory, kernelPreset, 'no-cache');
-      expectCommonInvariants(production);
-      expectCommonInvariants(noCache);
       expect(noCache.totalReadTokens).toBe(0);
       expect(noCache.totalWriteTokens).toBe(0);
       expect(noCache.totalNetSavedTokens).toBe(0);
@@ -219,5 +235,241 @@ describe('deterministic replay golden trajectories', () => {
     it('golden 방향성 기대를 지킨다', () => {
       expectGoldenDirection(trajectory);
     });
+  });
+});
+
+const POSITIVE_TRAJECTORY_IDS = [
+  '01-append',
+  '03-reverse-depth',
+  '04-reroll',
+  '05-lore-toggle',
+  '06-context-trim',
+  '07-hypa-summary',
+  '08-lua-post-edit',
+] as const;
+
+function requireTrajectoryById(trajectoryId: string): GoldenTrajectory {
+  const trajectory = trajectories.find(
+    (candidate) => candidate.id === trajectoryId,
+  );
+  if (trajectory === undefined) {
+    throw new Error(`Missing golden trajectory ${trajectoryId}.`);
+  }
+  return trajectory;
+}
+
+describe('adaptive policy golden comparisons', () => {
+  it('2-strike 계열은 양수 골든에서 production 대비 10% 초과 회귀하지 않는다', () => {
+    for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const production = requireReplayResult(
+        trajectory,
+        'calibrated',
+        'production',
+      );
+      for (const policyName of [
+        'adaptive-2strike',
+        'adaptive-2strike-reroll-aware',
+      ] satisfies readonly PolicyName[]) {
+        const adaptive = requireReplayResult(
+          trajectory,
+          'calibrated',
+          policyName,
+        );
+        expect(adaptive.totalNetSavedTokens).toBeGreaterThanOrEqual(
+          production.totalNetSavedTokens * 0.9,
+        );
+      }
+    }
+  });
+
+  it('2-strike는 상습 휘발 assistant 꼬리에서 production 이상을 유지한다', () => {
+    const trajectory = requireTrajectoryById('08-lua-post-edit');
+    const production = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'production',
+    );
+
+    for (const policyName of [
+      'adaptive-2strike',
+      'adaptive-2strike-reroll-aware',
+    ] satisfies readonly PolicyName[]) {
+      expect(
+        requireReplayResult(trajectory, 'calibrated', policyName)
+          .totalNetSavedTokens,
+      ).toBeGreaterThanOrEqual(production.totalNetSavedTokens);
+    }
+  });
+
+  it('02의 손실은 첫 턴 cold write라 2-strike로 회수되지 않는 측정 결과를 고정한다', () => {
+    const trajectory = requireTrajectoryById('02-cbs-trap');
+    const production = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'production',
+    );
+
+    expect(
+      requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike')
+        .totalNetSavedTokens,
+    ).toBe(production.totalNetSavedTokens);
+    expect(
+      requireReplayResult(
+        trajectory,
+        'calibrated',
+        'adaptive-2strike-reroll-aware',
+      ).totalNetSavedTokens,
+    ).toBe(production.totalNetSavedTokens);
+  });
+
+  it('first-turn-safe는 room switch 첫 턴의 회수 전 write 손실을 줄인다', () => {
+    const trajectory = requireTrajectoryById('09-room-switch');
+    const production = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'production',
+    );
+    const firstTurnSafe = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'first-turn-safe',
+    );
+
+    expect(firstTurnSafe.totalNetSavedTokens).toBeGreaterThan(
+      production.totalNetSavedTokens,
+    );
+  });
+
+  it('first-turn-safe가 양수 골든 7종 모두에서 10% 초과 회귀한 결과를 노출한다', () => {
+    const regressedTrajectoryIds = POSITIVE_TRAJECTORY_IDS.filter(
+      (trajectoryId) => {
+        const trajectory = requireTrajectoryById(trajectoryId);
+        const production = requireReplayResult(
+          trajectory,
+          'calibrated',
+          'production',
+        );
+        const firstTurnSafe = requireReplayResult(
+          trajectory,
+          'calibrated',
+          'first-turn-safe',
+        );
+        return (
+          firstTurnSafe.totalNetSavedTokens <
+          production.totalNetSavedTokens * 0.9
+        );
+      },
+    );
+
+    expect(regressedTrajectoryIds).toEqual(POSITIVE_TRAJECTORY_IDS);
+  });
+});
+
+function makePolicyTestMessage(
+  role: LlmMessage['role'],
+  text: string,
+): LlmMessage {
+  return { role, content: [{ type: 'text', text }] };
+}
+
+function breakpointIndexes(messages: readonly LlmMessage[]): number[] {
+  const indexes: number[] = [];
+  messages.forEach((message, messageIndex) => {
+    if (
+      message.content.some(
+        (part) => part.type === 'text' && part.cacheBreakpoint !== undefined,
+      )
+    ) {
+      indexes.push(messageIndex);
+    }
+  });
+  return indexes;
+}
+
+describe('adaptive policy transitions', () => {
+  it('2회 사망 뒤 새 frontier를 한 턴 억제하고 생존한 다음 턴에 자연히 마킹한다', async () => {
+    pluginStorage.clear();
+    const policy = createAdaptiveTwoStrikeCachePolicy();
+    const stablePrefix = makePolicyTestMessage('system', 'S'.repeat(6_000));
+    const stableSuffix = makePolicyTestMessage('user', 'stable suffix');
+    const first = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'volatile A'),
+      stableSuffix,
+    ];
+    const second = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'volatile B'),
+      makePolicyTestMessage('system', 'growth B'),
+      stableSuffix,
+    ];
+    const third = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'volatile C'),
+      makePolicyTestMessage('system', 'growth B'),
+      makePolicyTestMessage('system', 'new frontier C'),
+      stableSuffix,
+    ];
+
+    await policy.apply(first);
+    await policy.apply(second);
+    const monitored = await policy.apply(third);
+    const confirmed = await policy.apply(third);
+
+    expect(monitored.anchorIndexes).toEqual([0, 3]);
+    expect(breakpointIndexes(monitored.messages)).toEqual([0]);
+    expect(breakpointIndexes(confirmed.messages)).toEqual([0, 3]);
+  });
+
+  it('reroll-aware 변형은 동일 길이 꼬리 변경을 strike로 누적하지 않는다', async () => {
+    const stablePrefix = makePolicyTestMessage('system', 'S'.repeat(6_000));
+    const stableSuffix = makePolicyTestMessage('user', 'stable suffix');
+    const first = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'reroll A'),
+      stableSuffix,
+    ];
+    const reroll = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'reroll B'),
+      stableSuffix,
+    ];
+    const growth = [
+      stablePrefix,
+      makePolicyTestMessage('system', 'changed after reroll'),
+      makePolicyTestMessage('system', 'new frontier'),
+      stableSuffix,
+    ];
+
+    pluginStorage.clear();
+    const adaptive = createAdaptiveTwoStrikeCachePolicy();
+    await adaptive.apply(first);
+    await adaptive.apply(reroll);
+    const adaptiveGrowth = await adaptive.apply(growth);
+
+    pluginStorage.clear();
+    const rerollAware = createAdaptiveTwoStrikeRerollAwareCachePolicy();
+    await rerollAware.apply(first);
+    await rerollAware.apply(reroll);
+    const awareGrowth = await rerollAware.apply(growth);
+
+    expect(breakpointIndexes(adaptiveGrowth.messages)).toEqual([0]);
+    expect(breakpointIndexes(awareGrowth.messages)).toEqual([0, 2]);
+  });
+
+  it('first-turn-safe는 새 epoch를 저장만 하고 동일한 두 번째 턴부터 마킹한다', async () => {
+    pluginStorage.clear();
+    const policy = createFirstTurnSafeCachePolicy();
+    const messages = [
+      makePolicyTestMessage('system', 'S'.repeat(6_000)),
+      makePolicyTestMessage('user', 'first input'),
+    ];
+
+    const first = await policy.apply(messages);
+    const second = await policy.apply(messages);
+
+    expect(breakpointIndexes(first.messages)).toEqual([]);
+    expect(breakpointIndexes(second.messages)).toEqual([0]);
   });
 });

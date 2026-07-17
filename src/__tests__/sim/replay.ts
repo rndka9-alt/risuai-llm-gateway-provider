@@ -44,6 +44,15 @@ export interface ReplayResult {
   trajectoryLabel: string;
 }
 
+const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
+const SCOREBOARD_POLICIES = [
+  'production',
+  'adaptive-2strike',
+  'adaptive-2strike-reroll-aware',
+  'first-turn-safe',
+  'no-cache',
+];
+
 function countPolicyMarkers(messages: readonly LlmMessage[]): {
   count: number;
   roles: readonly string[];
@@ -128,35 +137,133 @@ export async function replayTrajectory(options: {
   };
 }
 
-export function formatScoreboard(results: readonly ReplayResult[]): string {
-  const productionResults = results.filter((result) => result.policyName === 'production');
-  const kernels = ['calibrated', 'pessimistic', 'optimistic'];
-  const rows = productionResults.reduce<Map<string, Map<string, number>>>((table, result) => {
-    const row = table.get(result.trajectoryId) ?? new Map<string, number>();
-    row.set(result.kernelName, result.totalNetSavedTokens);
-    table.set(result.trajectoryId, row);
-    return table;
-  }, new Map());
-  const labels = new Map(
-    productionResults.map((result) => [result.trajectoryId, result.trajectoryLabel]),
-  );
-  const heading = ['trajectory', ...kernels];
-  const dataRows = [...rows.entries()].map(([trajectoryId, scores]) => [
-    `${trajectoryId} ${labels.get(trajectoryId)}`,
-    ...kernels.map((kernel) => {
-      const score = scores.get(kernel);
-      return score === undefined ? 'missing' : score.toFixed(1);
-    }),
-  ]);
+function formatTable(
+  title: string,
+  heading: readonly string[],
+  dataRows: readonly (readonly string[])[],
+): string {
   const widths = heading.map((cell, columnIndex) =>
     Math.max(cell.length, ...dataRows.map((row) => row[columnIndex].length)),
   );
   const render = (row: readonly string[]) =>
     `| ${row.map((cell, index) => cell.padEnd(widths[index])).join(' | ')} |`;
   return [
-    'Offline prompt-cache scoreboard (net token equivalents)',
+    title,
     render(heading),
     `|-${widths.map((width) => '-'.repeat(width)).join('-|-')}-|`,
     ...dataRows.map(render),
   ].join('\n');
+}
+
+function createScoreIndex(
+  results: readonly ReplayResult[],
+): Map<string, Map<string, Map<string, number>>> {
+  const index = new Map<string, Map<string, Map<string, number>>>();
+  results.forEach((result) => {
+    const trajectoryScores = index.get(result.trajectoryId) ?? new Map();
+    const policyScores = trajectoryScores.get(result.policyName) ?? new Map();
+    policyScores.set(result.kernelName, result.totalNetSavedTokens);
+    trajectoryScores.set(result.policyName, policyScores);
+    index.set(result.trajectoryId, trajectoryScores);
+  });
+  return index;
+}
+
+function formatScore(score: number | undefined): string {
+  return score === undefined ? 'missing' : score.toFixed(1);
+}
+
+function formatRankingReversals(
+  trajectoryOrder: readonly string[],
+  labels: ReadonlyMap<string, string>,
+  scores: ReadonlyMap<string, ReadonlyMap<string, ReadonlyMap<string, number>>>,
+): string {
+  const reversals: string[] = [];
+  trajectoryOrder.forEach((trajectoryId) => {
+    const trajectoryScores = scores.get(trajectoryId);
+    if (trajectoryScores === undefined) return;
+
+    for (let leftIndex = 0; leftIndex < SCOREBOARD_POLICIES.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < SCOREBOARD_POLICIES.length;
+        rightIndex += 1
+      ) {
+        const leftPolicy = SCOREBOARD_POLICIES[leftIndex];
+        const rightPolicy = SCOREBOARD_POLICIES[rightIndex];
+        const comparisons = SCOREBOARD_KERNELS.map((kernel) => {
+          const leftScore = trajectoryScores.get(leftPolicy)?.get(kernel);
+          const rightScore = trajectoryScores.get(rightPolicy)?.get(kernel);
+          if (leftScore === undefined || rightScore === undefined) return 0;
+          return Math.sign(leftScore - rightScore);
+        });
+        if (!comparisons.includes(-1) || !comparisons.includes(1)) continue;
+
+        const comparisonSummary = SCOREBOARD_KERNELS.map((kernel, kernelIndex) => {
+          const comparison = comparisons[kernelIndex];
+          const relation = comparison > 0 ? '>' : comparison < 0 ? '<' : '=';
+          return `${kernel}:${leftPolicy}${relation}${rightPolicy}`;
+        }).join(', ');
+        reversals.push(
+          `- ${trajectoryId} ${labels.get(trajectoryId)}: ${comparisonSummary}`,
+        );
+      }
+    }
+  });
+
+  return [
+    'Kernel ranking reversals',
+    ...(reversals.length === 0 ? ['- none'] : reversals),
+  ].join('\n');
+}
+
+export function formatScoreboard(results: readonly ReplayResult[]): string {
+  const productionResults = results.filter(
+    (result) => result.policyName === 'production',
+  );
+  const trajectoryOrder = [
+    ...new Set(productionResults.map((result) => result.trajectoryId)),
+  ];
+  const labels = new Map(
+    productionResults.map((result) => [result.trajectoryId, result.trajectoryLabel]),
+  );
+  const scores = createScoreIndex(results);
+  const trajectoryLabel = (trajectoryId: string): string => {
+    const label = labels.get(trajectoryId);
+    if (label === undefined) {
+      throw new Error(`Missing trajectory label for ${trajectoryId}.`);
+    }
+    return `${trajectoryId} ${label}`;
+  };
+
+  const productionRows = trajectoryOrder.map((trajectoryId) => {
+    const productionScores = scores.get(trajectoryId)?.get('production');
+    return [
+      trajectoryLabel(trajectoryId),
+      ...SCOREBOARD_KERNELS.map((kernel) =>
+        formatScore(productionScores?.get(kernel))),
+    ];
+  });
+  const policyRows = trajectoryOrder.map((trajectoryId) => {
+    const trajectoryScores = scores.get(trajectoryId);
+    return [
+      trajectoryLabel(trajectoryId),
+      ...SCOREBOARD_POLICIES.map((policy) =>
+        formatScore(trajectoryScores?.get(policy)?.get('calibrated'))),
+    ];
+  });
+
+  return [
+    formatTable(
+      'Production by kernel (net token equivalents)',
+      ['trajectory', ...SCOREBOARD_KERNELS],
+      productionRows,
+    ),
+    formatTable(
+      'Calibrated policy comparison (net token equivalents)',
+      ['trajectory', ...SCOREBOARD_POLICIES],
+      policyRows,
+    ),
+    formatRankingReversals(trajectoryOrder, labels, scores),
+  ].join('\n\n');
 }
