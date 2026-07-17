@@ -117,6 +117,7 @@ export async function loadServiceTier(): Promise<ServiceTier | undefined> {
 
 export async function saveServiceTier(value: ServiceTier | undefined): Promise<void> {
   await saveConfig({
+    // 끔은 ''로 저장한다 — 생략이 조직 기본 티어를 살리는 배포된 의미 (resolveServiceTier 참고).
     [SERVICE_TIER_ARGUMENT]: value === 'flex' ? 'flex' : '',
   });
 }
