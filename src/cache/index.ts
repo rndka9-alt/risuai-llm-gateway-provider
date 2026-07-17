@@ -4,7 +4,6 @@ export {
   DISABLED_PROMPT_CACHE_KEY,
   EXPLICIT_PROMPT_CACHE_KEY,
   MIN_CACHEABLE_PREFIX_TOKENS,
-  PROMPT_CACHE_MODE_ARGUMENT,
 } from './constants';
 export { createPromptCacheExtraBody } from './mode/create-prompt-cache-extra-body';
 export { getPromptCacheKey } from './mode/get-prompt-cache-key';

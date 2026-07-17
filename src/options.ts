@@ -1,12 +1,5 @@
 import type { OpenAIChatCompletionsExtraBody } from 'llm-io';
 
-export const MODEL_ARGUMENT = 'model';
-export const REASONING_EFFORT_ARGUMENT = 'reasoning_effort';
-export const SERVICE_TIER_ARGUMENT = 'service_tier';
-export const STREAMING_MODE_ARGUMENT = 'streaming_mode';
-export const FLAGS_ARGUMENT = 'flags';
-export const VERBOSITY_ARGUMENT = 'verbosity';
-
 // llmgateway.io의 GPT-5.6 시리즈 모델 ID.
 export const MODEL_OPTIONS: readonly string[] = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'];
 export const DEFAULT_MODEL = 'gpt-5.6-sol';

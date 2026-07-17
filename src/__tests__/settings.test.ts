@@ -27,6 +27,8 @@ import {
   openSettings,
 } from '../settings';
 
+const CONFIG_STORAGE_KEY = 'llm-gateway-provider:config';
+
 afterEach(() => {
   render(null, document.body);
   document.body.replaceChildren();
@@ -38,68 +40,92 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function createPluginStorageStub() {
+function createPluginStorageStub(
+  configValues: Readonly<Record<string, string>> = {},
+) {
+  const storage = new Map<string, string>();
+  if (Object.keys(configValues).length !== 0) {
+    storage.set(CONFIG_STORAGE_KEY, JSON.stringify(configValues));
+  }
   return {
-    getItem: vi.fn().mockResolvedValue(null),
-    setItem: vi.fn().mockResolvedValue(undefined),
+    getItem: vi.fn(async (key: string) => storage.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => {
+      storage.set(key, value);
+    }),
+    storage,
   };
+}
+
+function requireConfigStorage(
+  pluginStorage: ReturnType<typeof createPluginStorageStub>,
+): Record<string, unknown> {
+  const serialized = pluginStorage.storage.get(CONFIG_STORAGE_KEY);
+  if (serialized === undefined) throw new Error('Expected stored config');
+  const parsed: unknown = JSON.parse(serialized);
+  if (!isRecord(parsed)) throw new Error('Expected config object');
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 describe('API key settings', () => {
   it('저장된 API key를 문자열 그대로 불러온다', async () => {
-    const getArgument = vi.fn().mockResolvedValue('llmgtwy_secret');
-    vi.stubGlobal('risuai', { getArgument });
+    const pluginStorage = createPluginStorageStub({ api_key: 'llmgtwy_secret' });
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await expect(loadApiKey()).resolves.toBe('llmgtwy_secret');
-    expect(getArgument).toHaveBeenCalledWith('api_key');
   });
 
   it('저장된 값이 없으면 빈 입력값을 반환한다', async () => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(undefined) });
+    vi.stubGlobal('risuai', { pluginStorage: createPluginStorageStub() });
 
     await expect(loadApiKey()).resolves.toBe('');
   });
 
-  it('API key를 플러그인 인자에 저장한다', async () => {
-    const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', {
-      pluginStorage: createPluginStorageStub(),
-      setArgument,
-    });
+  it('API key를 config 저장소에 저장한다', async () => {
+    const pluginStorage = createPluginStorageStub();
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await saveApiKey('llmgtwy_new_secret');
 
-    expect(setArgument).toHaveBeenCalledWith('api_key', 'llmgtwy_new_secret');
+    expect(requireConfigStorage(pluginStorage)).toMatchObject({
+      api_key: 'llmgtwy_new_secret',
+    });
   });
 });
 
 describe('prompt cache settings', () => {
   it('저장된 explicit 모드를 불러온다', async () => {
-    const getArgument = vi.fn().mockResolvedValue('explicit');
-    vi.stubGlobal('risuai', { getArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({ prompt_cache_mode: 'explicit' }),
+    });
 
     await expect(loadPromptCacheMode()).resolves.toBe('explicit');
-    expect(getArgument).toHaveBeenCalledWith('prompt_cache_mode');
   });
 
   it('저장된 disabled 모드를 불러온다', async () => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('disabled') });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({ prompt_cache_mode: 'disabled' }),
+    });
 
     await expect(loadPromptCacheMode()).resolves.toBe('disabled');
   });
 
   it.each([undefined, '', 'unknown'])('값이 %s이면 기본값 explicit로 불러온다', async (value) => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(
+        value === undefined ? {} : { prompt_cache_mode: value },
+      ),
+    });
 
     await expect(loadPromptCacheMode()).resolves.toBe('explicit');
   });
 
   it('전체 설정값을 함께 저장한다', async () => {
-    const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', {
-      pluginStorage: createPluginStorageStub(),
-      setArgument,
-    });
+    const pluginStorage = createPluginStorageStub();
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await saveSettings({
       apiKey: 'llmgtwy_new_secret',
@@ -112,31 +138,34 @@ describe('prompt cache settings', () => {
       verbosity: 'low',
     });
 
-    expect(setArgument).toHaveBeenCalledWith('api_key', 'llmgtwy_new_secret');
-    expect(setArgument).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
-    expect(setArgument).toHaveBeenCalledWith('prompt_cache_mode', 'explicit');
-    expect(setArgument).toHaveBeenCalledWith('service_tier', 'flex');
-    expect(setArgument).toHaveBeenCalledWith('reasoning_effort', 'xhigh');
-    expect(setArgument).toHaveBeenCalledWith('verbosity', 'low');
-    expect(setArgument).toHaveBeenCalledWith('streaming_mode', 'decoupled');
-    expect(setArgument).toHaveBeenCalledWith(
-      'flags',
-      'hasFullSystemPrompt,poolSupported',
-    );
+    expect(requireConfigStorage(pluginStorage)).toEqual({
+      api_key: 'llmgtwy_new_secret',
+      flags: 'hasFullSystemPrompt,poolSupported',
+      model: 'gpt-5.6-luna',
+      prompt_cache_mode: 'explicit',
+      reasoning_effort: 'xhigh',
+      service_tier: 'flex',
+      streaming_mode: 'decoupled',
+      verbosity: 'low',
+    });
   });
 });
 
 describe('model settings', () => {
   it('저장된 모델 ID를 그대로 불러온다', async () => {
-    const getArgument = vi.fn().mockResolvedValue('gpt-5.6-terra');
-    vi.stubGlobal('risuai', { getArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({ model: 'gpt-5.6-terra' }),
+    });
 
     await expect(loadModel()).resolves.toBe('gpt-5.6-terra');
-    expect(getArgument).toHaveBeenCalledWith('model');
   });
 
   it.each([undefined, '', '  '])('값이 %s이면 기본 모델을 반환한다', async (value) => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(
+        value === undefined ? {} : { model: value },
+      ),
+    });
 
     await expect(loadModel()).resolves.toBe('gpt-5.6-sol');
   });
@@ -190,86 +219,87 @@ describe('ledger display', () => {
 
 describe('service tier settings', () => {
   it('저장된 flex 티어를 불러온다', async () => {
-    const getArgument = vi.fn().mockResolvedValue('flex');
-    vi.stubGlobal('risuai', { getArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({ service_tier: 'flex' }),
+    });
 
     await expect(loadServiceTier()).resolves.toBe('flex');
-    expect(getArgument).toHaveBeenCalledWith('service_tier');
   });
 
   it.each([undefined, '', 'default', 'unknown'])(
     '값이 %s이면 Gateway 기본값을 따르도록 미지정으로 불러온다',
     async (value) => {
-      vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(value) });
+      vi.stubGlobal('risuai', {
+        pluginStorage: createPluginStorageStub(
+          value === undefined ? {} : { service_tier: value },
+        ),
+      });
 
       await expect(loadServiceTier()).resolves.toBeUndefined();
     },
   );
 
   it('Flex 비활성화는 저장값을 비워 요청에서 생략되게 한다', async () => {
-    const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', {
-      pluginStorage: createPluginStorageStub(),
-      setArgument,
-    });
+    const pluginStorage = createPluginStorageStub({ service_tier: 'flex' });
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await saveServiceTier(undefined);
 
-    expect(setArgument).toHaveBeenCalledWith('service_tier', '');
+    expect(requireConfigStorage(pluginStorage)).toMatchObject({ service_tier: '' });
   });
 
   it('Flex 활성화는 flex를 저장한다', async () => {
-    const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', {
-      pluginStorage: createPluginStorageStub(),
-      setArgument,
-    });
+    const pluginStorage = createPluginStorageStub();
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await saveServiceTier('flex');
 
-    expect(setArgument).toHaveBeenCalledWith('service_tier', 'flex');
+    expect(requireConfigStorage(pluginStorage)).toMatchObject({ service_tier: 'flex' });
   });
 });
 
 describe('generation option settings', () => {
   it('reasoning_effort와 verbosity 선택값을 불러온다', async () => {
-    const getArgument = vi.fn(async (key: string) => {
-      if (key === 'reasoning_effort') return 'high';
-      if (key === 'verbosity') return 'medium';
-      return undefined;
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({
+        reasoning_effort: 'high',
+        verbosity: 'medium',
+      }),
     });
-    vi.stubGlobal('risuai', { getArgument });
 
     await expect(loadReasoningEffort()).resolves.toBe('high');
     await expect(loadVerbosity()).resolves.toBe('medium');
   });
 
   it('미지정 선택값은 undefined로 불러온다', async () => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('') });
+    vi.stubGlobal('risuai', { pluginStorage: createPluginStorageStub() });
 
     await expect(loadReasoningEffort()).resolves.toBeUndefined();
     await expect(loadVerbosity()).resolves.toBeUndefined();
   });
 
   it('streaming_mode 기본값은 off다', async () => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue(undefined) });
+    vi.stubGlobal('risuai', { pluginStorage: createPluginStorageStub() });
 
     await expect(loadStreamingMode()).resolves.toBe('off');
   });
 
   it('기존 stream 저장값은 decoupled로 불러온다', async () => {
-    vi.stubGlobal('risuai', { getArgument: vi.fn().mockResolvedValue('stream') });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub({ streaming_mode: 'stream' }),
+    });
 
     await expect(loadStreamingMode()).resolves.toBe('decoupled');
   });
 
   it('flags 미지정 기본값과 저장값을 판별한다', async () => {
-    const getArgument = vi.fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce('hasFirstSystemPrompt,poolSupported');
-    vi.stubGlobal('risuai', { getArgument });
+    const pluginStorage = createPluginStorageStub();
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await expect(loadConfigurableLlmFlagNames()).resolves.toEqual(['hasFullSystemPrompt']);
+    await pluginStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({
+      flags: 'hasFirstSystemPrompt,poolSupported',
+    }));
     await expect(loadConfigurableLlmFlagNames()).resolves.toEqual([
       'hasFirstSystemPrompt',
       'poolSupported',
@@ -277,16 +307,12 @@ describe('generation option settings', () => {
   });
 
   it('모든 flags 해제 상태를 none sentinel로 저장하고 복원한다', async () => {
-    const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', {
-      getArgument: vi.fn().mockResolvedValue('none'),
-      pluginStorage: createPluginStorageStub(),
-      setArgument,
-    });
+    const pluginStorage = createPluginStorageStub();
+    vi.stubGlobal('risuai', { pluginStorage });
 
     await saveConfigurableLlmFlagNames([]);
 
-    expect(setArgument).toHaveBeenCalledWith('flags', 'none');
+    expect(requireConfigStorage(pluginStorage)).toMatchObject({ flags: 'none' });
     await expect(loadConfigurableLlmFlagNames()).resolves.toEqual([]);
   });
 });
@@ -323,14 +349,13 @@ async function dispatchChange(element: HTMLInputElement | HTMLSelectElement): Pr
 }
 
 function stubSettingsUi(
-  argumentValues: Readonly<Record<string, string>> = {},
+  configValues: Readonly<Record<string, string>> = {},
   storageValues: Readonly<Record<string, unknown>> = {},
 ) {
-  const argumentsByName = new Map(Object.entries(argumentValues));
   const storage = new Map(Object.entries(storageValues));
-  const setArgument = vi.fn(async (name: string, value: string) => {
-    argumentsByName.set(name, value);
-  });
+  if (Object.keys(configValues).length !== 0) {
+    storage.set(CONFIG_STORAGE_KEY, JSON.stringify(configValues));
+  }
   const setItem = vi.fn(async (key: string, value: unknown) => {
     storage.set(key, value);
   });
@@ -338,8 +363,6 @@ function stubSettingsUi(
   const hideContainer = vi.fn().mockResolvedValue(undefined);
 
   vi.stubGlobal('risuai', {
-    getArgument: vi.fn(async (name: string) => argumentsByName.get(name)),
-    setArgument,
     showContainer,
     hideContainer,
     getColorScheme: vi.fn().mockResolvedValue({
@@ -352,14 +375,14 @@ function stubSettingsUi(
     },
   });
 
-  return { argumentsByName, hideContainer, setArgument, setItem, showContainer, storage };
+  return { hideContainer, setItem, showContainer, storage };
 }
 
 async function renderSettingsUi(
-  argumentValues: Readonly<Record<string, string>> = {},
+  configValues: Readonly<Record<string, string>> = {},
   storageValues: Readonly<Record<string, unknown>> = {},
 ): Promise<ReturnType<typeof stubSettingsUi>> {
-  const harness = stubSettingsUi(argumentValues, storageValues);
+  const harness = stubSettingsUi(configValues, storageValues);
   await act(async () => {
     await openSettings({ flagNames: ['hasFullSystemPrompt'] });
   });
@@ -408,7 +431,7 @@ describe('settings UI', () => {
     expect(button.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('native change마다 기존 인자 포맷으로 즉시 저장한다', async () => {
+  it('native change마다 config JSON으로 즉시 저장한다', async () => {
     const harness = await renderSettingsUi();
 
     const apiKey = requireInput('api-key');
@@ -443,17 +466,19 @@ describe('settings UI', () => {
     poolSupported.checked = true;
     await dispatchChange(poolSupported);
 
-    expect(harness.setArgument).toHaveBeenCalledWith('api_key', 'llmgtwy_changed');
-    expect(harness.setArgument).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
-    expect(harness.setArgument).toHaveBeenCalledWith('prompt_cache_mode', 'disabled');
-    expect(harness.setArgument).toHaveBeenCalledWith('reasoning_effort', 'xhigh');
-    expect(harness.setArgument).toHaveBeenCalledWith('verbosity', 'low');
-    expect(harness.setArgument).toHaveBeenCalledWith('streaming_mode', 'decoupled');
-    expect(harness.setArgument).toHaveBeenCalledWith('service_tier', 'flex');
-    expect(harness.setArgument).toHaveBeenCalledWith(
-      'flags',
-      'hasFullSystemPrompt,poolSupported',
-    );
+    const storedConfig = harness.storage.get(CONFIG_STORAGE_KEY);
+    expect(typeof storedConfig).toBe('string');
+    if (typeof storedConfig !== 'string') throw new Error('Expected serialized config');
+    expect(JSON.parse(storedConfig)).toEqual({
+      api_key: 'llmgtwy_changed',
+      flags: 'hasFullSystemPrompt,poolSupported',
+      model: 'gpt-5.6-luna',
+      prompt_cache_mode: 'disabled',
+      reasoning_effort: 'xhigh',
+      service_tier: 'flex',
+      streaming_mode: 'decoupled',
+      verbosity: 'low',
+    });
     expect(document.getElementById('reload-notice')?.textContent).toContain(
       '적용하려면 새로고침이 필요합니다.',
     );
@@ -528,7 +553,7 @@ describe('settings UI', () => {
     expect(harness.hideContainer).toHaveBeenCalledOnce();
 
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    harness.setArgument.mockRejectedValueOnce(new Error('storage unavailable'));
+    harness.setItem.mockRejectedValueOnce(new Error('storage unavailable'));
     const apiKey = requireInput('api-key');
     apiKey.value = 'will-fail';
     await dispatchChange(apiKey);

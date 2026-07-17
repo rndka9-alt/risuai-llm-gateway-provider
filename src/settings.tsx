@@ -2,10 +2,17 @@ import { render, type ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import {
   API_KEY_ARGUMENT,
-  setArgumentWithBackup,
-} from './argument-backup';
-import {
+  FLAGS_ARGUMENT,
+  MODEL_ARGUMENT,
   PROMPT_CACHE_MODE_ARGUMENT,
+  REASONING_EFFORT_ARGUMENT,
+  SERVICE_TIER_ARGUMENT,
+  STREAMING_MODE_ARGUMENT,
+  VERBOSITY_ARGUMENT,
+  loadConfig,
+  saveConfig,
+} from './config';
+import {
   isCacheBackoffActive,
   loadCacheAnchorState,
   resolvePromptCacheMode,
@@ -20,14 +27,8 @@ import {
 import {
   CONFIGURABLE_LLM_FLAG_NAMES,
   DEFAULT_MODEL,
-  FLAGS_ARGUMENT,
-  MODEL_ARGUMENT,
   MODEL_OPTIONS,
-  REASONING_EFFORT_ARGUMENT,
   REASONING_EFFORT_OPTIONS,
-  SERVICE_TIER_ARGUMENT,
-  STREAMING_MODE_ARGUMENT,
-  VERBOSITY_ARGUMENT,
   VERBOSITY_OPTIONS,
   resolveConfigurableLlmFlagNames,
   resolveReasoningEffort,
@@ -83,117 +84,85 @@ export interface ProviderRegistrationSettings {
 }
 
 export async function loadApiKey(): Promise<string> {
-  const value = await risuai.getArgument(API_KEY_ARGUMENT);
-  if (value === undefined) return '';
-  if (typeof value !== 'string') {
-    throw new TypeError('api_key argument must be a string');
-  }
-  return value;
+  return (await loadConfig())[API_KEY_ARGUMENT];
 }
 
 export async function saveApiKey(value: string): Promise<void> {
-  await setArgumentWithBackup(API_KEY_ARGUMENT, value);
+  await saveConfig({ [API_KEY_ARGUMENT]: value });
 }
 
 export async function loadPromptCacheMode(): Promise<PromptCacheMode> {
-  const value = await risuai.getArgument(PROMPT_CACHE_MODE_ARGUMENT);
-  if (value === undefined) return 'explicit';
-  if (typeof value !== 'string') {
-    throw new TypeError('prompt_cache_mode argument must be a string');
-  }
-  return resolvePromptCacheMode(value);
+  const config = await loadConfig();
+  return resolvePromptCacheMode(config[PROMPT_CACHE_MODE_ARGUMENT]);
 }
 
 export async function savePromptCacheMode(value: PromptCacheMode): Promise<void> {
-  await setArgumentWithBackup(PROMPT_CACHE_MODE_ARGUMENT, value);
+  await saveConfig({ [PROMPT_CACHE_MODE_ARGUMENT]: value });
 }
 
 export async function loadModel(): Promise<string> {
-  const value = await risuai.getArgument(MODEL_ARGUMENT);
-  if (value === undefined) return DEFAULT_MODEL;
-  if (typeof value !== 'string') {
-    throw new TypeError('model argument must be a string');
-  }
+  const value = (await loadConfig())[MODEL_ARGUMENT];
   const trimmed = value.trim();
   return trimmed === '' ? DEFAULT_MODEL : trimmed;
 }
 
 export async function saveModel(value: string): Promise<void> {
-  await setArgumentWithBackup(MODEL_ARGUMENT, value);
+  await saveConfig({ [MODEL_ARGUMENT]: value });
 }
 
 export async function loadServiceTier(): Promise<ServiceTier | undefined> {
-  const value = await risuai.getArgument(SERVICE_TIER_ARGUMENT);
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') {
-    throw new TypeError('service_tier argument must be a string');
-  }
-  return resolveServiceTier(value);
+  const config = await loadConfig();
+  return resolveServiceTier(config[SERVICE_TIER_ARGUMENT]);
 }
 
 export async function saveServiceTier(value: ServiceTier | undefined): Promise<void> {
-  await setArgumentWithBackup(SERVICE_TIER_ARGUMENT, value === 'flex' ? 'flex' : '');
+  await saveConfig({
+    [SERVICE_TIER_ARGUMENT]: value === 'flex' ? 'flex' : '',
+  });
 }
 
 export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined> {
-  const value = await risuai.getArgument(REASONING_EFFORT_ARGUMENT);
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') {
-    throw new TypeError('reasoning_effort argument must be a string');
-  }
-  return resolveReasoningEffort(value);
+  const config = await loadConfig();
+  return resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
 }
 
 export async function saveReasoningEffort(
   value: ReasoningEffort | undefined,
 ): Promise<void> {
-  await setArgumentWithBackup(REASONING_EFFORT_ARGUMENT, value ?? '');
+  await saveConfig({ [REASONING_EFFORT_ARGUMENT]: value ?? '' });
 }
 
 export async function loadVerbosity(): Promise<Verbosity | undefined> {
-  const value = await risuai.getArgument(VERBOSITY_ARGUMENT);
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') {
-    throw new TypeError('verbosity argument must be a string');
-  }
-  return resolveVerbosity(value);
+  const config = await loadConfig();
+  return resolveVerbosity(config[VERBOSITY_ARGUMENT]);
 }
 
 export async function saveVerbosity(value: Verbosity | undefined): Promise<void> {
-  await setArgumentWithBackup(VERBOSITY_ARGUMENT, value ?? '');
+  await saveConfig({ [VERBOSITY_ARGUMENT]: value ?? '' });
 }
 
 export async function loadStreamingMode(): Promise<StreamingMode> {
-  const value = await risuai.getArgument(STREAMING_MODE_ARGUMENT);
-  if (value === undefined) return 'off';
-  if (typeof value !== 'string') {
-    throw new TypeError('streaming_mode argument must be a string');
-  }
-  return resolveStreamingMode(value);
+  const config = await loadConfig();
+  return resolveStreamingMode(config[STREAMING_MODE_ARGUMENT]);
 }
 
 export async function saveStreamingMode(value: StreamingMode): Promise<void> {
-  await setArgumentWithBackup(STREAMING_MODE_ARGUMENT, value);
+  await saveConfig({ [STREAMING_MODE_ARGUMENT]: value });
 }
 
 export async function loadConfigurableLlmFlagNames(): Promise<
   readonly ConfigurableLlmFlagName[]
 > {
-  const value = await risuai.getArgument(FLAGS_ARGUMENT);
-  if (value === undefined) return resolveConfigurableLlmFlagNames(undefined);
-  if (typeof value !== 'string') {
-    throw new TypeError('flags argument must be a string');
-  }
-  return resolveConfigurableLlmFlagNames(value);
+  const config = await loadConfig();
+  return resolveConfigurableLlmFlagNames(config[FLAGS_ARGUMENT]);
 }
 
 export async function saveConfigurableLlmFlagNames(
   flagNames: readonly ConfigurableLlmFlagName[],
 ): Promise<void> {
-  await setArgumentWithBackup(
-    FLAGS_ARGUMENT,
-    serializeConfigurableLlmFlagNames(flagNames),
-  );
+  await saveConfig({
+    [FLAGS_ARGUMENT]: serializeConfigurableLlmFlagNames(flagNames),
+  });
 }
 
 export interface SettingsValues {
@@ -208,16 +177,16 @@ export interface SettingsValues {
 }
 
 export async function saveSettings(values: SettingsValues): Promise<void> {
-  await Promise.all([
-    saveApiKey(values.apiKey),
-    saveModel(values.model),
-    savePromptCacheMode(values.promptCacheMode),
-    saveServiceTier(values.serviceTier),
-    saveReasoningEffort(values.reasoningEffort),
-    saveVerbosity(values.verbosity),
-    saveStreamingMode(values.streamingMode),
-    saveConfigurableLlmFlagNames(values.flagNames),
-  ]);
+  await saveConfig({
+    [API_KEY_ARGUMENT]: values.apiKey,
+    [MODEL_ARGUMENT]: values.model,
+    [PROMPT_CACHE_MODE_ARGUMENT]: values.promptCacheMode,
+    [SERVICE_TIER_ARGUMENT]: values.serviceTier === 'flex' ? 'flex' : '',
+    [REASONING_EFFORT_ARGUMENT]: values.reasoningEffort ?? '',
+    [VERBOSITY_ARGUMENT]: values.verbosity ?? '',
+    [STREAMING_MODE_ARGUMENT]: values.streamingMode,
+    [FLAGS_ARGUMENT]: serializeConfigurableLlmFlagNames(values.flagNames),
+  });
 }
 
 export function createProviderRegistrationSignature(

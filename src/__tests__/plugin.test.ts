@@ -6,6 +6,8 @@ import {
   RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
 } from '../options';
 
+const CONFIG_STORAGE_KEY = 'llm-gateway-provider:config';
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -92,7 +94,6 @@ function createAbortingStreamingResponse(abortController: AbortController): Resp
 }
 
 interface ProviderHarness {
-  argumentsByKey: Map<string, string>;
   nativeFetch: ReturnType<typeof vi.fn<(url: string, requestInit?: RequestInit) => Promise<Response>>>;
   provider: ProviderFunction;
   providerOptions: ProviderOptions | undefined;
@@ -104,8 +105,8 @@ interface ProviderHarness {
 async function loadProvider(
   responses: Response[],
   argumentOverrides: Readonly<Record<string, string>> = {},
-  backedUpFlags: string | undefined = undefined,
-  failArgumentBackupLoad = false,
+  failConfigStorage = false,
+  initialConfigFlags: string | undefined = undefined,
 ): Promise<ProviderHarness> {
   const stored = new Map<string, string>();
   const argumentsByKey = new Map<string, string>([
@@ -133,18 +134,16 @@ async function loadProvider(
   vi.stubGlobal('__VERSION__', 'test');
   vi.stubGlobal('risuai', {
     getArgument: async (key: string) => argumentsByKey.get(key),
-    setArgument: async (key: string, value: string) => {
-      startupEvents.push(`setArgument:${key}`);
-      argumentsByKey.set(key, value);
-    },
     pluginStorage: {
       getItem: async (key: string) => {
-        if (failArgumentBackupLoad) {
-          throw new Error('argument backup storage unavailable');
+        startupEvents.push(`getItem:${key}`);
+        if (failConfigStorage) {
+          throw new Error('config storage unavailable');
         }
         return stored.get(key) ?? null;
       },
       setItem: async (key: string, value: string) => {
+        startupEvents.push(`setItem:${key}`);
         stored.set(key, value);
       },
     },
@@ -179,19 +178,16 @@ async function loadProvider(
   });
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-  if (backedUpFlags !== undefined) {
-    const currentFlags = argumentsByKey.get('flags');
-    const { setArgumentWithBackup } = await import('../argument-backup');
-    await setArgumentWithBackup('flags', backedUpFlags);
-    if (currentFlags === undefined) argumentsByKey.delete('flags');
-    else argumentsByKey.set('flags', currentFlags);
+  if (initialConfigFlags !== undefined) {
+    const { saveConfig } = await import('../config');
+    await saveConfig({ flags: initialConfigFlags });
+    startupEvents.length = 0;
   }
   await import('../plugin');
   await startupCompleted;
   if (registeredProvider === undefined) throw new Error('Provider was not registered');
 
   return {
-    argumentsByKey,
     nativeFetch,
     provider: registeredProvider,
     providerOptions,
@@ -226,10 +222,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe('provider registration metadata', () => {
-  it('백업 flags를 provider 등록 전에 복원해 등록 스냅샷에 반영한다', async () => {
+  it('저장 config flags를 realArg보다 우선해 provider 등록에 반영한다', async () => {
     const harness = await loadProvider(
       [],
-      { flags: '' },
+      { flags: 'hasFullSystemPrompt' },
+      false,
       'hasFirstSystemPrompt,poolSupported',
     );
 
@@ -237,22 +234,22 @@ describe('provider registration metadata', () => {
       RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
       RISUAI_LLM_FLAGS.poolSupported,
     ]);
-    expect(harness.startupEvents.indexOf('setArgument:flags')).toBeLessThan(
+    expect(harness.startupEvents.indexOf(`getItem:${CONFIG_STORAGE_KEY}`)).toBeLessThan(
       harness.startupEvents.indexOf('addProvider'),
     );
   });
 
-  it('백업 저장소 실패가 provider 등록을 막지 않는다', async () => {
+  it('config 저장소 실패가 provider 등록을 막지 않는다', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const harness = await loadProvider([], {}, undefined, true);
+    const harness = await loadProvider([], {}, true);
 
     expect(harness.providerOptions?.model?.flags).toEqual([
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
     ]);
     expect(harness.startupEvents).toContain('addProvider');
     expect(consoleError).toHaveBeenCalledWith(
-      '[llm-gateway-provider] argument backup startup synchronization failed; continuing',
+      '[llm-gateway-provider] config startup initialization failed; continuing with defaults',
       expect.any(Error),
     );
   });

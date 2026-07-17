@@ -1,4 +1,3 @@
-export const PROMPT_CACHE_MODE_ARGUMENT = 'prompt_cache_mode';
 export const EXPLICIT_PROMPT_CACHE_KEY = 'risuai:llm-gateway-provider:v1';
 export const DISABLED_PROMPT_CACHE_KEY = 'risuai:llm-gateway-provider:v1:disabled';
 

@@ -10,11 +10,6 @@ import {
   type OpenAIChatCompletionsRaw,
 } from 'llm-io';
 import {
-  API_KEY_ARGUMENT,
-  initializeArgumentBackupOnStartup,
-} from './argument-backup';
-import {
-  PROMPT_CACHE_MODE_ARGUMENT,
   type CacheAnchorState,
   type CacheBackoffTransition,
   createPromptCacheExtraBody,
@@ -26,16 +21,23 @@ import {
   resolvePromptCacheMode,
   saveCacheAnchorState,
 } from './cache';
+import {
+  API_KEY_ARGUMENT,
+  FLAGS_ARGUMENT,
+  MODEL_ARGUMENT,
+  PROMPT_CACHE_MODE_ARGUMENT,
+  REASONING_EFFORT_ARGUMENT,
+  SERVICE_TIER_ARGUMENT,
+  STREAMING_MODE_ARGUMENT,
+  VERBOSITY_ARGUMENT,
+  initializeConfigOnStartup,
+  loadConfig,
+} from './config';
 import { toLlmMessages } from './convert';
 import { accumulateCacheUsage } from './ledger';
 import {
   DEFAULT_MODEL,
-  FLAGS_ARGUMENT,
-  REASONING_EFFORT_ARGUMENT,
   RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
-  SERVICE_TIER_ARGUMENT,
-  STREAMING_MODE_ARGUMENT,
-  VERBOSITY_ARGUMENT,
   resolveConfigurableLlmFlagNames,
   resolveProviderLlmFlags,
   resolveReasoningEffort,
@@ -68,14 +70,6 @@ interface StreamConsumptionResult {
 
 interface ProviderRegistrationSettings {
   flagNames: readonly ConfigurableLlmFlagName[];
-}
-
-async function readArgument(key: string): Promise<string | undefined> {
-  const value = await risuai.getArgument(key);
-  if (typeof value !== 'string') return undefined;
-
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
 }
 
 function toFailureContent(error: unknown): string {
@@ -161,12 +155,13 @@ async function requestLLMGateway(
   providerArguments: ProviderArguments,
   abortSignal?: AbortSignal,
 ): Promise<ProviderResponse> {
+  const config = await loadConfig();
   // hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌으므로,
   // 스트리밍 모드는 매 요청 라이브로 읽어 저장 즉시 반영한다 (새로고침 불필요).
-  const streamingMode = resolveStreamingMode(await readArgument(STREAMING_MODE_ARGUMENT));
-  const apiKey = await readArgument(API_KEY_ARGUMENT);
+  const streamingMode = resolveStreamingMode(config[STREAMING_MODE_ARGUMENT]);
+  const apiKey = config[API_KEY_ARGUMENT].trim();
 
-  if (apiKey === undefined) {
+  if (apiKey === '') {
     return {
       success: false,
       content: '플러그인 설정에서 api_key를 입력해주세요.',
@@ -175,12 +170,13 @@ async function requestLLMGateway(
 
   // 설정 UI는 모델 기본값을 표시만 하고 사용자가 바꾸기 전엔 저장하지 않으므로
   // (change 시점 즉시 저장), 미설정이면 표시값과 같은 기본 모델을 사용한다.
-  const model = (await readArgument('model')) ?? DEFAULT_MODEL;
+  const storedModel = config[MODEL_ARGUMENT].trim();
+  const model = storedModel === '' ? DEFAULT_MODEL : storedModel;
 
-  const promptCacheMode = resolvePromptCacheMode(await readArgument(PROMPT_CACHE_MODE_ARGUMENT));
-  const serviceTier = resolveServiceTier(await readArgument(SERVICE_TIER_ARGUMENT));
-  const reasoningEffort = resolveReasoningEffort(await readArgument(REASONING_EFFORT_ARGUMENT));
-  const verbosity = resolveVerbosity(await readArgument(VERBOSITY_ARGUMENT));
+  const promptCacheMode = resolvePromptCacheMode(config[PROMPT_CACHE_MODE_ARGUMENT]);
+  const serviceTier = resolveServiceTier(config[SERVICE_TIER_ARGUMENT]);
+  const reasoningEffort = resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
+  const verbosity = resolveVerbosity(config[VERBOSITY_ARGUMENT]);
   const messages = toLlmMessages(providerArguments.prompt_chat);
   let requestMessages = messages;
   let nextCacheAnchorState: CacheAnchorState | null = null;
@@ -278,9 +274,9 @@ async function requestLLMGateway(
 }
 
 async function main(): Promise<void> {
-  await initializeArgumentBackupOnStartup();
+  const config = await initializeConfigOnStartup();
   const registrationSettings: ProviderRegistrationSettings = {
-    flagNames: resolveConfigurableLlmFlagNames(await readArgument(FLAGS_ARGUMENT)),
+    flagNames: resolveConfigurableLlmFlagNames(config[FLAGS_ARGUMENT]),
   };
   await risuai.addProvider(
     PROVIDER_NAME,
