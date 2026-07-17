@@ -52,14 +52,16 @@ interface CacheEntry {
 
 const DEFAULT_KERNEL_TOKENIZER: KernelTokenizer = (text) => Math.ceil(text.length / 4);
 
+// TTL 실측(probe --ttl, 2026-07): 29분 hit / 31·45·60분 miss로 무접근 시 30분
+// 하드 만료가 확인됐고, 25분 hit 후 45분 hit로 히트 시 수명 갱신이 확인됐다.
 const CALIBRATED_OPTIONS: FakeGatewayKernelOptions = {
-  hardExpiry: false,
+  hardExpiry: true,
   infiniteTtl: false,
   markerMatchMode: 'exact',
   maximumPromptCacheKeyLength: 64,
   minimumCacheablePrefixTokens: 1024,
-  postMinimumSurvivalProbability: 0.5,
-  refreshTtlOnRead: false,
+  postMinimumSurvivalProbability: 0,
+  refreshTtlOnRead: true,
   tokenizer: DEFAULT_KERNEL_TOKENIZER,
   ttlMinutes: 30,
   windowScope: 'per-key',
@@ -70,6 +72,8 @@ const PESSIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
   ...CALIBRATED_OPTIONS,
   hardExpiry: true,
   postMinimumSurvivalProbability: 0,
+  // 히트 갱신은 실측으로 확인됐지만, 비관 커널은 갱신이 없는 세계도 계속 커버한다.
+  refreshTtlOnRead: false,
   windowScope: 'global',
 };
 
