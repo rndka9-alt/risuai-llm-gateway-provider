@@ -177,7 +177,6 @@ async function requestLLMGateway(
   // (change 시점 즉시 저장), 미설정이면 표시값과 같은 기본 모델을 사용한다.
   const model = (await readArgument('model')) ?? DEFAULT_MODEL;
 
-  const baseUrl = await readArgument('base_url');
   const promptCacheMode = resolvePromptCacheMode(await readArgument(PROMPT_CACHE_MODE_ARGUMENT));
   const serviceTier = resolveServiceTier(await readArgument(SERVICE_TIER_ARGUMENT));
   const reasoningEffort = resolveReasoningEffort(await readArgument(REASONING_EFFORT_ARGUMENT));
@@ -225,7 +224,9 @@ async function requestLLMGateway(
   };
   const gatewayClient: GatewayClient = new Llm({
     format: new OpenAIChatCompletionsFormat({ model, extraBody }),
-    provider: new LLMGatewayProvider(baseUrl === undefined ? { apiKey } : { apiKey, baseUrl }),
+    // 엔드포인트는 llm-io 기본값(공식 llmgateway.io)으로 고정한다. 인자로 열어두면
+    // 타 플러그인이 v2 setArg로 바꿔칠 수 있어 api_key가 임의 주소로 전송될 수 있다.
+    provider: new LLMGatewayProvider({ apiKey }),
     // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
     // RisuAI 브릿지를 경유한다.
     fetch: (url, requestInit) => risuai.nativeFetch(url, requestInit),
