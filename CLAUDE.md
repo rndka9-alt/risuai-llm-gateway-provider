@@ -35,6 +35,8 @@ npm test
 ## 구조
 
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
+- `src/bridge-fetch.ts` — 브릿지 경유 FetchLike 생성. transferable streams 미지원 브라우저
+  (Safari 26 이하)는 legacy `risuFetch` 폴백으로 자동 전환 (아래 런타임 제약 참고)
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
@@ -43,6 +45,8 @@ npm test
 - `src/toast.ts` — 캐시 백오프 발동/해제 메인 DOM 토스트 (`SafeDocument`, 실패 시 경고 폴백)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
+- `types/risuai-legacy.d.ts` — 본체 d.ts에 없는 deprecated `risuFetch` 선언 (Safari 폴백 전용,
+  본체 제거 가능성 때문에 optional로 선언해 존재 확인을 강제)
 
 ## breakpoint 자동 배치 (cache.ts)
 
@@ -81,6 +85,17 @@ npm test
 
 - **iframe 샌드박스**: CSP `connect-src 'none'` — 네트워크는 `risuai.nativeFetch` 브릿지 경유만 가능.
   브릿지는 `Response`(body ReadableStream transferable 포함)와 `AbortSignal`(ABORT_SIGNAL_REF) 모두 통과시킨다.
+- **Safari 폴백 (bridge-fetch.ts)**: transferable streams 미지원 브라우저(Safari 26 이하)에서는
+  브릿지의 Response 전달이 DataCloneError("The object can not be cloned")로 실패해 스트리밍 모드와
+  무관하게 모든 nativeFetch가 죽는다 (Safari 27 beta부터 지원). 요청 전에 MessageChannel probe로
+  지원 여부를 감지해, 미지원이면 legacy `risuFetch(rawResponse:true, plainFetchForce:true)`로 받은
+  `Uint8Array`를 iframe 안에서 `new Response(...)`로 재구성한다. **전송 실패 후 재시도는 중복 과금
+  위험이 있어 금지** — 반드시 요청 전에 경로를 결정한다. decoupled 모드는 이 경로에서
+  buffered-decoupled로 동작한다 (연결은 스트리밍, 소비는 완료 후 일괄).
+  `plainFetchForce`인 이유: fetchNative가 NodeOnly에서 직접 fetch로 동작하므로 폴백도 같은 직접
+  경로로 통일한다. llmgateway.io는 `Access-Control-Allow-Origin: *`라 공식 웹·Tauri에서도 통과한다.
+  headers의 content-type은 반드시 `Content-Type` 표기 하나로 정규화한다 — globalFetch가 대문자
+  기본값을 별도 키로 추가해 중복되면 게이트웨이가 body를 빈 객체로 취급한다 (실측 HTTP 400 ZodError).
 - **프로바이더 인자 실체**: `ProviderArguments`의 샘플러 값들은 d.ts와 달리 런타임에 누락될 수 있다
   (RisuAI `applyParameters`가 -1000 "off" 값을 skip). llm-io가 undefined를 omit하므로 그대로 통과시킨다.
 - **temperature 스케일**: RisuAI가 이미 /100 해서 API 스케일(0~2)로 넘겨준다. 추가 변환 금지.
