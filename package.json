@@ -12,10 +12,14 @@
   },
   "dependencies": {
     "llm-io": "github:rndka9-alt/llm-io",
+    "preact": "^10.29.7",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
     "esbuild": "^0.25",
+    "happy-dom": "^20.10.6",
+    "tailwindcss": "^4.3.3",
     "terser": "^5",
     "typescript": "^5",
     "vitest": "^3.2.4"

@@ -1,8 +1,15 @@
+import { execFile } from 'node:child_process';
 import { build } from 'esbuild';
 import { minify } from 'terser';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+import { createRequire } from 'node:module';
 
 const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+const executeFile = promisify(execFile);
+const require = createRequire(import.meta.url);
 
 const BANNER = `/*!
 //@name llm-gateway-provider
@@ -21,16 +28,39 @@ const BANNER = `/*!
 //@update-url https://raw.githubusercontent.com/rndka9-alt/risuai-llm-gateway-provider/main/plugin.min.js
 */`;
 
-// 1. esbuild: TS → single JS bundle
-await build({
-  entryPoints: ['src/plugin.ts'],
-  bundle: true,
-  format: 'iife',
-  target: 'esnext',
-  platform: 'browser',
-  outfile: 'plugin.js',
-  define: { __VERSION__: JSON.stringify(version) },
-});
+const temporaryDirectory = await mkdtemp(join(tmpdir(), 'llm-gateway-provider-'));
+try {
+  const generatedCssPath = join(temporaryDirectory, 'settings.css');
+  const tailwindPackagePath = require.resolve('@tailwindcss/cli/package.json');
+  const tailwindCliPath = join(dirname(tailwindPackagePath), 'dist', 'index.mjs');
+  await executeFile(process.execPath, [
+    tailwindCliPath,
+    '-i',
+    'src/settings.css',
+    '-o',
+    generatedCssPath,
+    '--minify',
+  ]);
+  const settingsStyles = await readFile(generatedCssPath, 'utf8');
+
+  // 1. esbuild: TSX + generated Tailwind CSS → single IIFE bundle
+  await build({
+    entryPoints: ['src/plugin.ts'],
+    bundle: true,
+    format: 'iife',
+    target: 'esnext',
+    platform: 'browser',
+    outfile: 'plugin.js',
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
+    define: {
+      __SETTINGS_STYLES__: JSON.stringify(settingsStyles),
+      __VERSION__: JSON.stringify(version),
+    },
+  });
+} finally {
+  await rm(temporaryDirectory, { recursive: true });
+}
 
 // 2. terser: minify (/*! */ 주석 보존)
 const code = await readFile('plugin.js', 'utf8');

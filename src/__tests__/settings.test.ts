@@ -1,11 +1,17 @@
+// @vitest-environment happy-dom
+import { render } from 'preact';
+import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { STYLES } from '../constants';
-import { createEmptyCacheLedger } from '../ledger';
+import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
+import { PRESET_SCHEMES } from '../constants';
+import {
+  CACHE_LEDGER_STORAGE_KEY,
+  createEmptyCacheLedger,
+} from '../ledger';
 import {
   buildLedgerDisplay,
   formatTokenCount,
   createProviderRegistrationSignature,
-  createSettingsHtml,
   loadApiKey,
   loadConfigurableLlmFlagNames,
   loadModel,
@@ -18,9 +24,17 @@ import {
   saveConfigurableLlmFlagNames,
   saveServiceTier,
   saveSettings,
+  openSettings,
 } from '../settings';
 
 afterEach(() => {
+  render(null, document.body);
+  document.body.replaceChildren();
+  document.body.removeAttribute('class');
+  document.head.replaceChildren();
+  document.documentElement.removeAttribute('class');
+  document.documentElement.removeAttribute('style');
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -257,143 +271,249 @@ describe('generation option settings', () => {
   });
 });
 
+function requireInput(id: string): HTMLInputElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error(`Expected #${id} to be an input`);
+  }
+  return element;
+}
+
+function requireSelect(id: string): HTMLSelectElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLSelectElement)) {
+    throw new Error(`Expected #${id} to be a select`);
+  }
+  return element;
+}
+
+function requireButton(id: string): HTMLButtonElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLButtonElement)) {
+    throw new Error(`Expected #${id} to be a button`);
+  }
+  return element;
+}
+
+async function dispatchChange(element: HTMLInputElement | HTMLSelectElement): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
+function stubSettingsUi(
+  argumentValues: Readonly<Record<string, string>> = {},
+  storageValues: Readonly<Record<string, unknown>> = {},
+) {
+  const argumentsByName = new Map(Object.entries(argumentValues));
+  const storage = new Map(Object.entries(storageValues));
+  const setArgument = vi.fn(async (name: string, value: string) => {
+    argumentsByName.set(name, value);
+  });
+  const setItem = vi.fn(async (key: string, value: unknown) => {
+    storage.set(key, value);
+  });
+  const showContainer = vi.fn().mockResolvedValue(undefined);
+  const hideContainer = vi.fn().mockResolvedValue(undefined);
+
+  vi.stubGlobal('risuai', {
+    getArgument: vi.fn(async (name: string) => argumentsByName.get(name)),
+    setArgument,
+    showContainer,
+    hideContainer,
+    getColorScheme: vi.fn().mockResolvedValue({
+      name: 'light',
+      scheme: PRESET_SCHEMES['light'],
+    }),
+    pluginStorage: {
+      getItem: vi.fn(async (key: string) => storage.get(key) ?? null),
+      setItem,
+    },
+  });
+
+  return { argumentsByName, hideContainer, setArgument, setItem, showContainer, storage };
+}
+
+async function renderSettingsUi(
+  argumentValues: Readonly<Record<string, string>> = {},
+  storageValues: Readonly<Record<string, unknown>> = {},
+): Promise<ReturnType<typeof stubSettingsUi>> {
+  const harness = stubSettingsUi(argumentValues, storageValues);
+  await act(async () => {
+    await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+  });
+  return harness;
+}
+
 describe('settings UI', () => {
-  it('필드 캡션과 활성 flag 체크박스를 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
+  it('저장된 인자와 미지원 flag 상태를 Preact DOM에 반영한다', async () => {
+    const harness = await renderSettingsUi({
+      api_key: 'llmgtwy_secret',
+      flags: 'hasFirstSystemPrompt,poolSupported',
+      model: 'gpt-5.6-custom',
+      prompt_cache_mode: 'disabled',
+      reasoning_effort: 'high',
+      service_tier: 'flex',
+      streaming_mode: 'decoupled',
+      verbosity: 'medium',
+    });
 
-    for (const caption of [
-      'API 키',
-      '캐시 모드',
-      'Reasoning effort',
-      'Verbosity',
-      '응답 방식',
-      '고급',
-      '모델',
-      '서비스 티어',
-      'LLM flags',
-    ]) {
-      expect(html).toContain(`>${caption}<`);
+    expect(harness.showContainer).toHaveBeenCalledWith('fullscreen');
+    expect(requireInput('api-key').value).toBe('llmgtwy_secret');
+    expect(requireInput('api-key').type).toBe('password');
+    expect(requireSelect('model').value).toBe('gpt-5.6-custom');
+    expect(requireSelect('prompt-cache-mode').value).toBe('disabled');
+    expect(requireSelect('reasoning-effort').value).toBe('high');
+    expect(requireSelect('verbosity').value).toBe('medium');
+    expect(requireInput('streaming-mode').checked).toBe(true);
+    expect(requireInput('service-tier').checked).toBe(true);
+    expect(requireInput('flag-hasFullSystemPrompt').checked).toBe(false);
+    expect(requireInput('flag-hasFirstSystemPrompt').checked).toBe(true);
+    expect(requireInput('flag-poolSupported').checked).toBe(true);
+
+    const disabledMediaInput = document.querySelector<HTMLInputElement>('input:disabled');
+    expect(disabledMediaInput?.parentElement?.textContent).toContain('Image Input · 미지원');
+    expect(document.body.textContent).not.toContain('Image Output');
+  });
+
+  it('API key 표시 토글을 DOM 상태와 접근성 속성에 반영한다', async () => {
+    await renderSettingsUi({ api_key: 'llmgtwy_secret' });
+    const input = requireInput('api-key');
+    const button = requireButton('api-key-visibility');
+
+    await act(async () => button.click());
+    expect(input.type).toBe('text');
+    expect(button.getAttribute('aria-label')).toBe('API 키 숨기기');
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('native change마다 기존 인자 포맷으로 즉시 저장한다', async () => {
+    const harness = await renderSettingsUi();
+
+    const apiKey = requireInput('api-key');
+    apiKey.value = 'llmgtwy_changed';
+    await dispatchChange(apiKey);
+
+    const model = requireSelect('model');
+    model.value = 'gpt-5.6-luna';
+    await dispatchChange(model);
+
+    const cacheMode = requireSelect('prompt-cache-mode');
+    cacheMode.value = 'disabled';
+    await dispatchChange(cacheMode);
+
+    const reasoningEffort = requireSelect('reasoning-effort');
+    reasoningEffort.value = 'xhigh';
+    await dispatchChange(reasoningEffort);
+
+    const verbosity = requireSelect('verbosity');
+    verbosity.value = 'low';
+    await dispatchChange(verbosity);
+
+    const streamingMode = requireInput('streaming-mode');
+    streamingMode.checked = true;
+    await dispatchChange(streamingMode);
+
+    const serviceTier = requireInput('service-tier');
+    serviceTier.checked = true;
+    await dispatchChange(serviceTier);
+
+    const poolSupported = requireInput('flag-poolSupported');
+    poolSupported.checked = true;
+    await dispatchChange(poolSupported);
+
+    expect(harness.setArgument).toHaveBeenCalledWith('api_key', 'llmgtwy_changed');
+    expect(harness.setArgument).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
+    expect(harness.setArgument).toHaveBeenCalledWith('prompt_cache_mode', 'disabled');
+    expect(harness.setArgument).toHaveBeenCalledWith('reasoning_effort', 'xhigh');
+    expect(harness.setArgument).toHaveBeenCalledWith('verbosity', 'low');
+    expect(harness.setArgument).toHaveBeenCalledWith('streaming_mode', 'decoupled');
+    expect(harness.setArgument).toHaveBeenCalledWith('service_tier', 'flex');
+    expect(harness.setArgument).toHaveBeenCalledWith(
+      'flags',
+      'hasFullSystemPrompt,poolSupported',
+    );
+    expect(document.getElementById('reload-notice')?.textContent).toContain(
+      '적용하려면 새로고침이 필요합니다.',
+    );
+  });
+
+  it('손익·백오프를 표시하고 원장 초기화를 저장소에 반영한다', async () => {
+    const ledger = {
+      ...createEmptyCacheLedger(),
+      readTokens: 10_000,
+      writeTokens: 4_000,
+    };
+    const anchorState = {
+      anchorIndexes: [],
+      consecutiveEpochResets: 3,
+      fingerprints: [],
+    };
+    const harness = await renderSettingsUi({}, {
+      [CACHE_ANCHOR_STATE_STORAGE_KEY]: JSON.stringify(anchorState),
+      [CACHE_LEDGER_STORAGE_KEY]: JSON.stringify(ledger),
+    });
+
+    expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
+    expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
+    expect(document.getElementById('ledger-write-detail')?.textContent).toBe('4.0k');
+    expect(document.getElementById('cache-backoff-diagnostic')?.textContent).toContain(
+      '{{time}}/{{random}}/확률 로어북',
+    );
+
+    await act(async () => {
+      requireButton('ledger-reset').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(harness.setItem).toHaveBeenCalledWith(
+      CACHE_LEDGER_STORAGE_KEY,
+      expect.any(String),
+    );
+    const storedLedger = harness.storage.get(CACHE_LEDGER_STORAGE_KEY);
+    expect(typeof storedLedger).toBe('string');
+    if (typeof storedLedger !== 'string') {
+      throw new Error('Expected serialized cache ledger');
     }
-    expect(html).toContain('id="reasoning-effort"');
-    expect(html).toContain('id="verbosity"');
-    expect(html).toContain('id="flag-hasFullSystemPrompt"');
-    expect(html).toContain('id="flag-poolSupported"');
-    expect(html).not.toContain('flag-hasStreaming');
+    expect(JSON.parse(storedLedger)).toMatchObject({ readTokens: 0, writeTokens: 0 });
+    expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('아직 기록 없음');
   });
 
-  it('API key를 password 입력과 표시 토글로 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
+  it('Tailwind 유틸리티와 호버·포커스 팝오버, sticky footer를 와이어한다', async () => {
+    await renderSettingsUi();
 
-    expect(html).toContain('<input id="api-key" type="password"');
-    expect(html).toContain('id="api-key-visibility"');
-    expect(html).toContain('aria-label="API 키 표시"');
-    expect(html).toContain('<svg viewBox="0 0 24 24" aria-hidden="true">');
-  });
-
-  it('스트리밍을 off와 decoupled 사이의 스위치로 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-
-    expect(html).toContain(
-      '<input id="streaming-mode" class="switch-input" type="checkbox" role="switch"',
+    expect(document.getElementById('llm-gateway-styles')).not.toBeNull();
+    expect(document.body.classList.contains('bg-black/55')).toBe(true);
+    expect(document.getElementById('streaming-mode-tooltip')?.className).toContain(
+      'group-focus-within:visible',
     );
-    expect(html).toContain('<span id="streaming-mode-label">일반 요청</span>');
-    expect(html).not.toContain('<select id="streaming-mode"');
-    expect(html).not.toContain('<option value="stream">');
-  });
-
-  it('응답 방식 도움말에 스트리밍 수신과 일괄 전달 동작을 설명한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-
-    expect(html).toContain('aria-describedby="streaming-mode-tooltip"');
-    expect(html).toContain('id="streaming-mode-tooltip" class="help-tooltip-content" role="tooltip"');
-    expect(html).toContain(
-      '응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.',
+    expect(document.getElementById('ledger-popover')?.className).toContain(
+      'group-hover:visible',
     );
+    expect(document.querySelector('footer')?.classList.contains('sticky')).toBe(true);
+    expect(document.querySelector('button[type="submit"]')).toBeNull();
   });
 
-  it('서비스 티어를 Gateway 기본과 Flex 사이의 스위치로 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-
-    expect(html).toContain(
-      '<input id="service-tier" class="switch-input" type="checkbox" role="switch"',
+  it('도움말·닫기 동작과 저장 실패 표시를 유지한다', async () => {
+    const harness = await renderSettingsUi();
+    expect(document.getElementById('streaming-mode-tooltip')?.textContent).toContain(
+      '플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.',
     );
-    expect(html).toContain('<span id="service-tier-label">Gateway 기본</span>');
-    expect(html).not.toContain('id="service-tier-default"');
-    expect(html).not.toContain('<select id="service-tier"');
-  });
-
-  it('서비스 티어 도움말에 Flex 비용과 지연·실패 가능성을 설명한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-
-    expect(html).toContain('aria-describedby="service-tier-tooltip"');
-    expect(html).toContain('id="service-tier-tooltip" class="help-tooltip-content" role="tooltip"');
-    expect(html).toContain(
-      '입력·출력 비용이 절반으로 줄어듭니다. 대신 서버 상황에 따라 응답이 늦어지거나 실패할 수 있습니다.',
+    expect(document.getElementById('service-tier-tooltip')?.textContent).toContain(
+      '입력·출력 비용이 절반으로 줄어듭니다.',
     );
-  });
 
-  it('미디어 항목은 Image Input 하나만 disabled 미지원으로 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
+    await act(async () => requireButton('close').click());
+    expect(harness.hideContainer).toHaveBeenCalledOnce();
 
-    expect(html).toContain('<span>Image Input · 미지원</span>');
-    for (const removedLabel of ['Image Output', 'Audio Input', 'Audio Output', 'Video Input']) {
-      expect(html).not.toContain(removedLabel);
-    }
-  });
-
-  it('저장 버튼 없이 닫기 버튼만 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-
-    expect(html).not.toContain('id="save"');
-    expect(html).toContain('id="close" class="close-button"');
-  });
-
-  it('상시 노출은 손익 대표 금액이고 리셋 버튼은 팝오버 밖 요약 옆에 렌더링한다', () => {
-    const html = createSettingsHtml('gpt-5.6-sol');
-    const popoverStart = html.indexOf('id="ledger-popover"');
-    const resetButton = html.indexOf('id="ledger-reset"');
-
-    expect(html).toContain('aria-label="캐시 손익 상세"');
-    expect(html).toContain('aria-describedby="ledger-popover"');
-    expect(html).not.toContain('aria-expanded="false"');
-    expect(html).toContain('id="ledger-popover" class="ledger-popover" role="tooltip"');
-    expect(html).toContain('<span id="ledger-amount-summary" class="amount neutral"></span>');
-    // 읽기/쓰기 원시값은 상시 노출이 아니라 팝오버 상세로만 보여준다.
-    expect(html).not.toContain('ledger-read-summary');
-    expect(html).toContain('<span>읽기</span><span id="ledger-read-detail">0</span>');
-    // 지출 행은 UI에서 제거됨 — 누적(costUsd) 자체는 원장에 계속 쌓인다.
-    expect(html).not.toContain('ledger-cost-detail');
-    expect(html).toContain('<span>캐시 손익</span><span id="ledger-amount"></span>');
-    expect(resetButton).toBeGreaterThan(-1);
-    expect(resetButton).toBeLessThan(popoverStart);
-  });
-
-  it('도움말을 hover와 keyboard focus 동안 표시하고 고정 토글 상태를 사용하지 않는다', () => {
-    expect(STYLES).toContain(
-      '.help-tooltip:hover .help-tooltip-content, .help-tooltip:focus-within .help-tooltip-content',
-    );
-    expect(STYLES).toContain(
-      '.ledger:hover .ledger-popover, .ledger:focus-within .ledger-popover',
-    );
-    expect(STYLES).not.toContain('.ledger.is-open');
-  });
-
-  it('accent 강조와 대비형 닫기 버튼을 테마 변수로 구성한다', () => {
-    expect(STYLES).toContain(
-      'background:color-mix(in srgb,var(--accent) 22%,var(--background))',
-    );
-    expect(STYLES).toContain(
-      'background:color-mix(in srgb,var(--text) 88%,var(--background))',
-    );
-    expect(STYLES).toContain('.ledger .amount.gain { color:#4ade80; }');
-    expect(STYLES).toContain('.ledger .amount.loss { color:#f87171; }');
-  });
-
-  it('손익과 닫기 영역을 스크롤 컨테이너 하단에 고정한다', () => {
-    expect(STYLES).toContain(
-      '.settings-footer { position:sticky; z-index:1; bottom:0;',
-    );
-    expect(STYLES).toContain('background:var(--background2); }');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    harness.setArgument.mockRejectedValueOnce(new Error('storage unavailable'));
+    const apiKey = requireInput('api-key');
+    apiKey.value = 'will-fail';
+    await dispatchChange(apiKey);
+    await act(async () => Promise.resolve());
+    expect(document.getElementById('save-error')?.textContent).toContain('저장에 실패');
   });
 
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
@@ -402,18 +522,5 @@ describe('settings UI', () => {
     })).toBe(createProviderRegistrationSignature({
       flagNames: ['hasFullSystemPrompt', 'poolSupported'],
     }));
-  });
-
-  it('저장 후 재등록 안내 문구를 포함한다', () => {
-    expect(createSettingsHtml('gpt-5.6-sol')).toContain(
-      '적용하려면 새로고침이 필요합니다.',
-    );
-  });
-
-  it('캐시 백오프 진단 문구를 원장 근처에 포함한다', () => {
-    expect(createSettingsHtml('gpt-5.6-sol')).toContain(
-      '⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. ' +
-      '프리셋의 {{time}}/{{random}}/확률 로어북을 확인해보세요',
-    );
   });
 });
