@@ -1,5 +1,6 @@
 @import 'tailwindcss' source(none);
 @source './settings.tsx';
+@source './components/SettingsPanel.tsx';
 @source './components/SteppedSlider.tsx';
 
 @theme inline {
