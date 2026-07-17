@@ -15,6 +15,23 @@ npm test
 `plugin.min.js`의 `@version`은 빌드 시 `package.json`에서 읽는다. 버전은 `package.json`에서만 관리하고,
 `npm run build` 후 수동 커밋으로 배포하지 않는다 (release.sh 일괄 처리).
 
+## 테스트 원칙
+
+- 테스트는 모듈이 index로 노출한 공개 API만 대상으로 한다. 내부 함수의 구현
+  방식은 테스트하지 않는다 — 노출된 인터페이스가 계약대로 동작하는지가 전부다.
+- 내부 함수를 테스트하고 싶어지면 그 내부가 독립 모듈로 승격될 신호로 본다.
+- 모든 테스트는 중앙 `src/__tests__/`에 둔다. mock은 실제 런타임 semantics를
+  따른다 (예: pluginStorage는 동기 read-through — setItem 직후 getItem은 최신값).
+
+## 모듈 구조 원칙
+
+- 디렉터리 모듈의 루트에는 모듈의 목적을 표현하는 "주인공"(공개 오케스트레이션)만
+  남기고, 내부 구현은 역할별 서브모듈로 내려보낸다.
+- index.ts는 실소비자가 쓰는 공개 API만 명시적으로 재수출한다 (`export *` 금지,
+  테스트 편의용 내부 재수출 금지).
+- 한 함수 한 파일은 지향이지 강박이 아니다 — 통과만 하는 wrapper 파일은 만들지
+  않고, 외부 소비자가 없는 서브모듈에는 index를 두지 않는다.
+
 ## 구조
 
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
