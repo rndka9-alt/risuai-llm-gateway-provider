@@ -1,5 +1,4 @@
-export const FIELD_CLASS =
-  'flex min-w-0 flex-col gap-1.5';
+export const FIELD_CLASS = 'flex min-w-0 flex-col gap-1.5';
 export const FIELD_CAPTION_CLASS =
   'text-[11px] font-medium leading-tight tracking-[0.01em] text-ui-muted';
 
@@ -38,12 +37,14 @@ export function SteppedSlider<Value extends string>({
   const isUnset = selectedOption.value === undefined;
   const progressRatio = selectedIndex / (options.length - 1);
   const progressPercentage = progressRatio * 100;
-  const thumbOffsetPixels = 12 * (1 - (2 * progressRatio));
+  const thumbOffsetPixels = 12 * (1 - 2 * progressRatio);
 
   return (
     <div class={FIELD_CLASS}>
       <span class="flex min-h-4 items-center justify-between gap-2">
-        <label class={FIELD_CAPTION_CLASS} htmlFor={id}>{label}</label>
+        <label class={FIELD_CAPTION_CLASS} htmlFor={id}>
+          {label}
+        </label>
         <span
           id={`${id}-value`}
           class={`${FIELD_CAPTION_CLASS} ${isUnset ? 'opacity-60' : 'text-ui-accent'}`}

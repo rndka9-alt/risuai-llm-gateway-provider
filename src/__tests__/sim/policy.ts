@@ -24,10 +24,7 @@ export interface ReplayCachePolicy {
   apply(messages: readonly LlmMessage[]): Promise<CachePolicyDecision>;
 }
 
-function fingerprintsEqual(
-  left: MessageFingerprint,
-  right: MessageFingerprint,
-): boolean {
+function fingerprintsEqual(left: MessageFingerprint, right: MessageFingerprint): boolean {
   return left.role === right.role && left.hash === right.hash;
 }
 
@@ -37,19 +34,13 @@ export function commonFingerprintPrefixLength(
 ): number {
   const maximumLength = Math.min(previous.length, current.length);
   let length = 0;
-  while (
-    length < maximumLength &&
-    fingerprintsEqual(previous[length], current[length])
-  ) {
+  while (length < maximumLength && fingerprintsEqual(previous[length], current[length])) {
     length += 1;
   }
   return length;
 }
 
-function createDecision(
-  plan: CachePlan,
-  messages: readonly LlmMessage[],
-): CachePolicyDecision {
+function createDecision(plan: CachePlan, messages: readonly LlmMessage[]): CachePolicyDecision {
   return {
     anchorIndexes: plan.anchorIndexes,
     consecutiveEpochResets: plan.nextState.consecutiveEpochResets,
@@ -69,10 +60,7 @@ function createMarkingPlan(
   const frontierIndex = plan.anchorIndexes.at(-1);
   if (frontierIndex === undefined) return plan;
 
-  if (
-    previousState !== null &&
-    previousState.anchorIndexes.includes(frontierIndex)
-  ) {
+  if (previousState !== null && previousState.anchorIndexes.includes(frontierIndex)) {
     const previousFingerprint = previousState.fingerprints[frontierIndex];
     const currentFingerprint = currentFingerprints[frontierIndex];
     if (previousFingerprint === undefined || currentFingerprint === undefined) {
@@ -82,9 +70,7 @@ function createMarkingPlan(
   }
 
   return {
-    anchorIndexes: plan.anchorIndexes.filter(
-      (anchorIndex) => anchorIndex !== frontierIndex,
-    ),
+    anchorIndexes: plan.anchorIndexes.filter((anchorIndex) => anchorIndex !== frontierIndex),
     nextState: plan.nextState,
   };
 }
@@ -94,9 +80,7 @@ interface AdaptiveTwoStrikeOptions {
   name: 'adaptive-2strike' | 'adaptive-2strike-reroll-aware';
 }
 
-function createAdaptiveTwoStrikePolicy(
-  options: AdaptiveTwoStrikeOptions,
-): ReplayCachePolicy {
+function createAdaptiveTwoStrikePolicy(options: AdaptiveTwoStrikeOptions): ReplayCachePolicy {
   let consecutiveFrontierDeaths = 0;
   let monitorFrontier = false;
 
@@ -117,8 +101,7 @@ function createAdaptiveTwoStrikePolicy(
         );
         const previousFrontierIndex = previousState.anchorIndexes.at(-1);
         const frontierDied =
-          previousFrontierIndex !== undefined &&
-          prefixLength <= previousFrontierIndex;
+          previousFrontierIndex !== undefined && prefixLength <= previousFrontierIndex;
         const rerollLikeChange =
           previousState.fingerprints.length === currentFingerprints.length &&
           prefixLength < currentFingerprints.length;
@@ -184,10 +167,7 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
       const prefixLength =
         previousState === null
           ? 0
-          : commonFingerprintPrefixLength(
-              previousState.fingerprints,
-              currentFingerprints,
-            );
+          : commonFingerprintPrefixLength(previousState.fingerprints, currentFingerprints);
       const plan = planCacheAnchors(previousState, messages);
       const markedMessages =
         previousState === null || prefixLength === 0

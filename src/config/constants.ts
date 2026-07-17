@@ -9,8 +9,7 @@ export const FLAGS_ARGUMENT = 'flags';
 
 // pluginStorage는 전 플러그인 공용 네임스페이스라 접두사가 필수다.
 export const CONFIG_STORAGE_KEY = 'llm-gateway-provider:config';
-export const LEGACY_ARGUMENT_BACKUP_STORAGE_KEY =
-  'llm-gateway-provider:arguments-backup';
+export const LEGACY_ARGUMENT_BACKUP_STORAGE_KEY = 'llm-gateway-provider:arguments-backup';
 
 export type ConfigFieldName =
   | typeof API_KEY_ARGUMENT

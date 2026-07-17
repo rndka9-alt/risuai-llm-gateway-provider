@@ -7,9 +7,7 @@ const CACHE_BACKOFF_TOAST_MESSAGES: Record<CacheBackoffTransition, string> = {
   released: 'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시 마킹을 다시 시작했어요',
 };
 
-export async function showCacheBackoffToast(
-  transition: CacheBackoffTransition,
-): Promise<void> {
+export async function showCacheBackoffToast(transition: CacheBackoffTransition): Promise<void> {
   try {
     if (typeof risuai.getRootDocument !== 'function') {
       throw new Error('getRootDocument API is unavailable');
@@ -23,10 +21,10 @@ export async function showCacheBackoffToast(
     await toast.setTextContent(CACHE_BACKOFF_TOAST_MESSAGES[transition]);
     await toast.setStyleAttribute(
       'position:fixed;right:16px;bottom:16px;z-index:2147483647;' +
-      'max-width:min(360px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;' +
-      'background:rgba(24,24,27,.96);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.3);' +
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
-      'font-size:13px;line-height:1.45;pointer-events:none;',
+        'max-width:min(360px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;' +
+        'background:rgba(24,24,27,.96);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.3);' +
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
+        'font-size:13px;line-height:1.45;pointer-events:none;',
     );
     await body.appendChild(toast);
 

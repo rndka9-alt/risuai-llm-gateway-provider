@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
-import {
-  RISUAI_LLM_FLAGS,
-  RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
-} from '../options';
+import { RISUAI_LLM_FLAGS, RISUAI_TIKTOKEN_O200_BASE_TOKENIZER } from '../options';
 
 const CONFIG_STORAGE_KEY = 'llm-gateway-provider:config';
 
@@ -49,25 +46,30 @@ function createSuccessfulResponse(): Response {
   );
 }
 
-function createStreamingResponse(
-  textDeltas: readonly string[] = ['hel', 'lo'],
-): Response {
-  const serializedEvents = textDeltas.map((text) => `data: ${JSON.stringify({
-    choices: [{ delta: { content: text }, index: 0 }],
-  })}`);
-  serializedEvents.push(`data: ${JSON.stringify({
-    choices: [{ delta: {}, finish_reason: 'stop', index: 0 }],
-  })}`);
-  serializedEvents.push(`data: ${JSON.stringify({
-    choices: [],
-    usage: {
-      completion_tokens: 2,
-      cost: 0.01,
-      prompt_tokens: 1500,
-      prompt_tokens_details: { cache_write_tokens: 200, cached_tokens: 1200 },
-      total_tokens: 1502,
-    },
-  })}`);
+function createStreamingResponse(textDeltas: readonly string[] = ['hel', 'lo']): Response {
+  const serializedEvents = textDeltas.map(
+    (text) =>
+      `data: ${JSON.stringify({
+        choices: [{ delta: { content: text }, index: 0 }],
+      })}`,
+  );
+  serializedEvents.push(
+    `data: ${JSON.stringify({
+      choices: [{ delta: {}, finish_reason: 'stop', index: 0 }],
+    })}`,
+  );
+  serializedEvents.push(
+    `data: ${JSON.stringify({
+      choices: [],
+      usage: {
+        completion_tokens: 2,
+        cost: 0.01,
+        prompt_tokens: 1500,
+        prompt_tokens_details: { cache_write_tokens: 200, cached_tokens: 1200 },
+        total_tokens: 1502,
+      },
+    })}`,
+  );
   serializedEvents.push('data: [DONE]');
   return new Response(serializedEvents.join('\n\n'), {
     status: 200,
@@ -77,15 +79,20 @@ function createStreamingResponse(
 
 function createAbortingStreamingResponse(abortController: AbortController): Response {
   const encoder = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      controller.enqueue(encoder.encode(
-        `data: ${JSON.stringify({ choices: [{ delta: { content: 'first' }, index: 0 }] })}\n\n`,
-      ));
-      abortController.abort();
-      controller.close();
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: 'first' }, index: 0 }] })}\n\n`,
+          ),
+        );
+        abortController.abort();
+        controller.close();
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
 
   return new Response(body, {
     status: 200,
@@ -94,7 +101,9 @@ function createAbortingStreamingResponse(abortController: AbortController): Resp
 }
 
 interface ProviderHarness {
-  nativeFetch: ReturnType<typeof vi.fn<(url: string, requestInit?: RequestInit) => Promise<Response>>>;
+  nativeFetch: ReturnType<
+    typeof vi.fn<(url: string, requestInit?: RequestInit) => Promise<Response>>
+  >;
   provider: ProviderFunction;
   providerOptions: ProviderOptions | undefined;
   startupEvents: string[];
@@ -158,11 +167,7 @@ async function loadProvider(
       }),
       querySelector: async () => ({ appendChild: async () => undefined }),
     }),
-    addProvider: async (
-      _name: string,
-      provider: ProviderFunction,
-      options?: ProviderOptions,
-    ) => {
+    addProvider: async (_name: string, provider: ProviderFunction, options?: ProviderOptions) => {
       startupEvents.push('addProvider');
       registeredProvider = provider;
       providerOptions = options;
@@ -197,10 +202,7 @@ async function loadProvider(
   };
 }
 
-function getRequestBody(
-  nativeFetch: ProviderHarness['nativeFetch'],
-  requestIndex: number,
-): string {
+function getRequestBody(nativeFetch: ProviderHarness['nativeFetch'], requestIndex: number): string {
   const requestInit = nativeFetch.mock.calls[requestIndex]?.[1];
   if (typeof requestInit?.body !== 'string') throw new Error('Expected a string request body');
   return requestInit.body;
@@ -244,9 +246,7 @@ describe('provider registration metadata', () => {
 
     const harness = await loadProvider([], {}, true);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([
-      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
-    ]);
+    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
     expect(harness.startupEvents).toContain('addProvider');
     expect(consoleError).toHaveBeenCalledWith(
       '[llm-gateway-provider] config startup initialization failed; continuing with defaults',
@@ -264,10 +264,7 @@ describe('provider registration metadata', () => {
       tokenizer: 'o200k_base',
       model: {
         name: 'LLM Gateway',
-        flags: [
-          RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
-          RISUAI_LLM_FLAGS.poolSupported,
-        ],
+        flags: [RISUAI_LLM_FLAGS.hasFirstSystemPrompt, RISUAI_LLM_FLAGS.poolSupported],
         parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'],
         tokenizer: RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
       },
@@ -277,9 +274,7 @@ describe('provider registration metadata', () => {
   it('미지정 기본값은 Full System Prompt 하나이고 streaming flag를 넣지 않는다', async () => {
     const harness = await loadProvider([]);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([
-      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
-    ]);
+    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
   });
 
   it('none sentinel이면 빈 flags 메타를 등록한다', async () => {
@@ -404,9 +399,9 @@ describe('streaming modes', () => {
 
   it('decoupled 소비 중 abort되면 실패하고 앵커와 원장을 저장하지 않는다', async () => {
     const abortController = new AbortController();
-    const harness = await loadProvider([
-      createAbortingStreamingResponse(abortController),
-    ], { streaming_mode: 'decoupled' });
+    const harness = await loadProvider([createAbortingStreamingResponse(abortController)], {
+      streaming_mode: 'decoupled',
+    });
 
     const response = await harness.provider(createProviderArguments(), abortController.signal);
 

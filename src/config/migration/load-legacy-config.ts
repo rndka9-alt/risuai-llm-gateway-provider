@@ -22,9 +22,7 @@ function selectNonEmptyConfigValues(
 }
 
 async function loadLegacyArgumentBackup(): Promise<ConfigUpdate | null> {
-  const raw = await risuai.pluginStorage.getItem(
-    LEGACY_ARGUMENT_BACKUP_STORAGE_KEY,
-  );
+  const raw = await risuai.pluginStorage.getItem(LEGACY_ARGUMENT_BACKUP_STORAGE_KEY);
   if (typeof raw !== 'string' || raw === '') return null;
 
   let parsed: unknown;
@@ -65,6 +63,6 @@ async function loadLegacyRealArguments(): Promise<ConfigUpdate> {
 
 export async function loadLegacyConfig(): Promise<Config> {
   const legacyArgumentBackup = await loadLegacyArgumentBackup();
-  const legacyValues = legacyArgumentBackup ?? await loadLegacyRealArguments();
+  const legacyValues = legacyArgumentBackup ?? (await loadLegacyRealArguments());
   return configSchema.parse(legacyValues);
 }

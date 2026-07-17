@@ -15,12 +15,5 @@ export { isCacheBackoffActive } from './backoff/is-cache-backoff-active';
 export { loadCacheAnchorState } from './state/load-cache-anchor-state';
 export { saveCacheAnchorState } from './state/save-cache-anchor-state';
 export type { PendingPromptCacheCommit } from './state/pending-prompt-cache-commit';
-export type {
-  CacheAnchorState,
-  MessageFingerprint,
-} from './state/schema';
-export type {
-  CacheBackoffTransition,
-  CachePlan,
-  PromptCacheMode,
-} from './types';
+export type { CacheAnchorState, MessageFingerprint } from './state/schema';
+export type { CacheBackoffTransition, CachePlan, PromptCacheMode } from './types';

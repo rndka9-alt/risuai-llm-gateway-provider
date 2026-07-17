@@ -186,10 +186,7 @@ export class FakeGatewayKernel {
   private lastRequestMinute = 0;
   private nextSequence = 0;
 
-  constructor(
-    preset: FakeGatewayKernelPreset,
-    overrides: Partial<FakeGatewayKernelOptions> = {},
-  ) {
+  constructor(preset: FakeGatewayKernelPreset, overrides: Partial<FakeGatewayKernelOptions> = {}) {
     this.name = preset;
     this.options = { ...optionsForPreset(preset), ...overrides };
     if (

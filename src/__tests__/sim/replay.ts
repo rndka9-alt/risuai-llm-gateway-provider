@@ -1,9 +1,6 @@
 import type { JsonObject, LlmMessage } from 'llm-io';
 import { OpenAIChatCompletionsFormat } from 'llm-io';
-import {
-  CACHE_READ_SAVING_RATE,
-  CACHE_WRITE_PREMIUM_RATE,
-} from '../../ledger';
+import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../ledger';
 import type { FakeGatewayAccounting } from './fake-gateway';
 import { FakeGatewayKernel } from './fake-gateway';
 import type { ReplayCachePolicy } from './policy';
@@ -112,10 +109,7 @@ export async function replayTrajectory(options: {
       atMinute,
       consecutiveEpochResets: decision.consecutiveEpochResets,
       elapsedMinutes: request.elapsedMinutes,
-      netSavedTokens: calculateRequestNetSavedTokens(
-        accounting.readTokens,
-        accounting.writeTokens,
-      ),
+      netSavedTokens: calculateRequestNetSavedTokens(accounting.readTokens, accounting.writeTokens),
       policyMarkerCount: markerObservation.count,
       policyMarkerRoles: markerObservation.roles,
       promptCacheKey: decision.promptCacheKey,
@@ -204,26 +198,19 @@ function formatRankingReversals(
           const relation = comparison > 0 ? '>' : comparison < 0 ? '<' : '=';
           return `${kernel}:${leftPolicy}${relation}${rightPolicy}`;
         }).join(', ');
-        reversals.push(
-          `- ${trajectoryId} ${labels.get(trajectoryId)}: ${comparisonSummary}`,
-        );
+        reversals.push(`- ${trajectoryId} ${labels.get(trajectoryId)}: ${comparisonSummary}`);
       }
     }
   });
 
-  return [
-    'Kernel ranking reversals',
-    ...(reversals.length === 0 ? ['- none'] : reversals),
-  ].join('\n');
+  return ['Kernel ranking reversals', ...(reversals.length === 0 ? ['- none'] : reversals)].join(
+    '\n',
+  );
 }
 
 export function formatScoreboard(results: readonly ReplayResult[]): string {
-  const productionResults = results.filter(
-    (result) => result.policyName === 'production',
-  );
-  const trajectoryOrder = [
-    ...new Set(productionResults.map((result) => result.trajectoryId)),
-  ];
+  const productionResults = results.filter((result) => result.policyName === 'production');
+  const trajectoryOrder = [...new Set(productionResults.map((result) => result.trajectoryId))];
   const labels = new Map(
     productionResults.map((result) => [result.trajectoryId, result.trajectoryLabel]),
   );
@@ -240,8 +227,7 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
     const productionScores = scores.get(trajectoryId)?.get('production');
     return [
       trajectoryLabel(trajectoryId),
-      ...SCOREBOARD_KERNELS.map((kernel) =>
-        formatScore(productionScores?.get(kernel))),
+      ...SCOREBOARD_KERNELS.map((kernel) => formatScore(productionScores?.get(kernel))),
     ];
   });
   const policyRows = trajectoryOrder.map((trajectoryId) => {
@@ -249,7 +235,8 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
     return [
       trajectoryLabel(trajectoryId),
       ...SCOREBOARD_POLICIES.map((policy) =>
-        formatScore(trajectoryScores?.get(policy)?.get('calibrated'))),
+        formatScore(trajectoryScores?.get(policy)?.get('calibrated')),
+      ),
     ];
   });
 

@@ -112,9 +112,9 @@ describe('createBridgeFetch', () => {
     });
 
     it('204 응답은 body 없이 재구성한다', async () => {
-      const risuFetch = vi.fn().mockResolvedValue(
-        createLegacyResult({ data: new Uint8Array(0), status: 204 }),
-      );
+      const risuFetch = vi
+        .fn()
+        .mockResolvedValue(createLegacyResult({ data: new Uint8Array(0), status: 204 }));
       vi.stubGlobal('risuai', { risuFetch });
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
@@ -159,9 +159,11 @@ describe('createBridgeFetch', () => {
     });
 
     it('문자열 data(globalFetch 내부 오류 경로)도 본문으로 전달한다', async () => {
-      const risuFetch = vi.fn().mockResolvedValue(
-        createLegacyResult({ ok: false, data: 'blocked by security policy', status: 400 }),
-      );
+      const risuFetch = vi
+        .fn()
+        .mockResolvedValue(
+          createLegacyResult({ ok: false, data: 'blocked by security policy', status: 400 }),
+        );
       vi.stubGlobal('risuai', { risuFetch });
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
@@ -177,22 +179,22 @@ describe('createBridgeFetch', () => {
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
 
-      await expect(bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }))
-        .rejects.toThrow(/risuFetch API가 제거되어/);
+      await expect(
+        bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
+      ).rejects.toThrow(/risuFetch API가 제거되어/);
     });
 
     it('브릿지가 risuFetch not found로 거절해도 같은 안내 메시지로 바꾼다', async () => {
       // 실전의 risuai는 모든 프로퍼티에 함수를 돌려주는 Proxy라, 제거 여부는
       // 호출 거절(API method risuFetch not found)로만 드러난다.
-      const risuFetch = vi
-        .fn()
-        .mockRejectedValue(new Error('API method risuFetch not found'));
+      const risuFetch = vi.fn().mockRejectedValue(new Error('API method risuFetch not found'));
       vi.stubGlobal('risuai', { risuFetch });
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
 
-      await expect(bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }))
-        .rejects.toThrow(/risuFetch API가 제거되어/);
+      await expect(
+        bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
+      ).rejects.toThrow(/risuFetch API가 제거되어/);
     });
 
     it('abort된 요청은 HTTP 실패 대신 abort 예외로 끝난다', async () => {
@@ -220,21 +222,23 @@ describe('createBridgeFetch', () => {
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
 
-      await expect(bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'DELETE' }))
-        .rejects.toThrow(/DELETE 요청을 지원하지 않습니다/);
+      await expect(
+        bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'DELETE' }),
+      ).rejects.toThrow(/DELETE 요청을 지원하지 않습니다/);
       expect(risuFetch).not.toHaveBeenCalled();
     });
 
     it('계약 밖 형태의 data는 감추지 않고 실패시킨다', async () => {
-      const risuFetch = vi.fn().mockResolvedValue(
-        createLegacyResult({ data: { unexpected: true } }),
-      );
+      const risuFetch = vi
+        .fn()
+        .mockResolvedValue(createLegacyResult({ data: { unexpected: true } }));
       vi.stubGlobal('risuai', { risuFetch });
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
 
-      await expect(bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }))
-        .rejects.toThrow(/해석할 수 없는 응답 본문 형태/);
+      await expect(
+        bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
+      ).rejects.toThrow(/해석할 수 없는 응답 본문 형태/);
     });
   });
 });

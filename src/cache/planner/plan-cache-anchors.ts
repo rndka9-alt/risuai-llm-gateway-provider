@@ -36,10 +36,7 @@ export function planCacheAnchors(
   if (prefixLength === 0) {
     // fingerprints를 새 epoch 값으로 갈아끼워도 연속 실패 횟수는 이어가야
     // 매턴 변하는 선두 프리셋을 감지할 수 있다.
-    return createFirstTurnPlan(
-      fingerprints,
-      previousState.consecutiveEpochResets + 1,
-    );
+    return createFirstTurnPlan(fingerprints, previousState.consecutiveEpochResets + 1);
   }
 
   const suffixLength = commonSuffixLength(previous, fingerprints, prefixLength);

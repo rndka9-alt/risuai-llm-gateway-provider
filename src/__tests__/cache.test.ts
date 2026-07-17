@@ -50,7 +50,7 @@ describe('prompt cache request wiring', () => {
   it.each([
     ['explicit', EXPLICIT_PROMPT_CACHE_KEY],
     ['disabled', DISABLED_PROMPT_CACHE_KEY],
-  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>) (
+  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
     '%s 모드에 explicit 캐시 옵션과 해당 키를 구성한다',
     async (mode, promptCacheKey) => {
       vi.stubGlobal('risuai', {
@@ -347,10 +347,7 @@ describe('prompt cache orchestration', () => {
         },
       },
     });
-    const messages = [
-      makeMessage('system', LONG_SYSTEM_TEXT),
-      makeMessage('user', 'input'),
-    ];
+    const messages = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input')];
 
     const prepared = await preparePromptCacheRequest(messages, 'explicit');
 
@@ -377,10 +374,10 @@ describe('prompt cache orchestration', () => {
         },
       },
     });
-    const prepared = await preparePromptCacheRequest([
-      makeMessage('system', LONG_SYSTEM_TEXT),
-      makeMessage('user', 'input'),
-    ], 'explicit');
+    const prepared = await preparePromptCacheRequest(
+      [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input')],
+      'explicit',
+    );
     if (prepared.pendingCommit === null) {
       throw new Error('Expected prepare to create a pending commit');
     }
@@ -402,10 +399,7 @@ describe('prompt cache orchestration', () => {
         },
       },
     });
-    const messages = [
-      makeMessage('system', LONG_SYSTEM_TEXT),
-      makeMessage('user', 'input'),
-    ];
+    const messages = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input')];
 
     const prepared = await preparePromptCacheRequest(messages, 'disabled');
 
@@ -423,7 +417,7 @@ describe('prompt cache orchestration', () => {
   it.each([
     ['explicit', EXPLICIT_PROMPT_CACHE_KEY],
     ['disabled', DISABLED_PROMPT_CACHE_KEY],
-  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>) (
+  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
     '%s prepare 실패도 원래 mode의 cache extra body를 유지한다',
     async (mode, promptCacheKey) => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -506,10 +500,11 @@ describe('cache anchor state storage', () => {
   it('카운터가 없는 구버전 앵커 상태를 0으로 마이그레이션한다', async () => {
     vi.stubGlobal('risuai', {
       pluginStorage: {
-        getItem: async () => JSON.stringify({
-          anchorIndexes: [0],
-          fingerprints: [{ role: 'system', hash: 'x', tokenEstimate: 1200 }],
-        }),
+        getItem: async () =>
+          JSON.stringify({
+            anchorIndexes: [0],
+            fingerprints: [{ role: 'system', hash: 'x', tokenEstimate: 1200 }],
+          }),
       },
     });
 
@@ -526,14 +521,11 @@ describe('cache anchor state storage', () => {
     '{"unexpected":"shape"}',
     '{"deepestDivergenceIndex":null,"fingerprints":[{"role":"system","hash":"x","tokenEstimate":1}],"frontierIndex":0}',
     '{"anchorIndexes":[1,0],"fingerprints":[{"role":"system","hash":"x","tokenEstimate":1},{"role":"user","hash":"y","tokenEstimate":1}]}',
-  ])(
-    '저장 값이 %s이면 새 epoch(null)로 시작한다',
-    async (raw) => {
-      vi.stubGlobal('risuai', {
-        pluginStorage: { getItem: async () => raw },
-      });
+  ])('저장 값이 %s이면 새 epoch(null)로 시작한다', async (raw) => {
+    vi.stubGlobal('risuai', {
+      pluginStorage: { getItem: async () => raw },
+    });
 
-      await expect(loadCacheAnchorState()).resolves.toBeNull();
-    },
-  );
+    await expect(loadCacheAnchorState()).resolves.toBeNull();
+  });
 });

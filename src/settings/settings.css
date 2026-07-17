@@ -1,6 +1,6 @@
-@import "tailwindcss" source(none);
-@source "./settings.tsx";
-@source "./components/SteppedSlider.tsx";
+@import 'tailwindcss' source(none);
+@source './settings.tsx';
+@source './components/SteppedSlider.tsx';
 
 @theme inline {
   --color-ui-background: var(--background);
@@ -48,15 +48,15 @@
     opacity 150ms ease-out;
 }
 
-.stepped-slider-control[data-unset="true"] .stepped-slider-track {
+.stepped-slider-control[data-unset='true'] .stepped-slider-track {
   opacity: 0.45;
 }
 
-.stepped-slider-control[data-unset="true"] .stepped-slider-fill {
+.stepped-slider-control[data-unset='true'] .stepped-slider-fill {
   opacity: 0;
 }
 
-.stepped-slider-control[data-unset="true"] .stepped-slider-thumb {
+.stepped-slider-control[data-unset='true'] .stepped-slider-thumb {
   border-color: var(--text2);
   background: var(--background2);
   box-shadow: none;

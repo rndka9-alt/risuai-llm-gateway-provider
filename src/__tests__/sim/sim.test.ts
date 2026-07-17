@@ -1,13 +1,7 @@
 import type { LlmMessage } from 'llm-io';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import {
-  CACHE_READ_SAVING_RATE,
-  CACHE_WRITE_PREMIUM_RATE,
-} from '../../ledger';
-import {
-  createFakeGatewayKernel,
-  type FakeGatewayKernelPreset,
-} from './fake-gateway';
+import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../ledger';
+import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from './fake-gateway';
 import { createGoldenTrajectories } from './golden-trajectories';
 import {
   createAdaptiveTwoStrikeCachePolicy,
@@ -71,9 +65,7 @@ function requireReplayResult(
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(
-      `Missing replay result for ${trajectory.id}/${kernelName}/${policyName}.`,
-    );
+    throw new Error(`Missing replay result for ${trajectory.id}/${kernelName}/${policyName}.`);
   }
   return result;
 }
@@ -99,8 +91,7 @@ function expectCommonInvariants(result: ReplayResult): void {
       expect(serializedBody).toContain('prompt_cache_breakpoint');
     }
     expect(log.netSavedTokens).toBeCloseTo(
-      log.readTokens * CACHE_READ_SAVING_RATE -
-        log.writeTokens * CACHE_WRITE_PREMIUM_RATE,
+      log.readTokens * CACHE_READ_SAVING_RATE - log.writeTokens * CACHE_WRITE_PREMIUM_RATE,
     );
   });
 
@@ -132,9 +123,9 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
   if (trajectory.id === '02-cbs-trap') {
     expect(calibrated.totalReadTokens).toBe(0);
     expect(calibrated.totalNetSavedTokens).toBeLessThanOrEqual(0);
-    expect(
-      Math.abs(calibrated.totalNetSavedTokens) / calibrated.totalInputTokens,
-    ).toBeLessThan(0.1);
+    expect(Math.abs(calibrated.totalNetSavedTokens) / calibrated.totalInputTokens).toBeLessThan(
+      0.1,
+    );
     return;
   }
   if (trajectory.id === '03-reverse-depth') {
@@ -182,15 +173,10 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(pessimistic.totalNetSavedTokens).toBeLessThan(0);
     expect(optimistic.totalReadTokens).toBeGreaterThan(0);
     expect(optimistic.totalNetSavedTokens).toBeGreaterThan(0);
-    expect(optimistic.totalNetSavedTokens).toBeGreaterThan(
-      pessimistic.totalNetSavedTokens,
-    );
+    expect(optimistic.totalNetSavedTokens).toBeGreaterThan(pessimistic.totalNetSavedTokens);
     return;
   }
-  if (
-    trajectory.id === '11-churn-then-stable' ||
-    trajectory.id === '12-churn-oscillating'
-  ) {
+  if (trajectory.id === '11-churn-then-stable' || trajectory.id === '12-churn-oscillating') {
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
     expect(calibrated.totalWriteTokens).toBeGreaterThan(0);
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
@@ -231,9 +217,7 @@ describe('deterministic replay golden trajectories', () => {
   describe.each(trajectories)('$id $label', (trajectory) => {
     it.each(KERNEL_PRESETS)('%s kernel의 회계·와이어 불변식을 지킨다', (kernelPreset) => {
       POLICY_NAMES.forEach((policyName) => {
-        expectCommonInvariants(
-          requireReplayResult(trajectory, kernelPreset, policyName),
-        );
+        expectCommonInvariants(requireReplayResult(trajectory, kernelPreset, policyName));
       });
       const noCache = requireReplayResult(trajectory, kernelPreset, 'no-cache');
       expect(noCache.totalReadTokens).toBe(0);
@@ -258,9 +242,7 @@ const POSITIVE_TRAJECTORY_IDS = [
 ] as const;
 
 function requireTrajectoryById(trajectoryId: string): GoldenTrajectory {
-  const trajectory = trajectories.find(
-    (candidate) => candidate.id === trajectoryId,
-  );
+  const trajectory = trajectories.find((candidate) => candidate.id === trajectoryId);
   if (trajectory === undefined) {
     throw new Error(`Missing golden trajectory ${trajectoryId}.`);
   }
@@ -271,131 +253,73 @@ describe('adaptive policy golden comparisons', () => {
   it('2-strike 계열은 양수 골든에서 production 대비 회귀하지 않는다', () => {
     for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(
-        trajectory,
-        'calibrated',
-        'production',
-      );
+      const production = requireReplayResult(trajectory, 'calibrated', 'production');
       for (const policyName of [
         'adaptive-2strike',
         'adaptive-2strike-reroll-aware',
       ] satisfies readonly PolicyName[]) {
-        const adaptive = requireReplayResult(
-          trajectory,
-          'calibrated',
-          policyName,
-        );
-        expect(adaptive.totalNetSavedTokens).toBeGreaterThanOrEqual(
-          production.totalNetSavedTokens,
-        );
+        const adaptive = requireReplayResult(trajectory, 'calibrated', policyName);
+        expect(adaptive.totalNetSavedTokens).toBeGreaterThanOrEqual(production.totalNetSavedTokens);
       }
     }
   });
 
   it('2-strike는 상습 휘발 assistant 꼬리에서 production 이상을 유지한다', () => {
     const trajectory = requireTrajectoryById('08-lua-post-edit');
-    const production = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'production',
-    );
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
 
     for (const policyName of [
       'adaptive-2strike',
       'adaptive-2strike-reroll-aware',
     ] satisfies readonly PolicyName[]) {
       expect(
-        requireReplayResult(trajectory, 'calibrated', policyName)
-          .totalNetSavedTokens,
+        requireReplayResult(trajectory, 'calibrated', policyName).totalNetSavedTokens,
       ).toBeGreaterThanOrEqual(production.totalNetSavedTokens);
     }
   });
 
   it('02의 손실은 첫 턴 cold write라 2-strike로 회수되지 않는 측정 결과를 고정한다', () => {
     const trajectory = requireTrajectoryById('02-cbs-trap');
-    const production = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'production',
-    );
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
 
     expect(
-      requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike')
-        .totalNetSavedTokens,
+      requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike').totalNetSavedTokens,
     ).toBe(production.totalNetSavedTokens);
     expect(
-      requireReplayResult(
-        trajectory,
-        'calibrated',
-        'adaptive-2strike-reroll-aware',
-      ).totalNetSavedTokens,
+      requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike-reroll-aware')
+        .totalNetSavedTokens,
     ).toBe(production.totalNetSavedTokens);
   });
 
   it('2-strike는 room switch의 same-index frontier write 손실을 일부 회수한다', () => {
     const trajectory = requireTrajectoryById('09-room-switch');
-    const production = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'production',
-    );
-    const adaptive = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'adaptive-2strike',
-    );
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
     const rerollAware = requireReplayResult(
       trajectory,
       'calibrated',
       'adaptive-2strike-reroll-aware',
     );
 
-    expect(adaptive.totalNetSavedTokens).toBeGreaterThan(
-      production.totalNetSavedTokens,
-    );
-    expect(rerollAware.totalNetSavedTokens).toBe(
-      production.totalNetSavedTokens,
-    );
+    expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
+    expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
   });
 
   it('first-turn-safe는 room switch 첫 턴의 회수 전 write 손실을 줄인다', () => {
     const trajectory = requireTrajectoryById('09-room-switch');
-    const production = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'production',
-    );
-    const firstTurnSafe = requireReplayResult(
-      trajectory,
-      'calibrated',
-      'first-turn-safe',
-    );
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const firstTurnSafe = requireReplayResult(trajectory, 'calibrated', 'first-turn-safe');
 
-    expect(firstTurnSafe.totalNetSavedTokens).toBeGreaterThan(
-      production.totalNetSavedTokens,
-    );
+    expect(firstTurnSafe.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
   });
 
   it('first-turn-safe가 양수 골든 7종 모두에서 10% 초과 회귀한 결과를 노출한다', () => {
-    const regressedTrajectoryIds = POSITIVE_TRAJECTORY_IDS.filter(
-      (trajectoryId) => {
-        const trajectory = requireTrajectoryById(trajectoryId);
-        const production = requireReplayResult(
-          trajectory,
-          'calibrated',
-          'production',
-        );
-        const firstTurnSafe = requireReplayResult(
-          trajectory,
-          'calibrated',
-          'first-turn-safe',
-        );
-        return (
-          firstTurnSafe.totalNetSavedTokens <
-          production.totalNetSavedTokens * 0.9
-        );
-      },
-    );
+    const regressedTrajectoryIds = POSITIVE_TRAJECTORY_IDS.filter((trajectoryId) => {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const firstTurnSafe = requireReplayResult(trajectory, 'calibrated', 'first-turn-safe');
+      return firstTurnSafe.totalNetSavedTokens < production.totalNetSavedTokens * 0.9;
+    });
 
     expect(regressedTrajectoryIds).toEqual(POSITIVE_TRAJECTORY_IDS);
   });
@@ -423,41 +347,23 @@ function requestIndexesWithScoreDifference(
 }
 
 describe('adaptive policy cost golden comparisons', () => {
-  it.each(KERNEL_PRESETS)(
-    '%s kernel에서도 지연 write 비용 방향이 유지된다',
-    (kernelPreset) => {
-      for (const trajectoryId of [
-        '11-churn-then-stable',
-        '12-churn-oscillating',
-      ]) {
-        const trajectory = requireTrajectoryById(trajectoryId);
-        const production = requireReplayResult(
-          trajectory,
-          kernelPreset,
-          'production',
-        );
-        const adaptive = requireReplayResult(
-          trajectory,
-          kernelPreset,
-          'adaptive-2strike',
-        );
-        const rerollAware = requireReplayResult(
-          trajectory,
-          kernelPreset,
-          'adaptive-2strike-reroll-aware',
-        );
+  it.each(KERNEL_PRESETS)('%s kernel에서도 지연 write 비용 방향이 유지된다', (kernelPreset) => {
+    for (const trajectoryId of ['11-churn-then-stable', '12-churn-oscillating']) {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const production = requireReplayResult(trajectory, kernelPreset, 'production');
+      const adaptive = requireReplayResult(trajectory, kernelPreset, 'adaptive-2strike');
+      const rerollAware = requireReplayResult(
+        trajectory,
+        kernelPreset,
+        'adaptive-2strike-reroll-aware',
+      );
 
-        // 커널 가정이 달라도 안정화 직전 write를 미룬 adaptive만 다음 턴의
-        // frontier read를 잃고, monitor를 켜지 않은 reroll-aware는 production과 같다.
-        expect(adaptive.totalNetSavedTokens).toBeLessThan(
-          production.totalNetSavedTokens,
-        );
-        expect(rerollAware.totalNetSavedTokens).toBe(
-          production.totalNetSavedTokens,
-        );
-      }
-    },
-  );
+      // 커널 가정이 달라도 안정화 직전 write를 미룬 adaptive만 다음 턴의
+      // frontier read를 잃고, monitor를 켜지 않은 reroll-aware는 production과 같다.
+      expect(adaptive.totalNetSavedTokens).toBeLessThan(production.totalNetSavedTokens);
+      expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
+    }
+  });
 
   it.each([
     ['11-churn-then-stable', [4, 5]],
@@ -466,16 +372,8 @@ describe('adaptive policy cost golden comparisons', () => {
     '%s은 억제 턴과 직후 안정 턴에서 production보다 손해를 본다',
     (trajectoryId, expectedDifferenceIndexes) => {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(
-        trajectory,
-        'calibrated',
-        'production',
-      );
-      const adaptive = requireReplayResult(
-        trajectory,
-        'calibrated',
-        'adaptive-2strike',
-      );
+      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
       const rerollAware = requireReplayResult(
         trajectory,
         'calibrated',
@@ -484,36 +382,22 @@ describe('adaptive policy cost golden comparisons', () => {
 
       // 두 번째 사망에서 건너뛴 frontier write가 다음 안정 턴의 hit를
       // 지연시키므로, write premium은 같아도 해당 세그먼트 read 절감이 한 번 사라진다.
-      expect(adaptive.totalNetSavedTokens).toBeLessThan(
-        production.totalNetSavedTokens,
-      );
+      expect(adaptive.totalNetSavedTokens).toBeLessThan(production.totalNetSavedTokens);
       expect(requestIndexesWithScoreDifference(production, adaptive)).toEqual(
         expectedDifferenceIndexes,
       );
 
       // 동일 길이의 두 번째 churn은 reroll-like 변경으로 분류되어 strike를
       // 누적하지 않으므로 reroll-aware 변형은 이 monitor 비용을 내지 않는다.
-      expect(rerollAware.totalNetSavedTokens).toBe(
-        production.totalNetSavedTokens,
-      );
+      expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
     },
   );
 
   it('진동 손실은 안정 턴마다 초기화되어 3회 cycle에 선형으로 누적된다', () => {
     const stableTrajectory = requireTrajectoryById('11-churn-then-stable');
-    const oscillatingTrajectory = requireTrajectoryById(
-      '12-churn-oscillating',
-    );
-    const stableProduction = requireReplayResult(
-      stableTrajectory,
-      'calibrated',
-      'production',
-    );
-    const stableAdaptive = requireReplayResult(
-      stableTrajectory,
-      'calibrated',
-      'adaptive-2strike',
-    );
+    const oscillatingTrajectory = requireTrajectoryById('12-churn-oscillating');
+    const stableProduction = requireReplayResult(stableTrajectory, 'calibrated', 'production');
+    const stableAdaptive = requireReplayResult(stableTrajectory, 'calibrated', 'adaptive-2strike');
     const oscillatingProduction = requireReplayResult(
       oscillatingTrajectory,
       'calibrated',
@@ -525,11 +409,9 @@ describe('adaptive policy cost golden comparisons', () => {
       'adaptive-2strike',
     );
     const singleCyclePenalty =
-      stableProduction.totalNetSavedTokens -
-      stableAdaptive.totalNetSavedTokens;
+      stableProduction.totalNetSavedTokens - stableAdaptive.totalNetSavedTokens;
     const oscillatingPenalty =
-      oscillatingProduction.totalNetSavedTokens -
-      oscillatingAdaptive.totalNetSavedTokens;
+      oscillatingProduction.totalNetSavedTokens - oscillatingAdaptive.totalNetSavedTokens;
 
     // 안정 확인이 monitor를 해제하므로 손실은 cycle당 지연 read 1회로 유계이며,
     // 같은 크기의 세 cycle에서는 폭주하지 않고 대략 3배가 되어야 한다.
@@ -538,10 +420,7 @@ describe('adaptive policy cost golden comparisons', () => {
   });
 });
 
-function makePolicyTestMessage(
-  role: LlmMessage['role'],
-  text: string,
-): LlmMessage {
+function makePolicyTestMessage(role: LlmMessage['role'], text: string): LlmMessage {
   return { role, content: [{ type: 'text', text }] };
 }
 
@@ -549,9 +428,7 @@ function breakpointIndexes(messages: readonly LlmMessage[]): number[] {
   const indexes: number[] = [];
   messages.forEach((message, messageIndex) => {
     if (
-      message.content.some(
-        (part) => part.type === 'text' && part.cacheBreakpoint !== undefined,
-      )
+      message.content.some((part) => part.type === 'text' && part.cacheBreakpoint !== undefined)
     ) {
       indexes.push(messageIndex);
     }
@@ -565,11 +442,7 @@ describe('adaptive policy transitions', () => {
     const policy = createAdaptiveTwoStrikeCachePolicy();
     const stablePrefix = makePolicyTestMessage('system', 'S'.repeat(6_000));
     const stableSuffix = makePolicyTestMessage('user', 'stable suffix');
-    const first = [
-      stablePrefix,
-      makePolicyTestMessage('system', 'volatile A'),
-      stableSuffix,
-    ];
+    const first = [stablePrefix, makePolicyTestMessage('system', 'volatile A'), stableSuffix];
     const second = [
       stablePrefix,
       makePolicyTestMessage('system', 'volatile B'),
@@ -627,16 +500,8 @@ describe('adaptive policy transitions', () => {
   it('reroll-aware 변형은 동일 길이 꼬리 변경을 strike로 누적하지 않는다', async () => {
     const stablePrefix = makePolicyTestMessage('system', 'S'.repeat(6_000));
     const stableSuffix = makePolicyTestMessage('user', 'stable suffix');
-    const first = [
-      stablePrefix,
-      makePolicyTestMessage('system', 'reroll A'),
-      stableSuffix,
-    ];
-    const reroll = [
-      stablePrefix,
-      makePolicyTestMessage('system', 'reroll B'),
-      stableSuffix,
-    ];
+    const first = [stablePrefix, makePolicyTestMessage('system', 'reroll A'), stableSuffix];
+    const reroll = [stablePrefix, makePolicyTestMessage('system', 'reroll B'), stableSuffix];
     const growth = [
       stablePrefix,
       makePolicyTestMessage('system', 'changed after reroll'),

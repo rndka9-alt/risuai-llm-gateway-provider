@@ -78,18 +78,20 @@ describe('calculateSavedUsd', () => {
 
   it('비용 필드가 없거나 일반 입력 토큰이 0이면 계산을 건너뛴다', () => {
     expect(calculateSavedUsd({ inputTokens: 1000 })).toBeUndefined();
-    expect(calculateSavedUsd({
-      cacheReadInputTokens: 800,
-      cacheCreationInputTokens: 200,
-      inputTokens: 1000,
-      details: {
-        costDetails: {
-          input_cost: 0,
-          cached_input_cost: 0.0004,
-          cache_write_input_cost: 0.00125,
+    expect(
+      calculateSavedUsd({
+        cacheReadInputTokens: 800,
+        cacheCreationInputTokens: 200,
+        inputTokens: 1000,
+        details: {
+          costDetails: {
+            input_cost: 0,
+            cached_input_cost: 0.0004,
+            cache_write_input_cost: 0.00125,
+          },
         },
-      },
-    })).toBeUndefined();
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -213,11 +215,7 @@ describe('accumulateCacheUsage', () => {
 });
 
 describe('loadCacheLedger / resetCacheLedger', () => {
-  it.each([
-    '',
-    '{broken json',
-    '{"unexpected":"shape"}',
-  ])(
+  it.each(['', '{broken json', '{"unexpected":"shape"}'])(
     '손상된 저장 값(%s)은 빈 원장으로 자가 회복한다',
     async (raw) => {
       stubPluginStorage(raw);

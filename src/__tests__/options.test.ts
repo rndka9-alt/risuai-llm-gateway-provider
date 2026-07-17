@@ -36,10 +36,7 @@ describe('buildModelOptionList', () => {
   });
 
   it('커스텀 모델은 맨 앞에 추가해 유실을 막는다', () => {
-    expect(buildModelOptionList('my-custom-model')).toEqual([
-      'my-custom-model',
-      ...MODEL_OPTIONS,
-    ]);
+    expect(buildModelOptionList('my-custom-model')).toEqual(['my-custom-model', ...MODEL_OPTIONS]);
   });
 });
 
@@ -79,12 +76,8 @@ describe('OpenAI request option resolvers', () => {
 
 describe('RisuAI LLM flags', () => {
   it('미지정이면 Full System Prompt만 기본 활성화한다', () => {
-    expect(resolveConfigurableLlmFlagNames(undefined)).toEqual(
-      DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES,
-    );
-    expect(resolveConfigurableLlmFlagNames('')).toEqual(
-      DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES,
-    );
+    expect(resolveConfigurableLlmFlagNames(undefined)).toEqual(DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES);
+    expect(resolveConfigurableLlmFlagNames('')).toEqual(DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES);
   });
 
   it('none sentinel은 모든 flag가 해제된 상태로 복원한다', () => {
@@ -92,15 +85,15 @@ describe('RisuAI LLM flags', () => {
   });
 
   it('지원 flag만 중복 없이 파싱하고 미디어 및 알 수 없는 이름은 제외한다', () => {
-    expect(resolveConfigurableLlmFlagNames(
-      'hasFirstSystemPrompt, hasImageInput, poolSupported, poolSupported, unknown',
-    )).toEqual(['hasFirstSystemPrompt', 'poolSupported']);
+    expect(
+      resolveConfigurableLlmFlagNames(
+        'hasFirstSystemPrompt, hasImageInput, poolSupported, poolSupported, unknown',
+      ),
+    ).toEqual(['hasFirstSystemPrompt', 'poolSupported']);
   });
 
   it('선택한 이름만 본체 숫자로 변환하고 hasStreaming은 자동 추가하지 않는다', () => {
-    const flagNames = resolveConfigurableLlmFlagNames(
-      'hasFullSystemPrompt,requiresAlternateRole',
-    );
+    const flagNames = resolveConfigurableLlmFlagNames('hasFullSystemPrompt,requiresAlternateRole');
 
     expect(resolveProviderLlmFlags(flagNames)).toEqual([
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
@@ -109,10 +102,9 @@ describe('RisuAI LLM flags', () => {
   });
 
   it('설정 저장 문자열은 콤마로 직렬화한다', () => {
-    expect(serializeConfigurableLlmFlagNames([
-      'hasFullSystemPrompt',
-      'mustStartWithUserInput',
-    ])).toBe('hasFullSystemPrompt,mustStartWithUserInput');
+    expect(
+      serializeConfigurableLlmFlagNames(['hasFullSystemPrompt', 'mustStartWithUserInput']),
+    ).toBe('hasFullSystemPrompt,mustStartWithUserInput');
     expect(serializeConfigurableLlmFlagNames([])).toBe('none');
   });
 });

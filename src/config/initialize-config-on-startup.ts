@@ -8,9 +8,8 @@ export async function initializeConfigOnStartup(): Promise<Config> {
     const storedConfig = await loadStoredConfig();
     if (storedConfig.status === 'valid') return storedConfig.config;
 
-    const config = storedConfig.status === 'missing'
-      ? await loadLegacyConfig()
-      : createDefaultConfig();
+    const config =
+      storedConfig.status === 'missing' ? await loadLegacyConfig() : createDefaultConfig();
     await saveStoredConfig(config);
     return config;
   } catch (error) {

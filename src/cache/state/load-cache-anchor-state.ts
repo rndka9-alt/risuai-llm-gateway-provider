@@ -1,8 +1,5 @@
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../constants';
-import {
-  cacheAnchorStateSchema,
-  type CacheAnchorState,
-} from './schema';
+import { cacheAnchorStateSchema, type CacheAnchorState } from './schema';
 
 // ===== 상태 저장 =====
 
@@ -16,7 +13,10 @@ export async function loadCacheAnchorState(): Promise<CacheAnchorState | null> {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    console.error('[llm-gateway-provider] corrupted cache anchor state; starting a new epoch', error);
+    console.error(
+      '[llm-gateway-provider] corrupted cache anchor state; starting a new epoch',
+      error,
+    );
     return null;
   }
   const result = cacheAnchorStateSchema.safeParse(parsed);

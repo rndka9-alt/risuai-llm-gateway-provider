@@ -1,13 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  initializeConfigOnStartup,
-  loadConfig,
-  saveConfig,
-} from '../config';
+import { initializeConfigOnStartup, loadConfig, saveConfig } from '../config';
 
 const CONFIG_STORAGE_KEY = 'llm-gateway-provider:config';
-const LEGACY_ARGUMENT_BACKUP_STORAGE_KEY =
-  'llm-gateway-provider:arguments-backup';
+const LEGACY_ARGUMENT_BACKUP_STORAGE_KEY = 'llm-gateway-provider:arguments-backup';
 
 const DEFAULT_CONFIG = {
   api_key: '',
@@ -26,21 +21,20 @@ interface ConfigHarness {
   storage: Map<string, string>;
 }
 
-function stubConfig(options: {
-  argumentValues?: Readonly<Record<string, string>>;
-  configValue?: string;
-  legacyBackupValue?: string;
-} = {}): ConfigHarness {
+function stubConfig(
+  options: {
+    argumentValues?: Readonly<Record<string, string>>;
+    configValue?: string;
+    legacyBackupValue?: string;
+  } = {},
+): ConfigHarness {
   const argumentsByName = new Map(Object.entries(options.argumentValues ?? {}));
   const storage = new Map<string, string>();
   if (options.configValue !== undefined) {
     storage.set(CONFIG_STORAGE_KEY, options.configValue);
   }
   if (options.legacyBackupValue !== undefined) {
-    storage.set(
-      LEGACY_ARGUMENT_BACKUP_STORAGE_KEY,
-      options.legacyBackupValue,
-    );
+    storage.set(LEGACY_ARGUMENT_BACKUP_STORAGE_KEY, options.legacyBackupValue);
   }
   const getArgument = vi.fn(async (name: string) => argumentsByName.get(name));
 

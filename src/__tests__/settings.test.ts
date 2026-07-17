@@ -4,10 +4,7 @@ import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { PRESET_SCHEMES } from '../constants';
-import {
-  CACHE_LEDGER_STORAGE_KEY,
-  createEmptyCacheLedger,
-} from '../ledger';
+import { CACHE_LEDGER_STORAGE_KEY, createEmptyCacheLedger } from '../ledger';
 import {
   buildLedgerDisplay,
   formatTokenCount,
@@ -40,9 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function createPluginStorageStub(
-  configValues: Readonly<Record<string, string>> = {},
-) {
+function createPluginStorageStub(configValues: Readonly<Record<string, string>> = {}) {
   const storage = new Map<string, string>();
   if (Object.keys(configValues).length !== 0) {
     storage.set(CONFIG_STORAGE_KEY, JSON.stringify(configValues));
@@ -56,9 +51,9 @@ function createPluginStorageStub(
   };
 }
 
-function requireConfigStorage(
-  pluginStorage: { storage: ReadonlyMap<string, unknown> },
-): Record<string, unknown> {
+function requireConfigStorage(pluginStorage: {
+  storage: ReadonlyMap<string, unknown>;
+}): Record<string, unknown> {
   const serialized = pluginStorage.storage.get(CONFIG_STORAGE_KEY);
   if (typeof serialized !== 'string') throw new Error('Expected stored config');
   const parsed: unknown = JSON.parse(serialized);
@@ -162,9 +157,7 @@ describe('model settings', () => {
 
   it.each([undefined, '', '  '])('값이 %s이면 기본 모델을 반환한다', async (value) => {
     vi.stubGlobal('risuai', {
-      pluginStorage: createPluginStorageStub(
-        value === undefined ? {} : { model: value },
-      ),
+      pluginStorage: createPluginStorageStub(value === undefined ? {} : { model: value }),
     });
 
     await expect(loadModel()).resolves.toBe('gpt-5.6-sol');
@@ -230,9 +223,7 @@ describe('service tier settings', () => {
     '값이 %s이면 Gateway 기본값을 따르도록 미지정으로 불러온다',
     async (value) => {
       vi.stubGlobal('risuai', {
-        pluginStorage: createPluginStorageStub(
-          value === undefined ? {} : { service_tier: value },
-        ),
+        pluginStorage: createPluginStorageStub(value === undefined ? {} : { service_tier: value }),
       });
 
       await expect(loadServiceTier()).resolves.toBeUndefined();
@@ -297,9 +288,12 @@ describe('generation option settings', () => {
     vi.stubGlobal('risuai', { pluginStorage });
 
     await expect(loadConfigurableLlmFlagNames()).resolves.toEqual(['hasFullSystemPrompt']);
-    await pluginStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({
-      flags: 'hasFirstSystemPrompt,poolSupported',
-    }));
+    await pluginStorage.setItem(
+      CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        flags: 'hasFirstSystemPrompt,poolSupported',
+      }),
+    );
     await expect(loadConfigurableLlmFlagNames()).resolves.toEqual([
       'hasFirstSystemPrompt',
       'poolSupported',
@@ -544,10 +538,13 @@ describe('settings UI', () => {
       consecutiveEpochResets: 3,
       fingerprints: [],
     };
-    const harness = await renderSettingsUi({}, {
-      [CACHE_ANCHOR_STATE_STORAGE_KEY]: JSON.stringify(anchorState),
-      [CACHE_LEDGER_STORAGE_KEY]: JSON.stringify(ledger),
-    });
+    const harness = await renderSettingsUi(
+      {},
+      {
+        [CACHE_ANCHOR_STATE_STORAGE_KEY]: JSON.stringify(anchorState),
+        [CACHE_LEDGER_STORAGE_KEY]: JSON.stringify(ledger),
+      },
+    );
 
     expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
     expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
@@ -561,10 +558,7 @@ describe('settings UI', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(harness.setItem).toHaveBeenCalledWith(
-      CACHE_LEDGER_STORAGE_KEY,
-      expect.any(String),
-    );
+    expect(harness.setItem).toHaveBeenCalledWith(CACHE_LEDGER_STORAGE_KEY, expect.any(String));
     const storedLedger = harness.storage.get(CACHE_LEDGER_STORAGE_KEY);
     expect(typeof storedLedger).toBe('string');
     if (typeof storedLedger !== 'string') {
@@ -590,9 +584,7 @@ describe('settings UI', () => {
     expect(document.getElementById('prompt-cache-mode-tooltip')?.className).toContain(
       'group-focus-within:visible',
     );
-    expect(document.getElementById('ledger-popover')?.className).toContain(
-      'group-hover:visible',
-    );
+    expect(document.getElementById('ledger-popover')?.className).toContain('group-hover:visible');
     expect(document.querySelector('footer')?.classList.contains('sticky')).toBe(true);
     expect(document.querySelector('button[type="submit"]')).toBeNull();
   });
@@ -622,10 +614,14 @@ describe('settings UI', () => {
   });
 
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {
-    expect(createProviderRegistrationSignature({
-      flagNames: ['poolSupported', 'hasFullSystemPrompt'],
-    })).toBe(createProviderRegistrationSignature({
-      flagNames: ['hasFullSystemPrompt', 'poolSupported'],
-    }));
+    expect(
+      createProviderRegistrationSignature({
+        flagNames: ['poolSupported', 'hasFullSystemPrompt'],
+      }),
+    ).toBe(
+      createProviderRegistrationSignature({
+        flagNames: ['hasFullSystemPrompt', 'poolSupported'],
+      }),
+    );
   });
 });

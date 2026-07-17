@@ -10,10 +10,7 @@ function makeBlock(label: string, characters: number): string {
   return sentence.repeat(Math.ceil(characters / sentence.length)).slice(0, characters);
 }
 
-function request(
-  messages: readonly LlmMessage[],
-  elapsedMinutes = 1,
-): TrajectoryRequest {
+function request(messages: readonly LlmMessage[], elapsedMinutes = 1): TrajectoryRequest {
   return { elapsedMinutes, messages: [...messages] };
 }
 
@@ -210,10 +207,13 @@ function createRoomSwitchTrajectory(): GoldenTrajectory {
     id: '09-room-switch',
     label: 'full and partial-prefix room switches',
     requests: [
-      request([
-        makeMessage('system', makeBlock('room-A-exclusive', 7_000)),
-        makeMessage('user', 'Room A input.'),
-      ], 0),
+      request(
+        [
+          makeMessage('system', makeBlock('room-A-exclusive', 7_000)),
+          makeMessage('user', 'Room A input.'),
+        ],
+        0,
+      ),
       request([
         sharedGlobal,
         makeMessage('system', makeBlock('room-B-exclusive', 3_000)),
@@ -236,39 +236,24 @@ function createTtlGapTrajectory(): GoldenTrajectory {
   return {
     id: '10-ttl-gap',
     label: '31m and 61m request gaps',
-    requests: [
-      request(messages, 0),
-      request(messages, 31),
-      request(messages, 61),
-    ],
+    requests: [request(messages, 0), request(messages, 31), request(messages, 61)],
   };
 }
 
 function createChurnThenStableTrajectory(): GoldenTrajectory {
   const system = makeMessage('system', makeBlock('churn-stable-system', 8_000));
-  const chat: LlmMessage[] = [
-    makeMessage('user', makeBlock('churn-stable-user-1', 1_000)),
-  ];
+  const chat: LlmMessage[] = [makeMessage('user', makeBlock('churn-stable-user-1', 1_000))];
   const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
   for (let turn = 2; turn <= 3; turn += 1) {
     chat.push(
-      makeMessage(
-        'assistant',
-        makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400),
-      ),
+      makeMessage('assistant', makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400)),
       makeMessage('user', makeBlock(`churn-stable-user-${turn}`, 1_000)),
     );
     requests.push(request([system, ...chat]));
   }
 
-  const firstChurn = makeMessage(
-    'system',
-    makeBlock('churn-stable-frontier-A', 6_000),
-  );
-  const stableFrontier = makeMessage(
-    'system',
-    makeBlock('churn-stable-frontier-B', 6_000),
-  );
+  const firstChurn = makeMessage('system', makeBlock('churn-stable-frontier-A', 6_000));
+  const stableFrontier = makeMessage('system', makeBlock('churn-stable-frontier-B', 6_000));
   requests.push(
     request([system, firstChurn, ...chat]),
     request([system, stableFrontier, ...chat]),
@@ -277,10 +262,7 @@ function createChurnThenStableTrajectory(): GoldenTrajectory {
 
   for (let turn = 4; turn <= 7; turn += 1) {
     chat.push(
-      makeMessage(
-        'assistant',
-        makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400),
-      ),
+      makeMessage('assistant', makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400)),
       makeMessage('user', makeBlock(`churn-stable-user-${turn}`, 1_000)),
     );
     requests.push(request([system, stableFrontier, ...chat]));
@@ -295,9 +277,7 @@ function createChurnThenStableTrajectory(): GoldenTrajectory {
 
 function createChurnOscillatingTrajectory(): GoldenTrajectory {
   const system = makeMessage('system', makeBlock('churn-cycle-system', 8_000));
-  const chat: LlmMessage[] = [
-    makeMessage('user', makeBlock('churn-cycle-user-1', 1_000)),
-  ];
+  const chat: LlmMessage[] = [makeMessage('user', makeBlock('churn-cycle-user-1', 1_000))];
   const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
   chat.push(
     makeMessage('assistant', makeBlock('churn-cycle-assistant-1', 1_400)),
@@ -306,10 +286,7 @@ function createChurnOscillatingTrajectory(): GoldenTrajectory {
   requests.push(request([system, ...chat]));
 
   for (let cycle = 1; cycle <= 3; cycle += 1) {
-    const firstChurn = makeMessage(
-      'system',
-      makeBlock(`churn-cycle-${cycle}-frontier-A`, 6_000),
-    );
+    const firstChurn = makeMessage('system', makeBlock(`churn-cycle-${cycle}-frontier-A`, 6_000));
     const stableFrontier = makeMessage(
       'system',
       makeBlock(`churn-cycle-${cycle}-frontier-B`, 6_000),

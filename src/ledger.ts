@@ -102,10 +102,8 @@ export function calculateSavedUsd(usage: LlmUsage | undefined): number | undefin
   const cachedInputCost = result.data.details.costDetails.cached_input_cost ?? 0;
   const cacheWriteInputCost = result.data.details.costDetails.cache_write_input_cost ?? 0;
   const unitPrice = inputCost / regularInputTokens;
-  const readSavings =
-    readTokens * unitPrice - cachedInputCost;
-  const writePremium =
-    cacheWriteInputCost - writeTokens * unitPrice;
+  const readSavings = readTokens * unitPrice - cachedInputCost;
+  const writePremium = cacheWriteInputCost - writeTokens * unitPrice;
   return readSavings - writePremium;
 }
 

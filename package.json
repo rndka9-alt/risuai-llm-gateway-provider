@@ -6,6 +6,8 @@
   "version": "0.6.0",
   "scripts": {
     "build": "node build.mjs",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -19,6 +21,8 @@
     "@tailwindcss/cli": "^4.3.3",
     "esbuild": "^0.25",
     "happy-dom": "^20.10.6",
+    "prettier": "^3.9.5",
+    "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.3",
     "terser": "^5",
     "typescript": "^5",

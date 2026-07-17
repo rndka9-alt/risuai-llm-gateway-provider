@@ -2,9 +2,7 @@ import type { OpenAIChatCompletionsExtraBody } from 'llm-io';
 import type { PromptCacheMode } from '../types';
 import { getPromptCacheKey } from './get-prompt-cache-key';
 
-export function createPromptCacheExtraBody(
-  mode: PromptCacheMode,
-): OpenAIChatCompletionsExtraBody {
+export function createPromptCacheExtraBody(mode: PromptCacheMode): OpenAIChatCompletionsExtraBody {
   return {
     prompt_cache_key: getPromptCacheKey(mode),
     prompt_cache_options: {

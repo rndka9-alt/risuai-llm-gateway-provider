@@ -38,17 +38,14 @@ function supportsTransferableStreams(): boolean {
 // Response 생성자는 이 상태 코드들에 body를 넣으면 TypeError를 던진다.
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
-function normalizeLegacyHeaders(
-  headers: Record<string, string>,
-): Record<string, string> {
+function normalizeLegacyHeaders(headers: Record<string, string>): Record<string, string> {
   const normalized: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
     // globalFetch가 'Content-Type' 표기로 자체 기본값을 병합하므로, llm-io의 소문자
     // content-type이 그대로 가면 두 키가 공존해 최종 헤더가
     // 'application/json, application/json'으로 합쳐진다. 엄격한 JSON 파서(게이트웨이)는
     // 이를 비JSON으로 판정해 body를 빈 객체로 취급한다 (실측 HTTP 400 ZodError 유력 원인).
-    normalized[name.toLowerCase() === 'content-type' ? 'Content-Type' : name] =
-      value;
+    normalized[name.toLowerCase() === 'content-type' ? 'Content-Type' : name] = value;
   }
   return normalized;
 }
@@ -66,9 +63,7 @@ function toLegacyResponseBody(data: unknown): Uint8Array<ArrayBuffer> | string {
   if (typeof data === 'string') {
     return data;
   }
-  throw new Error(
-    `risuFetch 폴백이 해석할 수 없는 응답 본문 형태입니다: ${typeof data}`,
-  );
+  throw new Error(`risuFetch 폴백이 해석할 수 없는 응답 본문 형태입니다: ${typeof data}`);
 }
 
 const legacyRisuFetch: FetchLike = async (url, init) => {
@@ -88,9 +83,7 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
       // globalFetch가 body를 다시 JSON.stringify하므로, llm-io가 직렬화한 JSON 문자열을
       // 그대로 넘기면 이중 인코딩된다 — 파싱해 원래 값으로 되돌려 전달한다.
       ...(init?.body === undefined ? {} : { body: JSON.parse(init.body) }),
-      ...(init?.headers === undefined
-        ? {}
-        : { headers: normalizeLegacyHeaders(init.headers) }),
+      ...(init?.headers === undefined ? {} : { headers: normalizeLegacyHeaders(init.headers) }),
       ...(method === undefined ? {} : { method }),
       // 끄면 SSE·오류 본문이 globalFetch의 JSON 파싱 경로로 들어가 깨진다.
       rawResponse: true,

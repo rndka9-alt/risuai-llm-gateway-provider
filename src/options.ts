@@ -75,11 +75,7 @@ export const CONFIGURABLE_LLM_FLAG_NAMES: readonly ConfigurableLlmFlagName[] = [
 ];
 
 export type UnsupportedMediaLlmFlagName =
-  | 'hasImageInput'
-  | 'hasImageOutput'
-  | 'hasAudioInput'
-  | 'hasAudioOutput'
-  | 'hasVideoInput';
+  'hasImageInput' | 'hasImageOutput' | 'hasAudioInput' | 'hasAudioOutput' | 'hasVideoInput';
 
 export const UNSUPPORTED_MEDIA_LLM_FLAG_NAMES: readonly UnsupportedMediaLlmFlagName[] = [
   'hasImageInput',
@@ -135,12 +131,14 @@ export function resolveConfigurableLlmFlagNames(
   if (value === undefined || value.trim() === '') return DEFAULT_CONFIGURABLE_LLM_FLAG_NAMES;
   if (value.trim() === EMPTY_CONFIGURABLE_LLM_FLAGS_SENTINEL) return [];
 
-  return [...new Set(
-    value
-      .split(',')
-      .map((flagName) => flagName.trim())
-      .filter(isConfigurableLlmFlagName),
-  )];
+  return [
+    ...new Set(
+      value
+        .split(',')
+        .map((flagName) => flagName.trim())
+        .filter(isConfigurableLlmFlagName),
+    ),
+  ];
 }
 
 export function serializeConfigurableLlmFlagNames(
@@ -149,9 +147,7 @@ export function serializeConfigurableLlmFlagNames(
   return flagNames.length === 0 ? EMPTY_CONFIGURABLE_LLM_FLAGS_SENTINEL : flagNames.join(',');
 }
 
-export function resolveProviderLlmFlags(
-  flagNames: readonly ConfigurableLlmFlagName[],
-): number[] {
+export function resolveProviderLlmFlags(flagNames: readonly ConfigurableLlmFlagName[]): number[] {
   // decoupled도 RisuAI에는 완성 문자열을 반환하므로 hasStreaming 선언은 거짓이 된다.
   return flagNames.map((flagName) => RISUAI_LLM_FLAGS[flagName]);
 }

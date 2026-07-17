@@ -55,8 +55,7 @@ const SETTINGS_BODY_CLASS =
   'm-0 flex min-h-screen items-center justify-center bg-black/55 p-5 font-sans text-ui-content max-[420px]:p-2.5';
 const INPUT_CLASS =
   'h-[38px] w-full rounded-lg border border-ui-frame bg-ui-control px-3 text-[13px] text-ui-content outline-none focus:border-ui-accent focus:ring-2 focus:ring-ui-accent/30';
-const NOTICE_CLASS =
-  'm-0 rounded-lg border border-ui-accent px-2.5 py-2 text-xs text-ui-content';
+const NOTICE_CLASS = 'm-0 rounded-lg border border-ui-accent px-2.5 py-2 text-xs text-ui-content';
 // 네이티브 select 화살표는 우측에 딱 붙어 여백을 줄 수 없어, CSS 그라디언트
 // 셰브런 + pr-[34px]로 교체한다 (CSP상 외부/data 이미지 대신 그라디언트 사용).
 const SELECT_CLASS = `${INPUT_CLASS} cursor-pointer appearance-none pr-[34px] bg-no-repeat [background-image:linear-gradient(45deg,transparent_50%,var(--text2)_50%),linear-gradient(135deg,var(--text2)_50%,transparent_50%)] [background-position:calc(100%_-_19px)_55%,calc(100%_-_14px)_55%] [background-size:5px_5px]`;
@@ -140,9 +139,7 @@ export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined
   return resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
 }
 
-export async function saveReasoningEffort(
-  value: ReasoningEffort | undefined,
-): Promise<void> {
+export async function saveReasoningEffort(value: ReasoningEffort | undefined): Promise<void> {
   await saveConfig({ [REASONING_EFFORT_ARGUMENT]: value ?? '' });
 }
 
@@ -164,9 +161,7 @@ export async function saveStreamingMode(value: StreamingMode): Promise<void> {
   await saveConfig({ [STREAMING_MODE_ARGUMENT]: value });
 }
 
-export async function loadConfigurableLlmFlagNames(): Promise<
-  readonly ConfigurableLlmFlagName[]
-> {
+export async function loadConfigurableLlmFlagNames(): Promise<readonly ConfigurableLlmFlagName[]> {
   const config = await loadConfig();
   return resolveConfigurableLlmFlagNames(config[FLAGS_ARGUMENT]);
 }
@@ -250,9 +245,7 @@ export function buildLedgerDisplay(ledger: CacheLedger): LedgerDisplay {
 
 // 인자 편집 화면에서 직접 입력한 커스텀 모델 ID도 select에서 유실되지 않게 옵션으로 노출한다.
 export function buildModelOptionList(currentModel: string): readonly string[] {
-  return MODEL_OPTIONS.includes(currentModel)
-    ? MODEL_OPTIONS
-    : [currentModel, ...MODEL_OPTIONS];
+  return MODEL_OPTIONS.includes(currentModel) ? MODEL_OPTIONS : [currentModel, ...MODEL_OPTIONS];
 }
 
 interface HelpTooltipProps {
@@ -275,7 +268,7 @@ function HelpTooltip({ children, id, label }: HelpTooltipProps) {
       <span
         id={id}
         role="tooltip"
-        class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-[-4px] z-30 w-[min(250px,calc(100vw-64px))] -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-[11px] leading-[1.45] font-normal tracking-normal text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+        class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-[-4px] z-30 w-[min(250px,calc(100vw-64px))] -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-[11px] leading-[1.45] font-normal tracking-normal text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
       >
         {children}
       </span>
@@ -308,7 +301,7 @@ function ToggleControl({ ariaLabel, checked, id, label, onChange }: ToggleContro
           onChange={(event) => onChange(event.currentTarget.checked)}
           class="peer sr-only"
         />
-        <span class="relative block h-5 w-[34px] rounded-full bg-ui-switch transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-ui-knob after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-ui-accent peer-checked:after:translate-x-3.5 peer-checked:after:bg-ui-background peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ui-accent" />
+        <span class="relative block h-5 w-[34px] rounded-full bg-ui-switch transition-colors peer-checked:bg-ui-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ui-accent after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-ui-knob after:shadow-sm after:transition-transform after:content-[''] peer-checked:after:translate-x-3.5 peer-checked:after:bg-ui-background" />
       </span>
     </label>
   );
@@ -324,13 +317,9 @@ export function SettingsApp(initialValues: SettingsAppProps) {
   const [apiKey, setApiKey] = useState(initialValues.apiKey);
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [model, setModel] = useState(initialValues.model);
-  const [promptCacheMode, setPromptCacheMode] = useState(
-    initialValues.promptCacheMode,
-  );
+  const [promptCacheMode, setPromptCacheMode] = useState(initialValues.promptCacheMode);
   const [serviceTier, setServiceTier] = useState(initialValues.serviceTier);
-  const [reasoningEffort, setReasoningEffort] = useState(
-    initialValues.reasoningEffort,
-  );
+  const [reasoningEffort, setReasoningEffort] = useState(initialValues.reasoningEffort);
   const [verbosity, setVerbosity] = useState(initialValues.verbosity);
   const [streamingMode, setStreamingMode] = useState(initialValues.streamingMode);
   const [flagNames, setFlagNames] = useState(initialValues.flagNames);
@@ -387,14 +376,12 @@ export function SettingsApp(initialValues: SettingsAppProps) {
       id="app"
       class="max-h-[calc(100vh-40px)] w-full max-w-96 overflow-auto rounded-[14px] border border-ui-frame bg-ui-panel shadow-2xl max-[420px]:max-h-[calc(100vh-20px)]"
     >
-      <form
-        id="settings-form"
-        class="flex flex-col"
-        onSubmit={(event) => event.preventDefault()}
-      >
+      <form id="settings-form" class="flex flex-col" onSubmit={(event) => event.preventDefault()}>
         <div class="flex flex-col gap-3 px-[18px] pt-5 pb-[18px] max-[420px]:px-4">
           <div class={FIELD_CLASS}>
-            <label class={FIELD_CAPTION_CLASS} htmlFor="api-key">API 키</label>
+            <label class={FIELD_CAPTION_CLASS} htmlFor="api-key">
+              API 키
+            </label>
             <div class="relative">
               <input
                 id="api-key"
@@ -433,15 +420,12 @@ export function SettingsApp(initialValues: SettingsAppProps) {
 
           <div class={FIELD_CLASS}>
             <span class="flex min-h-4 items-center gap-1">
-              <label
-                class={`${FIELD_CAPTION_CLASS} text-ui-accent`}
-                htmlFor="prompt-cache-mode"
-              >
+              <label class={`${FIELD_CAPTION_CLASS} text-ui-accent`} htmlFor="prompt-cache-mode">
                 캐시 모드
               </label>
               <HelpTooltip id="prompt-cache-mode-tooltip" label="캐시 모드 도움말">
-                캐시 끄기 시에도 explicit 모드는 유지하고 breakpoint만 생략합니다.
-                implicit 캐시로 전환되지 않으며, 추가 캐시 쓰기 비용이 발생하지 않습니다.
+                캐시 끄기 시에도 explicit 모드는 유지하고 breakpoint만 생략합니다. implicit 캐시로
+                전환되지 않으며, 추가 캐시 쓰기 비용이 발생하지 않습니다.
               </HelpTooltip>
             </span>
             <select
@@ -488,19 +472,15 @@ export function SettingsApp(initialValues: SettingsAppProps) {
             <span class="flex min-h-4 items-center gap-1">
               <span class={FIELD_CAPTION_CLASS}>응답 방식</span>
               <HelpTooltip id="streaming-mode-tooltip" label="응답 방식 도움말">
-                응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤
-                RisuAI에 한 번에 전달합니다.
+                응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤 RisuAI에 한
+                번에 전달합니다.
               </HelpTooltip>
             </span>
             <ToggleControl
               id="streaming-mode"
               ariaLabel="응답 방식"
               checked={streamingMode === 'decoupled'}
-              label={
-                streamingMode === 'decoupled'
-                  ? '스트리밍 연결 · 완료 후 표시'
-                  : '일반 요청'
-              }
+              label={streamingMode === 'decoupled' ? '스트리밍 연결 · 완료 후 표시' : '일반 요청'}
               onChange={(checked) => {
                 const nextMode: StreamingMode = checked ? 'decoupled' : 'off';
                 setStreamingMode(nextMode);
@@ -516,7 +496,9 @@ export function SettingsApp(initialValues: SettingsAppProps) {
           </div>
 
           <div class={FIELD_CLASS}>
-            <label class={FIELD_CAPTION_CLASS} htmlFor="model">모델</label>
+            <label class={FIELD_CAPTION_CLASS} htmlFor="model">
+              모델
+            </label>
             <select
               id="model"
               aria-label="모델"
@@ -529,7 +511,9 @@ export function SettingsApp(initialValues: SettingsAppProps) {
               class={SELECT_CLASS}
             >
               {buildModelOptionList(model).map((modelOption) => (
-                <option key={modelOption} value={modelOption}>{modelOption}</option>
+                <option key={modelOption} value={modelOption}>
+                  {modelOption}
+                </option>
               ))}
             </select>
           </div>
@@ -538,8 +522,8 @@ export function SettingsApp(initialValues: SettingsAppProps) {
             <span class="flex min-h-4 items-center gap-1">
               <span class={FIELD_CAPTION_CLASS}>서비스 티어</span>
               <HelpTooltip id="service-tier-tooltip" label="Flex 서비스 티어 도움말">
-                입력·출력 비용이 절반으로 줄어듭니다. 대신 서버 상황에 따라 응답이
-                늦어지거나 실패할 수 있습니다.
+                입력·출력 비용이 절반으로 줄어듭니다. 대신 서버 상황에 따라 응답이 늦어지거나 실패할
+                수 있습니다.
               </HelpTooltip>
             </span>
             <ToggleControl
@@ -556,7 +540,9 @@ export function SettingsApp(initialValues: SettingsAppProps) {
           </div>
 
           <div class={FIELD_CLASS}>
-            <span id="llm-flags-label" class={FIELD_CAPTION_CLASS}>LLM flags</span>
+            <span id="llm-flags-label" class={FIELD_CAPTION_CLASS}>
+              LLM flags
+            </span>
             <fieldset
               aria-labelledby="llm-flags-label"
               class="m-0 grid grid-cols-2 gap-x-2.5 gap-y-2 border-0 p-0"
@@ -570,8 +556,7 @@ export function SettingsApp(initialValues: SettingsAppProps) {
                     id={`flag-${option.name}`}
                     type="checkbox"
                     checked={flagNames.includes(option.name)}
-                    onChange={(event) =>
-                      updateFlag(option.name, event.currentTarget.checked)}
+                    onChange={(event) => updateFlag(option.name, event.currentTarget.checked)}
                     class="m-0 size-4 shrink-0 accent-ui-accent"
                   />
                   <span class="truncate">{option.label}</span>
@@ -618,7 +603,9 @@ export function SettingsApp(initialValues: SettingsAppProps) {
               >
                 {ledgerDisplay.amountText}
               </span>
-              <span class="text-[11px]" aria-hidden="true">ⓘ</span>
+              <span class="text-[11px]" aria-hidden="true">
+                ⓘ
+              </span>
             </button>
             <button
               id="ledger-reset"
@@ -634,7 +621,7 @@ export function SettingsApp(initialValues: SettingsAppProps) {
             <div
               id="ledger-popover"
               role="tooltip"
-              class="pointer-events-none invisible absolute bottom-[calc(100%+11px)] left-[-2px] z-20 w-[190px] translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-3 py-[11px] text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+              class="pointer-events-none invisible absolute bottom-[calc(100%+11px)] left-[-2px] z-20 w-[190px] translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-3 py-[11px] text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
             >
               <div class="flex flex-col gap-1.5">
                 <div class="flex justify-between gap-3 text-[11px] tabular-nums">
@@ -650,9 +637,7 @@ export function SettingsApp(initialValues: SettingsAppProps) {
                   <span
                     id="ledger-amount"
                     class={
-                      ledgerResetFailed
-                        ? 'text-ui-loss'
-                        : LEDGER_TONE_CLASSES[ledgerDisplay.tone]
+                      ledgerResetFailed ? 'text-ui-loss' : LEDGER_TONE_CLASSES[ledgerDisplay.tone]
                     }
                   >
                     {ledgerResetFailed ? '초기화 실패' : ledgerDisplay.amountText}
