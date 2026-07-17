@@ -57,10 +57,10 @@ function createPluginStorageStub(
 }
 
 function requireConfigStorage(
-  pluginStorage: ReturnType<typeof createPluginStorageStub>,
+  pluginStorage: { storage: ReadonlyMap<string, unknown> },
 ): Record<string, unknown> {
   const serialized = pluginStorage.storage.get(CONFIG_STORAGE_KEY);
-  if (serialized === undefined) throw new Error('Expected stored config');
+  if (typeof serialized !== 'string') throw new Error('Expected stored config');
   const parsed: unknown = JSON.parse(serialized);
   if (!isRecord(parsed)) throw new Error('Expected config object');
   return parsed;
@@ -333,6 +333,14 @@ function requireSelect(id: string): HTMLSelectElement {
   return element;
 }
 
+function requireRange(id: string): HTMLInputElement {
+  const element = requireInput(id);
+  if (element.type !== 'range') {
+    throw new Error(`Expected #${id} to be a range input`);
+  }
+  return element;
+}
+
 function requireButton(id: string): HTMLButtonElement {
   const element = document.getElementById(id);
   if (!(element instanceof HTMLButtonElement)) {
@@ -344,6 +352,13 @@ function requireButton(id: string): HTMLButtonElement {
 async function dispatchChange(element: HTMLInputElement | HTMLSelectElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
+async function dispatchInput(element: HTMLInputElement): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new InputEvent('input', { bubbles: true }));
     await Promise.resolve();
   });
 }
@@ -407,8 +422,11 @@ describe('settings UI', () => {
     expect(requireInput('api-key').type).toBe('password');
     expect(requireSelect('model').value).toBe('gpt-5.6-custom');
     expect(requireSelect('prompt-cache-mode').value).toBe('disabled');
-    expect(requireSelect('reasoning-effort').value).toBe('high');
-    expect(requireSelect('verbosity').value).toBe('medium');
+    expect(requireRange('reasoning-effort').value).toBe('4');
+    expect(requireRange('reasoning-effort').getAttribute('aria-valuetext')).toBe('high');
+    expect(requireRange('reasoning-effort').dataset.unset).toBe('false');
+    expect(requireRange('verbosity').value).toBe('2');
+    expect(requireRange('verbosity').getAttribute('aria-valuetext')).toBe('medium');
     expect(requireInput('streaming-mode').checked).toBe(true);
     expect(requireInput('service-tier').checked).toBe(true);
     expect(requireInput('flag-hasFullSystemPrompt').checked).toBe(false);
@@ -431,7 +449,38 @@ describe('settings UI', () => {
     expect(button.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('native change마다 config JSON으로 즉시 저장한다', async () => {
+  it('지정 안 함을 slider 첫 단계의 muted 상태로 표시한다', async () => {
+    await renderSettingsUi();
+    const reasoningEffort = requireRange('reasoning-effort');
+    const verbosity = requireRange('verbosity');
+
+    expect(reasoningEffort.value).toBe('0');
+    expect(reasoningEffort.max).toBe('6');
+    expect(reasoningEffort.dataset.unset).toBe('true');
+    expect(reasoningEffort.getAttribute('aria-valuetext')).toBe('지정 안 함');
+    expect(document.getElementById('reasoning-effort-value')?.textContent).toBe('지정 안 함');
+    expect(verbosity.value).toBe('0');
+    expect(verbosity.max).toBe('3');
+    expect(verbosity.dataset.unset).toBe('true');
+  });
+
+  it('드래그 입력 중 reasoning의 표시와 저장값을 즉시 갱신한다', async () => {
+    const harness = await renderSettingsUi();
+    const reasoningEffort = requireRange('reasoning-effort');
+
+    reasoningEffort.value = '5';
+    await dispatchInput(reasoningEffort);
+    expect(document.getElementById('reasoning-effort-value')?.textContent).toBe('xhigh');
+    expect(reasoningEffort.getAttribute('aria-valuetext')).toBe('xhigh');
+    expect(requireConfigStorage(harness)).toMatchObject({ reasoning_effort: 'xhigh' });
+
+    reasoningEffort.value = '0';
+    await dispatchInput(reasoningEffort);
+    expect(document.getElementById('reasoning-effort-value')?.textContent).toBe('지정 안 함');
+    expect(requireConfigStorage(harness)).toMatchObject({ reasoning_effort: '' });
+  });
+
+  it('native input/change마다 config JSON으로 즉시 저장한다', async () => {
     const harness = await renderSettingsUi();
 
     const apiKey = requireInput('api-key');
@@ -446,13 +495,13 @@ describe('settings UI', () => {
     cacheMode.value = 'disabled';
     await dispatchChange(cacheMode);
 
-    const reasoningEffort = requireSelect('reasoning-effort');
-    reasoningEffort.value = 'xhigh';
-    await dispatchChange(reasoningEffort);
+    const reasoningEffort = requireRange('reasoning-effort');
+    reasoningEffort.value = '5';
+    await dispatchInput(reasoningEffort);
 
-    const verbosity = requireSelect('verbosity');
-    verbosity.value = 'low';
-    await dispatchChange(verbosity);
+    const verbosity = requireRange('verbosity');
+    verbosity.value = '1';
+    await dispatchInput(verbosity);
 
     const streamingMode = requireInput('streaming-mode');
     streamingMode.checked = true;
@@ -530,6 +579,11 @@ describe('settings UI', () => {
 
     expect(document.getElementById('llm-gateway-styles')).not.toBeNull();
     expect(document.body.classList.contains('bg-black/55')).toBe(true);
+    expect(requireRange('reasoning-effort').classList.contains('stepped-slider')).toBe(true);
+    expect(document.getElementById('reasoning-effort-track')?.className).toContain('inset-x-0');
+    expect(document.getElementById('reasoning-effort-thumb')?.className).toContain(
+      'stepped-slider-thumb',
+    );
     expect(document.getElementById('streaming-mode-tooltip')?.className).toContain(
       'group-focus-within:visible',
     );

@@ -28,7 +28,7 @@ try {
   await executeFile(process.execPath, [
     tailwindCliPath,
     '-i',
-    'src/settings.css',
+    'src/settings/settings.css',
     '-o',
     generatedCssPath,
     '--minify',

@@ -11,19 +11,19 @@ import {
   VERBOSITY_ARGUMENT,
   loadConfig,
   saveConfig,
-} from './config';
+} from '../config';
 import {
   isCacheBackoffActive,
   loadCacheAnchorState,
   resolvePromptCacheMode,
   type PromptCacheMode,
-} from './cache';
+} from '../cache';
 import {
   calculateNetSavedTokens,
   loadCacheLedger,
   resetCacheLedger,
   type CacheLedger,
-} from './ledger';
+} from '../ledger';
 import {
   CONFIGURABLE_LLM_FLAG_NAMES,
   DEFAULT_MODEL,
@@ -41,15 +41,18 @@ import {
   type ServiceTier,
   type StreamingMode,
   type Verbosity,
-} from './options';
-import { applyTheme, resolveScheme } from './theme';
+} from '../options';
+import { applyTheme, resolveScheme } from '../theme';
+import {
+  FIELD_CAPTION_CLASS,
+  FIELD_CLASS,
+  SteppedSlider,
+  type SteppedSliderOption,
+} from './components/SteppedSlider';
 
 const SETTINGS_STYLE_ID = 'llm-gateway-styles';
 const SETTINGS_BODY_CLASS =
   'm-0 flex min-h-screen items-center justify-center bg-black/55 p-5 font-sans text-ui-content max-[420px]:p-2.5';
-const FIELD_CLASS = 'flex min-w-0 flex-col gap-1.5';
-const FIELD_CAPTION_CLASS =
-  'text-[11px] font-medium leading-tight tracking-[0.01em] text-ui-muted';
 const INPUT_CLASS =
   'h-[38px] w-full rounded-lg border border-ui-frame bg-ui-control px-3 text-[13px] text-ui-content outline-none focus:border-ui-accent focus:ring-2 focus:ring-ui-accent/30';
 const NOTICE_CLASS =
@@ -69,6 +72,16 @@ const FLAG_OPTIONS: readonly FlagOption[] = [
   { label: 'Alternate Role', name: 'requiresAlternateRole' },
   { label: 'Must Start With User', name: 'mustStartWithUserInput' },
   { label: 'Pool Supported', name: 'poolSupported' },
+];
+
+const REASONING_EFFORT_SLIDER_OPTIONS: readonly SteppedSliderOption<ReasoningEffort>[] = [
+  { label: '지정 안 함', value: undefined },
+  ...REASONING_EFFORT_OPTIONS.map((value) => ({ label: value, value })),
+];
+
+const VERBOSITY_SLIDER_OPTIONS: readonly SteppedSliderOption<Verbosity>[] = [
+  { label: '지정 안 함', value: undefined },
+  ...VERBOSITY_OPTIONS.map((value) => ({ label: value, value })),
 ];
 
 const LEDGER_TONE_CLASSES: Record<LedgerDisplay['tone'], string> = {
@@ -447,47 +460,29 @@ export function SettingsApp(initialValues: SettingsAppProps) {
             </select>
           </div>
 
-          <div class={FIELD_CLASS}>
-            <label class={FIELD_CAPTION_CLASS} htmlFor="reasoning-effort">
-              Reasoning effort
-            </label>
-            <select
-              id="reasoning-effort"
-              aria-label="Reasoning effort"
-              value={reasoningEffort ?? ''}
-              onChange={(event) => {
-                const nextEffort = resolveReasoningEffort(event.currentTarget.value);
-                setReasoningEffort(nextEffort);
-                persist(() => saveReasoningEffort(nextEffort));
-              }}
-              class={SELECT_CLASS}
-            >
-              <option value="">지정 안 함</option>
-              {REASONING_EFFORT_OPTIONS.map((effort) => (
-                <option key={effort} value={effort}>{effort}</option>
-              ))}
-            </select>
-          </div>
+          <SteppedSlider
+            id="reasoning-effort"
+            ariaLabel="Reasoning effort"
+            label="Reasoning effort"
+            value={reasoningEffort}
+            options={REASONING_EFFORT_SLIDER_OPTIONS}
+            onInput={(nextEffort) => {
+              setReasoningEffort(nextEffort);
+              persist(() => saveReasoningEffort(nextEffort));
+            }}
+          />
 
-          <div class={FIELD_CLASS}>
-            <label class={FIELD_CAPTION_CLASS} htmlFor="verbosity">Verbosity</label>
-            <select
-              id="verbosity"
-              aria-label="Verbosity"
-              value={verbosity ?? ''}
-              onChange={(event) => {
-                const nextVerbosity = resolveVerbosity(event.currentTarget.value);
-                setVerbosity(nextVerbosity);
-                persist(() => saveVerbosity(nextVerbosity));
-              }}
-              class={SELECT_CLASS}
-            >
-              <option value="">지정 안 함</option>
-              {VERBOSITY_OPTIONS.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </div>
+          <SteppedSlider
+            id="verbosity"
+            ariaLabel="Verbosity"
+            label="Verbosity"
+            value={verbosity}
+            options={VERBOSITY_SLIDER_OPTIONS}
+            onInput={(nextVerbosity) => {
+              setVerbosity(nextVerbosity);
+              persist(() => saveVerbosity(nextVerbosity));
+            }}
+          />
 
           <div class={FIELD_CLASS}>
             <span class="flex min-h-4 items-center gap-1">

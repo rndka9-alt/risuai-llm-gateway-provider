@@ -1,0 +1,106 @@
+@import "tailwindcss" source(none);
+@source "./settings.tsx";
+@source "./components/SteppedSlider.tsx";
+
+@theme inline {
+  --color-ui-background: var(--background);
+  --color-ui-panel: var(--background2);
+  --color-ui-frame: var(--border2);
+  --color-ui-content: var(--text);
+  --color-ui-muted: var(--text2);
+  --color-ui-accent: var(--accent);
+  --color-ui-control: color-mix(in srgb, var(--background) 88%, var(--background2));
+  --color-ui-accent-soft: color-mix(in srgb, var(--accent) 22%, var(--background));
+  --color-ui-popover: color-mix(in srgb, var(--text) 90%, var(--background));
+  --color-ui-on-popover: var(--background);
+  --color-ui-contrast: color-mix(in srgb, var(--text) 88%, var(--background));
+  --color-ui-contrast-hover: color-mix(in srgb, var(--text) 78%, var(--background));
+  --color-ui-switch: color-mix(in srgb, var(--border2) 65%, var(--background));
+  --color-ui-knob: color-mix(in srgb, var(--text) 20%, var(--background));
+  --color-ui-gain: #4ade80;
+  --color-ui-loss: #f87171;
+}
+
+.stepped-slider {
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+}
+
+.stepped-slider-track {
+  transition: opacity 150ms ease-out;
+}
+
+.stepped-slider-fill {
+  width: calc(var(--stepped-slider-progress) + var(--stepped-slider-thumb-offset));
+}
+
+.stepped-slider-thumb {
+  left: calc(var(--stepped-slider-progress) + var(--stepped-slider-thumb-offset));
+  border: 1px solid color-mix(in srgb, var(--border2) 60%, #fff);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition:
+    left 150ms ease-out,
+    border-color 150ms ease-out,
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    opacity 150ms ease-out;
+}
+
+.stepped-slider-control[data-unset="true"] .stepped-slider-track {
+  opacity: 0.45;
+}
+
+.stepped-slider-control[data-unset="true"] .stepped-slider-fill {
+  opacity: 0;
+}
+
+.stepped-slider-control[data-unset="true"] .stepped-slider-thumb {
+  border-color: var(--text2);
+  background: var(--background2);
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+.stepped-slider:focus-visible {
+  border-radius: 9999px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stepped-slider::-webkit-slider-runnable-track {
+  height: 20px;
+  background: transparent;
+}
+
+.stepped-slider::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+.stepped-slider::-moz-range-track,
+.stepped-slider::-moz-range-progress {
+  height: 20px;
+  background: transparent;
+}
+
+.stepped-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepped-slider-track,
+  .stepped-slider-thumb {
+    transition: none;
+  }
+}
