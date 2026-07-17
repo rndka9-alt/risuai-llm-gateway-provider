@@ -38,6 +38,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function createPluginStorageStub() {
+  return {
+    getItem: vi.fn().mockResolvedValue(null),
+    setItem: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('API key settings', () => {
   it('저장된 API key를 문자열 그대로 불러온다', async () => {
     const getArgument = vi.fn().mockResolvedValue('llmgtwy_secret');
@@ -55,7 +62,10 @@ describe('API key settings', () => {
 
   it('API key를 플러그인 인자에 저장한다', async () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', { setArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(),
+      setArgument,
+    });
 
     await saveApiKey('llmgtwy_new_secret');
 
@@ -86,7 +96,10 @@ describe('prompt cache settings', () => {
 
   it('전체 설정값을 함께 저장한다', async () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', { setArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(),
+      setArgument,
+    });
 
     await saveSettings({
       apiKey: 'llmgtwy_new_secret',
@@ -195,7 +208,10 @@ describe('service tier settings', () => {
 
   it('Flex 비활성화는 저장값을 비워 요청에서 생략되게 한다', async () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', { setArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(),
+      setArgument,
+    });
 
     await saveServiceTier(undefined);
 
@@ -204,7 +220,10 @@ describe('service tier settings', () => {
 
   it('Flex 활성화는 flex를 저장한다', async () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('risuai', { setArgument });
+    vi.stubGlobal('risuai', {
+      pluginStorage: createPluginStorageStub(),
+      setArgument,
+    });
 
     await saveServiceTier('flex');
 
@@ -261,6 +280,7 @@ describe('generation option settings', () => {
     const setArgument = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('risuai', {
       getArgument: vi.fn().mockResolvedValue('none'),
+      pluginStorage: createPluginStorageStub(),
       setArgument,
     });
 

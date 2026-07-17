@@ -10,6 +10,10 @@ import {
   type OpenAIChatCompletionsRaw,
 } from 'llm-io';
 import {
+  API_KEY_ARGUMENT,
+  initializeArgumentBackupOnStartup,
+} from './argument-backup';
+import {
   PROMPT_CACHE_MODE_ARGUMENT,
   type CacheAnchorState,
   type CacheBackoffTransition,
@@ -160,7 +164,7 @@ async function requestLLMGateway(
   // hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌으므로,
   // 스트리밍 모드는 매 요청 라이브로 읽어 저장 즉시 반영한다 (새로고침 불필요).
   const streamingMode = resolveStreamingMode(await readArgument(STREAMING_MODE_ARGUMENT));
-  const apiKey = await readArgument('api_key');
+  const apiKey = await readArgument(API_KEY_ARGUMENT);
 
   if (apiKey === undefined) {
     return {
@@ -273,6 +277,7 @@ async function requestLLMGateway(
 }
 
 async function main(): Promise<void> {
+  await initializeArgumentBackupOnStartup();
   const registrationSettings: ProviderRegistrationSettings = {
     flagNames: resolveConfigurableLlmFlagNames(await readArgument(FLAGS_ARGUMENT)),
   };

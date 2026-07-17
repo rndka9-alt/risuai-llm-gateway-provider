@@ -1,6 +1,10 @@
 import { render, type ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import {
+  API_KEY_ARGUMENT,
+  setArgumentWithBackup,
+} from './argument-backup';
+import {
   PROMPT_CACHE_MODE_ARGUMENT,
   isCacheBackoffActive,
   loadCacheAnchorState,
@@ -39,7 +43,6 @@ import {
 } from './options';
 import { applyTheme, resolveScheme } from './theme';
 
-const API_KEY_ARGUMENT = 'api_key';
 const SETTINGS_STYLE_ID = 'llm-gateway-styles';
 const SETTINGS_BODY_CLASS =
   'm-0 flex min-h-screen items-center justify-center bg-black/55 p-5 font-sans text-ui-content max-[420px]:p-2.5';
@@ -89,7 +92,7 @@ export async function loadApiKey(): Promise<string> {
 }
 
 export async function saveApiKey(value: string): Promise<void> {
-  await risuai.setArgument(API_KEY_ARGUMENT, value);
+  await setArgumentWithBackup(API_KEY_ARGUMENT, value);
 }
 
 export async function loadPromptCacheMode(): Promise<PromptCacheMode> {
@@ -102,7 +105,7 @@ export async function loadPromptCacheMode(): Promise<PromptCacheMode> {
 }
 
 export async function savePromptCacheMode(value: PromptCacheMode): Promise<void> {
-  await risuai.setArgument(PROMPT_CACHE_MODE_ARGUMENT, value);
+  await setArgumentWithBackup(PROMPT_CACHE_MODE_ARGUMENT, value);
 }
 
 export async function loadModel(): Promise<string> {
@@ -116,7 +119,7 @@ export async function loadModel(): Promise<string> {
 }
 
 export async function saveModel(value: string): Promise<void> {
-  await risuai.setArgument(MODEL_ARGUMENT, value);
+  await setArgumentWithBackup(MODEL_ARGUMENT, value);
 }
 
 export async function loadServiceTier(): Promise<ServiceTier | undefined> {
@@ -129,7 +132,7 @@ export async function loadServiceTier(): Promise<ServiceTier | undefined> {
 }
 
 export async function saveServiceTier(value: ServiceTier | undefined): Promise<void> {
-  await risuai.setArgument(SERVICE_TIER_ARGUMENT, value === 'flex' ? 'flex' : '');
+  await setArgumentWithBackup(SERVICE_TIER_ARGUMENT, value === 'flex' ? 'flex' : '');
 }
 
 export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined> {
@@ -144,7 +147,7 @@ export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined
 export async function saveReasoningEffort(
   value: ReasoningEffort | undefined,
 ): Promise<void> {
-  await risuai.setArgument(REASONING_EFFORT_ARGUMENT, value ?? '');
+  await setArgumentWithBackup(REASONING_EFFORT_ARGUMENT, value ?? '');
 }
 
 export async function loadVerbosity(): Promise<Verbosity | undefined> {
@@ -157,7 +160,7 @@ export async function loadVerbosity(): Promise<Verbosity | undefined> {
 }
 
 export async function saveVerbosity(value: Verbosity | undefined): Promise<void> {
-  await risuai.setArgument(VERBOSITY_ARGUMENT, value ?? '');
+  await setArgumentWithBackup(VERBOSITY_ARGUMENT, value ?? '');
 }
 
 export async function loadStreamingMode(): Promise<StreamingMode> {
@@ -170,7 +173,7 @@ export async function loadStreamingMode(): Promise<StreamingMode> {
 }
 
 export async function saveStreamingMode(value: StreamingMode): Promise<void> {
-  await risuai.setArgument(STREAMING_MODE_ARGUMENT, value);
+  await setArgumentWithBackup(STREAMING_MODE_ARGUMENT, value);
 }
 
 export async function loadConfigurableLlmFlagNames(): Promise<
@@ -187,7 +190,7 @@ export async function loadConfigurableLlmFlagNames(): Promise<
 export async function saveConfigurableLlmFlagNames(
   flagNames: readonly ConfigurableLlmFlagName[],
 ): Promise<void> {
-  await risuai.setArgument(
+  await setArgumentWithBackup(
     FLAGS_ARGUMENT,
     serializeConfigurableLlmFlagNames(flagNames),
   );

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ARGUMENT_BACKUP_STORAGE_KEY } from '../argument-backup';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
 import {
@@ -92,9 +93,11 @@ function createAbortingStreamingResponse(abortController: AbortController): Resp
 }
 
 interface ProviderHarness {
+  argumentsByKey: Map<string, string>;
   nativeFetch: ReturnType<typeof vi.fn<(url: string, requestInit?: RequestInit) => Promise<Response>>>;
   provider: ProviderFunction;
   providerOptions: ProviderOptions | undefined;
+  startupEvents: string[];
   stored: Map<string, string>;
   toastMessages: string[];
 }
@@ -102,8 +105,10 @@ interface ProviderHarness {
 async function loadProvider(
   responses: Response[],
   argumentOverrides: Readonly<Record<string, string>> = {},
+  initialStorageValues: Readonly<Record<string, string>> = {},
+  failArgumentBackupLoad = false,
 ): Promise<ProviderHarness> {
-  const stored = new Map<string, string>();
+  const stored = new Map(Object.entries(initialStorageValues));
   const argumentsByKey = new Map<string, string>([
     ['api_key', 'test-key'],
     ['model', 'gpt-5.6-sol'],
@@ -112,6 +117,11 @@ async function loadProvider(
   ]);
   let registeredProvider: ProviderFunction | undefined;
   let providerOptions: ProviderOptions | undefined;
+  const startupEvents: string[] = [];
+  let resolveStartup: (() => void) | undefined;
+  const startupCompleted = new Promise<void>((resolve) => {
+    resolveStartup = resolve;
+  });
   const toastMessages: string[] = [];
   const nativeFetch = vi.fn(async (url: string, requestInit?: RequestInit) => {
     void url;
@@ -124,8 +134,17 @@ async function loadProvider(
   vi.stubGlobal('__VERSION__', 'test');
   vi.stubGlobal('risuai', {
     getArgument: async (key: string) => argumentsByKey.get(key),
+    setArgument: async (key: string, value: string) => {
+      startupEvents.push(`setArgument:${key}`);
+      argumentsByKey.set(key, value);
+    },
     pluginStorage: {
-      getItem: async (key: string) => stored.get(key) ?? null,
+      getItem: async (key: string) => {
+        if (failArgumentBackupLoad && key === ARGUMENT_BACKUP_STORAGE_KEY) {
+          throw new Error('argument backup storage unavailable');
+        }
+        return stored.get(key) ?? null;
+      },
       setItem: async (key: string, value: string) => {
         stored.set(key, value);
       },
@@ -146,19 +165,34 @@ async function loadProvider(
       provider: ProviderFunction,
       options?: ProviderOptions,
     ) => {
+      startupEvents.push('addProvider');
       registeredProvider = provider;
       providerOptions = options;
     },
     registerSetting: async () => ({ id: 'settings' }),
-    onUnload: async () => undefined,
+    onUnload: async () => {
+      if (resolveStartup === undefined) {
+        throw new Error('Startup completion resolver was not initialized');
+      }
+      resolveStartup();
+    },
     unregisterUIPart: async () => undefined,
   });
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
   await import('../plugin');
+  await startupCompleted;
   if (registeredProvider === undefined) throw new Error('Provider was not registered');
 
-  return { nativeFetch, provider: registeredProvider, providerOptions, stored, toastMessages };
+  return {
+    argumentsByKey,
+    nativeFetch,
+    provider: registeredProvider,
+    providerOptions,
+    startupEvents,
+    stored,
+    toastMessages,
+  };
 }
 
 function getRequestBody(
@@ -186,6 +220,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe('provider registration metadata', () => {
+  it('백업 flags를 provider 등록 전에 복원해 등록 스냅샷에 반영한다', async () => {
+    const harness = await loadProvider(
+      [],
+      { flags: '' },
+      {
+        [ARGUMENT_BACKUP_STORAGE_KEY]: JSON.stringify({
+          flags: 'hasFirstSystemPrompt,poolSupported',
+        }),
+      },
+    );
+
+    expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
+      RISUAI_LLM_FLAGS.poolSupported,
+    ]);
+    expect(harness.startupEvents.indexOf('setArgument:flags')).toBeLessThan(
+      harness.startupEvents.indexOf('addProvider'),
+    );
+  });
+
+  it('백업 저장소 실패가 provider 등록을 막지 않는다', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const harness = await loadProvider([], {}, {}, true);
+
+    expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
+    ]);
+    expect(harness.startupEvents).toContain('addProvider');
+    expect(consoleError).toHaveBeenCalledWith(
+      '[llm-gateway-provider] argument backup startup synchronization failed; continuing',
+      expect.any(Error),
+    );
+  });
+
   it('본체 숫자 flags, sampler parameters, V3와 legacy o200k tokenizer를 등록한다', async () => {
     const harness = await loadProvider([], {
       flags: 'hasFirstSystemPrompt,poolSupported',
