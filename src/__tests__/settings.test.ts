@@ -533,6 +533,9 @@ describe('settings UI', () => {
     expect(document.getElementById('streaming-mode-tooltip')?.className).toContain(
       'group-focus-within:visible',
     );
+    expect(document.getElementById('prompt-cache-mode-tooltip')?.className).toContain(
+      'group-focus-within:visible',
+    );
     expect(document.getElementById('ledger-popover')?.className).toContain(
       'group-hover:visible',
     );
@@ -542,6 +545,9 @@ describe('settings UI', () => {
 
   it('도움말·닫기 동작과 저장 실패 표시를 유지한다', async () => {
     const harness = await renderSettingsUi();
+    expect(document.getElementById('prompt-cache-mode-tooltip')?.textContent).toContain(
+      '추가 캐시 쓰기 비용이 발생하지 않습니다.',
+    );
     expect(document.getElementById('streaming-mode-tooltip')?.textContent).toContain(
       '플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.',
     );
