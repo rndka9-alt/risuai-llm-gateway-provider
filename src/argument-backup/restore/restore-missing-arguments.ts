@@ -1,9 +1,9 @@
 import {
   BACKED_UP_ARGUMENT_NAMES,
   type BackedUpArgumentName,
-} from './constants';
-import type { ArgumentBackup } from './schema';
-import { isNonEmptyArgumentValue } from './utils/is-non-empty-argument-value';
+} from '../constants';
+import type { ArgumentBackup } from '../storage/schema';
+import { isNonEmptyArgumentValue } from '../utils/is-non-empty-argument-value';
 
 export async function restoreMissingArguments(
   backup: ArgumentBackup,

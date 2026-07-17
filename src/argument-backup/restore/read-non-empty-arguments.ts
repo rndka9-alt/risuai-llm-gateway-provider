@@ -1,8 +1,8 @@
 import {
   BACKED_UP_ARGUMENT_NAMES,
   type BackedUpArgumentName,
-} from './constants';
-import { isNonEmptyArgumentValue } from './utils/is-non-empty-argument-value';
+} from '../constants';
+import { isNonEmptyArgumentValue } from '../utils/is-non-empty-argument-value';
 
 export async function readNonEmptyArguments(): Promise<
   Map<BackedUpArgumentName, string>

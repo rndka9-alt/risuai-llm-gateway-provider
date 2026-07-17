@@ -1,4 +1,4 @@
-import { ARGUMENT_BACKUP_STORAGE_KEY } from './constants';
+import { ARGUMENT_BACKUP_STORAGE_KEY } from '../constants';
 import { argumentBackupSchema, type ArgumentBackup } from './schema';
 
 export async function loadArgumentBackup(): Promise<ArgumentBackup> {

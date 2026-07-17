@@ -1,5 +1,5 @@
 import type { BackedUpArgumentName } from './constants';
-import { updateArgumentBackup } from './update-argument-backup';
+import { updateArgumentBackup } from './storage/update-argument-backup';
 
 export async function setArgumentWithBackup(
   argumentName: BackedUpArgumentName,

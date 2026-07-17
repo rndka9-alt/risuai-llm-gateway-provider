@@ -1,5 +1,5 @@
-import type { BackedUpArgumentName } from './constants';
-import type { ArgumentBackup } from './schema';
+import type { BackedUpArgumentName } from '../constants';
+import type { ArgumentBackup } from '../storage/schema';
 
 export function mergeArgumentBackup(
   backup: ArgumentBackup,

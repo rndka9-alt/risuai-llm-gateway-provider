@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ARGUMENT_BACKUP_STORAGE_KEY } from '../argument-backup';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
 import {
@@ -105,10 +104,10 @@ interface ProviderHarness {
 async function loadProvider(
   responses: Response[],
   argumentOverrides: Readonly<Record<string, string>> = {},
-  initialStorageValues: Readonly<Record<string, string>> = {},
+  backedUpFlags: string | undefined = undefined,
   failArgumentBackupLoad = false,
 ): Promise<ProviderHarness> {
-  const stored = new Map(Object.entries(initialStorageValues));
+  const stored = new Map<string, string>();
   const argumentsByKey = new Map<string, string>([
     ['api_key', 'test-key'],
     ['model', 'gpt-5.6-sol'],
@@ -140,7 +139,7 @@ async function loadProvider(
     },
     pluginStorage: {
       getItem: async (key: string) => {
-        if (failArgumentBackupLoad && key === ARGUMENT_BACKUP_STORAGE_KEY) {
+        if (failArgumentBackupLoad) {
           throw new Error('argument backup storage unavailable');
         }
         return stored.get(key) ?? null;
@@ -180,6 +179,13 @@ async function loadProvider(
   });
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
+  if (backedUpFlags !== undefined) {
+    const currentFlags = argumentsByKey.get('flags');
+    const { setArgumentWithBackup } = await import('../argument-backup');
+    await setArgumentWithBackup('flags', backedUpFlags);
+    if (currentFlags === undefined) argumentsByKey.delete('flags');
+    else argumentsByKey.set('flags', currentFlags);
+  }
   await import('../plugin');
   await startupCompleted;
   if (registeredProvider === undefined) throw new Error('Provider was not registered');
@@ -224,11 +230,7 @@ describe('provider registration metadata', () => {
     const harness = await loadProvider(
       [],
       { flags: '' },
-      {
-        [ARGUMENT_BACKUP_STORAGE_KEY]: JSON.stringify({
-          flags: 'hasFirstSystemPrompt,poolSupported',
-        }),
-      },
+      'hasFirstSystemPrompt,poolSupported',
     );
 
     expect(harness.providerOptions?.model?.flags).toEqual([
@@ -243,7 +245,7 @@ describe('provider registration metadata', () => {
   it('백업 저장소 실패가 provider 등록을 막지 않는다', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const harness = await loadProvider([], {}, {}, true);
+    const harness = await loadProvider([], {}, undefined, true);
 
     expect(harness.providerOptions?.model?.flags).toEqual([
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,

@@ -1,34 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  API_KEY_ARGUMENT,
-  ARGUMENT_BACKUP_STORAGE_KEY,
-} from '../argument-backup/constants';
+import { API_KEY_ARGUMENT } from '../argument-backup';
 import { MODEL_ARGUMENT } from '../options';
 
 interface ArgumentBackupHarness {
   argumentsByName: Map<string, string>;
-  getItem: ReturnType<typeof vi.fn<(key: string) => Promise<string | null>>>;
+  backupStorage: { value: string | undefined };
   setArgument: ReturnType<typeof vi.fn<(name: string, value: string) => Promise<void>>>;
-  setItem: ReturnType<typeof vi.fn<(key: string, value: string) => Promise<void>>>;
-  storage: Map<string, string>;
 }
 
 function stubArgumentBackup(
   argumentValues: Readonly<Record<string, string>> = {},
   storedBackup: string | undefined = undefined,
-  reflectWritesInReads = true,
 ): ArgumentBackupHarness {
   const argumentsByName = new Map(Object.entries(argumentValues));
-  const storage = new Map<string, string>();
-  if (storedBackup !== undefined) {
-    storage.set(ARGUMENT_BACKUP_STORAGE_KEY, storedBackup);
-  }
-  const getItem = vi.fn(async (key: string) => {
-    if (!reflectWritesInReads) return storedBackup ?? null;
-    return storage.get(key) ?? null;
+  const backupStorage = { value: storedBackup };
+  const getItem = vi.fn(async (_key: string) => {
+    return backupStorage.value ?? null;
   });
-  const setItem = vi.fn(async (key: string, value: string) => {
-    storage.set(key, value);
+  const setItem = vi.fn(async (_key: string, value: string) => {
+    backupStorage.value = value;
   });
   const setArgument = vi.fn(async (name: string, value: string) => {
     argumentsByName.set(name, value);
@@ -39,11 +29,11 @@ function stubArgumentBackup(
     setArgument,
     pluginStorage: { getItem, setItem },
   });
-  return { argumentsByName, getItem, setArgument, setItem, storage };
+  return { argumentsByName, backupStorage, setArgument };
 }
 
 function requireStoredBackup(harness: ArgumentBackupHarness): Record<string, unknown> {
-  const serialized = harness.storage.get(ARGUMENT_BACKUP_STORAGE_KEY);
+  const serialized = harness.backupStorage.value;
   if (serialized === undefined) throw new Error('Expected a stored argument backup');
   const parsed: unknown = JSON.parse(serialized);
   if (!isRecord(parsed)) {
@@ -68,9 +58,9 @@ describe('argument backup startup synchronization', () => {
       { [API_KEY_ARGUMENT]: '' },
       JSON.stringify({ [API_KEY_ARGUMENT]: 'restored-secret' }),
     );
-    const { restoreAndMergeArgumentBackup } = await import('../argument-backup');
+    const { initializeArgumentBackupOnStartup } = await import('../argument-backup');
 
-    await restoreAndMergeArgumentBackup();
+    await initializeArgumentBackupOnStartup();
 
     expect(harness.setArgument).toHaveBeenCalledWith(
       API_KEY_ARGUMENT,
@@ -84,9 +74,9 @@ describe('argument backup startup synchronization', () => {
       { [API_KEY_ARGUMENT]: 'current-secret' },
       JSON.stringify({ [API_KEY_ARGUMENT]: 'old-secret' }),
     );
-    const { restoreAndMergeArgumentBackup } = await import('../argument-backup');
+    const { initializeArgumentBackupOnStartup } = await import('../argument-backup');
 
-    await restoreAndMergeArgumentBackup();
+    await initializeArgumentBackupOnStartup();
 
     expect(harness.setArgument).not.toHaveBeenCalled();
     expect(requireStoredBackup(harness)).toMatchObject({
@@ -100,9 +90,9 @@ describe('argument backup startup synchronization', () => {
       { [MODEL_ARGUMENT]: 'gpt-5.6-luna' },
       '{broken json',
     );
-    const { restoreAndMergeArgumentBackup } = await import('../argument-backup');
+    const { initializeArgumentBackupOnStartup } = await import('../argument-backup');
 
-    await restoreAndMergeArgumentBackup();
+    await expect(initializeArgumentBackupOnStartup()).resolves.toBeUndefined();
 
     expect(harness.setArgument).not.toHaveBeenCalled();
     expect(requireStoredBackup(harness)).toEqual({
@@ -115,9 +105,9 @@ describe('argument backup startup synchronization', () => {
       [API_KEY_ARGUMENT]: '',
       [MODEL_ARGUMENT]: 'gpt-5.6-terra',
     });
-    const { restoreAndMergeArgumentBackup } = await import('../argument-backup');
+    const { initializeArgumentBackupOnStartup } = await import('../argument-backup');
 
-    await restoreAndMergeArgumentBackup();
+    await initializeArgumentBackupOnStartup();
 
     expect(requireStoredBackup(harness)).toEqual({
       [MODEL_ARGUMENT]: 'gpt-5.6-terra',
@@ -126,14 +116,13 @@ describe('argument backup startup synchronization', () => {
 });
 
 describe('settings argument backup updates', () => {
-  it('setItem 직후 읽기가 stale이어도 메모리 스냅샷으로 연속 변경을 보존한다', async () => {
-    const harness = stubArgumentBackup({}, undefined, false);
+  it('저장 훅 경유 변경을 기존 백업에 병합한다', async () => {
+    const harness = stubArgumentBackup();
     const { setArgumentWithBackup } = await import('../argument-backup');
 
     await setArgumentWithBackup(API_KEY_ARGUMENT, 'new-secret');
     await setArgumentWithBackup(MODEL_ARGUMENT, 'gpt-5.6-luna');
 
-    expect(harness.getItem).toHaveBeenCalledOnce();
     expect(requireStoredBackup(harness)).toEqual({
       [API_KEY_ARGUMENT]: 'new-secret',
       [MODEL_ARGUMENT]: 'gpt-5.6-luna',
