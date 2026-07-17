@@ -187,6 +187,15 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     );
     return;
   }
+  if (
+    trajectory.id === '11-churn-then-stable' ||
+    trajectory.id === '12-churn-oscillating'
+  ) {
+    expect(calibrated.totalReadTokens).toBeGreaterThan(0);
+    expect(calibrated.totalWriteTokens).toBeGreaterThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
 }
 
@@ -215,8 +224,8 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존 케이스 10개를 고정한다', () => {
-    expect(trajectories).toHaveLength(10);
+  it('실존·정책 비용 케이스 12개를 고정한다', () => {
+    expect(trajectories).toHaveLength(12);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
@@ -259,7 +268,7 @@ function requireTrajectoryById(trajectoryId: string): GoldenTrajectory {
 }
 
 describe('adaptive policy golden comparisons', () => {
-  it('2-strike 계열은 양수 골든에서 production 대비 10% 초과 회귀하지 않는다', () => {
+  it('2-strike 계열은 양수 골든에서 production 대비 회귀하지 않는다', () => {
     for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
       const trajectory = requireTrajectoryById(trajectoryId);
       const production = requireReplayResult(
@@ -277,7 +286,7 @@ describe('adaptive policy golden comparisons', () => {
           policyName,
         );
         expect(adaptive.totalNetSavedTokens).toBeGreaterThanOrEqual(
-          production.totalNetSavedTokens * 0.9,
+          production.totalNetSavedTokens,
         );
       }
     }
@@ -323,6 +332,32 @@ describe('adaptive policy golden comparisons', () => {
     ).toBe(production.totalNetSavedTokens);
   });
 
+  it('2-strike는 room switch의 same-index frontier write 손실을 일부 회수한다', () => {
+    const trajectory = requireTrajectoryById('09-room-switch');
+    const production = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'production',
+    );
+    const adaptive = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'adaptive-2strike',
+    );
+    const rerollAware = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'adaptive-2strike-reroll-aware',
+    );
+
+    expect(adaptive.totalNetSavedTokens).toBeGreaterThan(
+      production.totalNetSavedTokens,
+    );
+    expect(rerollAware.totalNetSavedTokens).toBe(
+      production.totalNetSavedTokens,
+    );
+  });
+
   it('first-turn-safe는 room switch 첫 턴의 회수 전 write 손실을 줄인다', () => {
     const trajectory = requireTrajectoryById('09-room-switch');
     const production = requireReplayResult(
@@ -363,6 +398,143 @@ describe('adaptive policy golden comparisons', () => {
     );
 
     expect(regressedTrajectoryIds).toEqual(POSITIVE_TRAJECTORY_IDS);
+  });
+});
+
+function requestIndexesWithScoreDifference(
+  reference: ReplayResult,
+  candidate: ReplayResult,
+): number[] {
+  if (reference.logs.length !== candidate.logs.length) {
+    throw new Error('Compared replay results must have the same request count.');
+  }
+
+  const requestIndexes: number[] = [];
+  reference.logs.forEach((referenceLog, requestIndex) => {
+    const candidateLog = candidate.logs[requestIndex];
+    if (candidateLog === undefined) {
+      throw new Error(`Missing candidate request log ${requestIndex}.`);
+    }
+    if (referenceLog.netSavedTokens !== candidateLog.netSavedTokens) {
+      requestIndexes.push(requestIndex);
+    }
+  });
+  return requestIndexes;
+}
+
+describe('adaptive policy cost golden comparisons', () => {
+  it.each(KERNEL_PRESETS)(
+    '%s kernel에서도 지연 write 비용 방향이 유지된다',
+    (kernelPreset) => {
+      for (const trajectoryId of [
+        '11-churn-then-stable',
+        '12-churn-oscillating',
+      ]) {
+        const trajectory = requireTrajectoryById(trajectoryId);
+        const production = requireReplayResult(
+          trajectory,
+          kernelPreset,
+          'production',
+        );
+        const adaptive = requireReplayResult(
+          trajectory,
+          kernelPreset,
+          'adaptive-2strike',
+        );
+        const rerollAware = requireReplayResult(
+          trajectory,
+          kernelPreset,
+          'adaptive-2strike-reroll-aware',
+        );
+
+        // 커널 가정이 달라도 안정화 직전 write를 미룬 adaptive만 다음 턴의
+        // frontier read를 잃고, monitor를 켜지 않은 reroll-aware는 production과 같다.
+        expect(adaptive.totalNetSavedTokens).toBeLessThan(
+          production.totalNetSavedTokens,
+        );
+        expect(rerollAware.totalNetSavedTokens).toBe(
+          production.totalNetSavedTokens,
+        );
+      }
+    },
+  );
+
+  it.each([
+    ['11-churn-then-stable', [4, 5]],
+    ['12-churn-oscillating', [3, 4, 6, 7, 9, 10]],
+  ] satisfies readonly (readonly [string, readonly number[]])[])(
+    '%s은 억제 턴과 직후 안정 턴에서 production보다 손해를 본다',
+    (trajectoryId, expectedDifferenceIndexes) => {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const production = requireReplayResult(
+        trajectory,
+        'calibrated',
+        'production',
+      );
+      const adaptive = requireReplayResult(
+        trajectory,
+        'calibrated',
+        'adaptive-2strike',
+      );
+      const rerollAware = requireReplayResult(
+        trajectory,
+        'calibrated',
+        'adaptive-2strike-reroll-aware',
+      );
+
+      // 두 번째 사망에서 건너뛴 frontier write가 다음 안정 턴의 hit를
+      // 지연시키므로, write premium은 같아도 해당 세그먼트 read 절감이 한 번 사라진다.
+      expect(adaptive.totalNetSavedTokens).toBeLessThan(
+        production.totalNetSavedTokens,
+      );
+      expect(requestIndexesWithScoreDifference(production, adaptive)).toEqual(
+        expectedDifferenceIndexes,
+      );
+
+      // 동일 길이의 두 번째 churn은 reroll-like 변경으로 분류되어 strike를
+      // 누적하지 않으므로 reroll-aware 변형은 이 monitor 비용을 내지 않는다.
+      expect(rerollAware.totalNetSavedTokens).toBe(
+        production.totalNetSavedTokens,
+      );
+    },
+  );
+
+  it('진동 손실은 안정 턴마다 초기화되어 3회 cycle에 선형으로 누적된다', () => {
+    const stableTrajectory = requireTrajectoryById('11-churn-then-stable');
+    const oscillatingTrajectory = requireTrajectoryById(
+      '12-churn-oscillating',
+    );
+    const stableProduction = requireReplayResult(
+      stableTrajectory,
+      'calibrated',
+      'production',
+    );
+    const stableAdaptive = requireReplayResult(
+      stableTrajectory,
+      'calibrated',
+      'adaptive-2strike',
+    );
+    const oscillatingProduction = requireReplayResult(
+      oscillatingTrajectory,
+      'calibrated',
+      'production',
+    );
+    const oscillatingAdaptive = requireReplayResult(
+      oscillatingTrajectory,
+      'calibrated',
+      'adaptive-2strike',
+    );
+    const singleCyclePenalty =
+      stableProduction.totalNetSavedTokens -
+      stableAdaptive.totalNetSavedTokens;
+    const oscillatingPenalty =
+      oscillatingProduction.totalNetSavedTokens -
+      oscillatingAdaptive.totalNetSavedTokens;
+
+    // 안정 확인이 monitor를 해제하므로 손실은 cycle당 지연 read 1회로 유계이며,
+    // 같은 크기의 세 cycle에서는 폭주하지 않고 대략 3배가 되어야 한다.
+    expect(oscillatingPenalty).toBeGreaterThan(singleCyclePenalty * 2.9);
+    expect(oscillatingPenalty).toBeLessThan(singleCyclePenalty * 3.1);
   });
 });
 
@@ -420,6 +592,36 @@ describe('adaptive policy transitions', () => {
     expect(monitored.anchorIndexes).toEqual([0, 3]);
     expect(breakpointIndexes(monitored.messages)).toEqual([0]);
     expect(breakpointIndexes(confirmed.messages)).toEqual([0, 3]);
+  });
+
+  it('같은 인덱스의 fingerprint가 바뀐 frontier도 새 frontier로 억제한다', async () => {
+    pluginStorage.clear();
+    const policy = createAdaptiveTwoStrikeCachePolicy();
+    const sharedGlobal = makePolicyTestMessage('system', 'S'.repeat(5_500));
+    const sharedInput = makePolicyTestMessage('user', 'shared input');
+    const firstRoom = [
+      makePolicyTestMessage('system', 'A'.repeat(7_000)),
+      makePolicyTestMessage('user', 'room A input'),
+    ];
+    const secondRoom = [
+      sharedGlobal,
+      makePolicyTestMessage('system', 'B'.repeat(3_000)),
+      sharedInput,
+    ];
+    const thirdRoom = [
+      sharedGlobal,
+      makePolicyTestMessage('system', 'C'.repeat(3_000)),
+      sharedInput,
+    ];
+
+    await policy.apply(firstRoom);
+    await policy.apply(secondRoom);
+    const monitored = await policy.apply(thirdRoom);
+    const confirmed = await policy.apply(thirdRoom);
+
+    expect(monitored.anchorIndexes).toEqual([0, 1]);
+    expect(breakpointIndexes(monitored.messages)).toEqual([0]);
+    expect(breakpointIndexes(confirmed.messages)).toEqual([0, 1]);
   });
 
   it('reroll-aware 변형은 동일 길이 꼬리 변경을 strike로 누적하지 않는다', async () => {

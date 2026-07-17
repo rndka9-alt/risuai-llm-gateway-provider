@@ -244,6 +244,90 @@ function createTtlGapTrajectory(): GoldenTrajectory {
   };
 }
 
+function createChurnThenStableTrajectory(): GoldenTrajectory {
+  const system = makeMessage('system', makeBlock('churn-stable-system', 8_000));
+  const chat: LlmMessage[] = [
+    makeMessage('user', makeBlock('churn-stable-user-1', 1_000)),
+  ];
+  const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
+  for (let turn = 2; turn <= 3; turn += 1) {
+    chat.push(
+      makeMessage(
+        'assistant',
+        makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400),
+      ),
+      makeMessage('user', makeBlock(`churn-stable-user-${turn}`, 1_000)),
+    );
+    requests.push(request([system, ...chat]));
+  }
+
+  const firstChurn = makeMessage(
+    'system',
+    makeBlock('churn-stable-frontier-A', 6_000),
+  );
+  const stableFrontier = makeMessage(
+    'system',
+    makeBlock('churn-stable-frontier-B', 6_000),
+  );
+  requests.push(
+    request([system, firstChurn, ...chat]),
+    request([system, stableFrontier, ...chat]),
+    request([system, stableFrontier, ...chat]),
+  );
+
+  for (let turn = 4; turn <= 7; turn += 1) {
+    chat.push(
+      makeMessage(
+        'assistant',
+        makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400),
+      ),
+      makeMessage('user', makeBlock(`churn-stable-user-${turn}`, 1_000)),
+    );
+    requests.push(request([system, stableFrontier, ...chat]));
+  }
+
+  return {
+    id: '11-churn-then-stable',
+    label: 'two frontier deaths followed by stable append',
+    requests,
+  };
+}
+
+function createChurnOscillatingTrajectory(): GoldenTrajectory {
+  const system = makeMessage('system', makeBlock('churn-cycle-system', 8_000));
+  const chat: LlmMessage[] = [
+    makeMessage('user', makeBlock('churn-cycle-user-1', 1_000)),
+  ];
+  const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
+  chat.push(
+    makeMessage('assistant', makeBlock('churn-cycle-assistant-1', 1_400)),
+    makeMessage('user', makeBlock('churn-cycle-user-2', 1_000)),
+  );
+  requests.push(request([system, ...chat]));
+
+  for (let cycle = 1; cycle <= 3; cycle += 1) {
+    const firstChurn = makeMessage(
+      'system',
+      makeBlock(`churn-cycle-${cycle}-frontier-A`, 6_000),
+    );
+    const stableFrontier = makeMessage(
+      'system',
+      makeBlock(`churn-cycle-${cycle}-frontier-B`, 6_000),
+    );
+    requests.push(
+      request([system, firstChurn, ...chat]),
+      request([system, stableFrontier, ...chat]),
+      request([system, stableFrontier, ...chat]),
+    );
+  }
+
+  return {
+    id: '12-churn-oscillating',
+    label: 'repeated two-death and one-stable cycles',
+    requests,
+  };
+}
+
 export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
   return [
     createAppendOnlyTrajectory(),
@@ -256,5 +340,7 @@ export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
     createLuaPostEditTrajectory(),
     createRoomSwitchTrajectory(),
     createTtlGapTrajectory(),
+    createChurnThenStableTrajectory(),
+    createChurnOscillatingTrajectory(),
   ];
 }

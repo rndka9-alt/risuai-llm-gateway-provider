@@ -61,16 +61,24 @@ function createDecision(
 function createMarkingPlan(
   plan: CachePlan,
   previousState: CacheAnchorState | null,
+  currentFingerprints: readonly MessageFingerprint[],
   suppressNewFrontier: boolean,
 ): CachePlan {
   if (!suppressNewFrontier) return plan;
 
   const frontierIndex = plan.anchorIndexes.at(-1);
+  if (frontierIndex === undefined) return plan;
+
   if (
-    frontierIndex === undefined ||
-    previousState?.anchorIndexes.includes(frontierIndex) === true
+    previousState !== null &&
+    previousState.anchorIndexes.includes(frontierIndex)
   ) {
-    return plan;
+    const previousFingerprint = previousState.fingerprints[frontierIndex];
+    const currentFingerprint = currentFingerprints[frontierIndex];
+    if (previousFingerprint === undefined || currentFingerprint === undefined) {
+      throw new RangeError('Frontier index must reference both fingerprint sets.');
+    }
+    if (previousFingerprint.hash === currentFingerprint.hash) return plan;
   }
 
   return {
@@ -130,6 +138,7 @@ function createAdaptiveTwoStrikePolicy(
       const markingPlan = createMarkingPlan(
         plan,
         previousState,
+        currentFingerprints,
         monitorFrontier,
       );
       const markedMessages = markCacheBreakpoints([...messages], markingPlan);
