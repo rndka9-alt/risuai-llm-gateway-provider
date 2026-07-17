@@ -288,7 +288,7 @@ function ToggleControl({ ariaLabel, checked, id, label, onChange }: ToggleContro
   return (
     <label
       htmlFor={id}
-      class="flex h-[38px] w-full cursor-pointer items-center justify-between rounded-lg border border-ui-frame bg-ui-control px-3 text-[13px] text-ui-muted"
+      class="flex h-[38px] w-full cursor-pointer items-center justify-between rounded-lg border border-ui-frame bg-ui-control px-3 text-[13px] text-ui-content"
     >
       <span id={`${id}-label`}>{label}</span>
       <span class="relative shrink-0">
