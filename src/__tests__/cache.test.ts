@@ -5,14 +5,14 @@ import {
   CACHE_BACKOFF_EPOCH_RESET_THRESHOLD,
   DISABLED_PROMPT_CACHE_KEY,
   EXPLICIT_PROMPT_CACHE_KEY,
-  createPromptCacheExtraBody,
+  commitPromptCacheState,
   fingerprintMessage,
   getPromptCacheKey,
   isCacheBackoffActive,
   loadCacheAnchorState,
   markCacheBreakpoints,
   planCacheAnchors,
-  resolveCacheBackoffTransition,
+  preparePromptCacheRequest,
   resolvePromptCacheMode,
   saveCacheAnchorState,
   type CacheAnchorState,
@@ -21,6 +21,7 @@ import {
 } from '../cache';
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -51,8 +52,16 @@ describe('prompt cache request wiring', () => {
     ['disabled', DISABLED_PROMPT_CACHE_KEY],
   ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>) (
     '%s 모드에 explicit 캐시 옵션과 해당 키를 구성한다',
-    (mode, promptCacheKey) => {
-      expect(createPromptCacheExtraBody(mode)).toEqual({
+    async (mode, promptCacheKey) => {
+      vi.stubGlobal('risuai', {
+        pluginStorage: {
+          getItem: async () => null,
+        },
+      });
+
+      const prepared = await preparePromptCacheRequest([], mode);
+
+      expect(prepared.cacheExtraBody).toEqual({
         prompt_cache_key: promptCacheKey,
         prompt_cache_options: { mode: 'explicit', ttl: '30m' },
       });
@@ -298,18 +307,15 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     ]);
     let state: CacheAnchorState | null = null;
     const resetCounts: number[] = [];
-    let activationTransition: CacheBackoffTransition | null = null;
 
     for (const turn of turns) {
       const plan = planCacheAnchors(state, turn);
       resetCounts.push(plan.nextState.consecutiveEpochResets);
-      activationTransition = resolveCacheBackoffTransition(state, plan.nextState);
       state = plan.nextState;
     }
 
     expect(resetCounts).toEqual([0, 1, 2, CACHE_BACKOFF_EPOCH_RESET_THRESHOLD]);
     expect(isCacheBackoffActive(state)).toBe(true);
-    expect(activationTransition).toBe('activated');
     const lastTurn = turns[turns.length - 1];
     const backoffPlan = planCacheAnchors(planTurns(turns.slice(0, -1)).nextState, lastTurn);
     expect(breakpointIndexes(markCacheBreakpoints(lastTurn, backoffPlan))).toEqual([]);
@@ -325,9 +331,153 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const recoveredPlan = planCacheAnchors(activeState, stableTurn);
 
     expect(recoveredPlan.nextState.consecutiveEpochResets).toBe(0);
-    expect(resolveCacheBackoffTransition(activeState, recoveredPlan.nextState)).toBe('released');
     expect(isCacheBackoffActive(recoveredPlan.nextState)).toBe(false);
     expect(breakpointIndexes(markCacheBreakpoints(stableTurn, recoveredPlan))).toEqual([0]);
+  });
+});
+
+describe('prompt cache orchestration', () => {
+  it('prepare 저장소 읽기 실패는 원본 messages와 extra body를 유지하고 commit을 만들지 않는다', async () => {
+    const storageError = new Error('cache storage unavailable');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async () => {
+          throw storageError;
+        },
+      },
+    });
+    const messages = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'input'),
+    ];
+
+    const prepared = await preparePromptCacheRequest(messages, 'explicit');
+
+    expect(prepared.requestMessages).toBe(messages);
+    expect(prepared.pendingCommit).toBeNull();
+    expect(prepared.cacheExtraBody).toEqual({
+      prompt_cache_key: EXPLICIT_PROMPT_CACHE_KEY,
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      '[llm-gateway-provider] cache anchor handling failed; sending without breakpoints',
+      storageError,
+    );
+  });
+
+  it('commit 저장 실패는 throw하지 않고 transition을 반환하지 않는다', async () => {
+    const storageError = new Error('cache storage unavailable');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async () => null,
+        setItem: async () => {
+          throw storageError;
+        },
+      },
+    });
+    const prepared = await preparePromptCacheRequest([
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'input'),
+    ], 'explicit');
+    if (prepared.pendingCommit === null) {
+      throw new Error('Expected prepare to create a pending commit');
+    }
+
+    await expect(commitPromptCacheState(prepared.pendingCommit)).resolves.toBeNull();
+    expect(consoleError).toHaveBeenCalledWith(
+      '[llm-gateway-provider] cache anchor state update failed',
+      storageError,
+    );
+  });
+
+  it('disabled 모드도 pending commit을 만들고 성공 뒤 diff 상태를 저장한다', async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
+    const messages = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'input'),
+    ];
+
+    const prepared = await preparePromptCacheRequest(messages, 'disabled');
+
+    expect(prepared.requestMessages).toBe(messages);
+    if (prepared.pendingCommit === null) {
+      throw new Error('Expected disabled mode to create a pending commit');
+    }
+    await expect(commitPromptCacheState(prepared.pendingCommit)).resolves.toBeNull();
+    expect(stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
+    await expect(loadCacheAnchorState()).resolves.toMatchObject({
+      consecutiveEpochResets: 0,
+    });
+  });
+
+  it.each([
+    ['explicit', EXPLICIT_PROMPT_CACHE_KEY],
+    ['disabled', DISABLED_PROMPT_CACHE_KEY],
+  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>) (
+    '%s prepare 실패도 원래 mode의 cache extra body를 유지한다',
+    async (mode, promptCacheKey) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.stubGlobal('risuai', {
+        pluginStorage: {
+          getItem: async () => {
+            throw new Error('cache storage unavailable');
+          },
+        },
+      });
+
+      const prepared = await preparePromptCacheRequest([], mode);
+
+      expect(prepared.cacheExtraBody).toEqual({
+        prompt_cache_key: promptCacheKey,
+        prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      });
+      expect(prepared.pendingCommit).toBeNull();
+    },
+  );
+
+  it('백오프 transition은 준비가 아니라 상태 저장 성공 뒤에 반환한다', async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
+    const changingTurns = ['A', 'B', 'C', 'D'].map((prefix) => [
+      makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'input'),
+    ]);
+    let transition: CacheBackoffTransition | null = null;
+
+    for (const turn of changingTurns) {
+      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      if (prepared.pendingCommit === null) {
+        throw new Error('Expected prepare to create a pending commit');
+      }
+      transition = await commitPromptCacheState(prepared.pendingCommit);
+    }
+
+    expect(transition).toBe('activated');
+    const stablePrepared = await preparePromptCacheRequest(
+      [...changingTurns[changingTurns.length - 1]],
+      'explicit',
+    );
+    if (stablePrepared.pendingCommit === null) {
+      throw new Error('Expected prepare to create a pending commit');
+    }
+    await expect(commitPromptCacheState(stablePrepared.pendingCommit)).resolves.toBe('released');
   });
 });
 

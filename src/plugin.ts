@@ -10,16 +10,10 @@ import {
   type OpenAIChatCompletionsRaw,
 } from 'llm-io';
 import {
-  type CacheAnchorState,
-  type CacheBackoffTransition,
-  createPromptCacheExtraBody,
-  isExplicitPromptCacheMode,
-  loadCacheAnchorState,
-  markCacheBreakpoints,
-  planCacheAnchors,
-  resolveCacheBackoffTransition,
+  type PendingPromptCacheCommit,
+  commitPromptCacheState,
+  preparePromptCacheRequest,
   resolvePromptCacheMode,
-  saveCacheAnchorState,
 } from './cache';
 import {
   API_KEY_ARGUMENT,
@@ -124,22 +118,17 @@ async function consumeGatewayStream(
 }
 
 async function completeSuccessfulRequest(
-  nextCacheAnchorState: CacheAnchorState | null,
-  cacheBackoffTransition: CacheBackoffTransition | null,
+  pendingPromptCacheCommit: PendingPromptCacheCommit | null,
   usage: LlmUsage | undefined,
   rawResponse: unknown,
   model: string,
   requestedServiceTier: string | undefined,
 ): Promise<void> {
-  if (nextCacheAnchorState !== null) {
-    try {
-      // 실패 응답이나 미완료 스트림이 다음 diff의 기준을 오염시키지 않도록 완료 뒤에만 저장한다.
-      await saveCacheAnchorState(nextCacheAnchorState);
-      if (cacheBackoffTransition !== null) {
-        await showCacheBackoffToast(cacheBackoffTransition);
-      }
-    } catch (error) {
-      console.error('[llm-gateway-provider] cache anchor state update failed', error);
+  if (pendingPromptCacheCommit !== null) {
+    // 실패 응답이나 미완료 스트림이 다음 diff의 기준을 오염시키지 않도록 완료 뒤에만 저장한다.
+    const cacheBackoffTransition = await commitPromptCacheState(pendingPromptCacheCommit);
+    if (cacheBackoffTransition !== null) {
+      await showCacheBackoffToast(cacheBackoffTransition);
     }
   }
 
@@ -178,32 +167,10 @@ async function requestLLMGateway(
   const reasoningEffort = resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
   const verbosity = resolveVerbosity(config[VERBOSITY_ARGUMENT]);
   const messages = toLlmMessages(providerArguments.prompt_chat);
-  let requestMessages = messages;
-  let nextCacheAnchorState: CacheAnchorState | null = null;
-  let cacheBackoffTransition: CacheBackoffTransition | null = null;
-  try {
-    // disabled 모드에서도 diff 기준은 계속 갱신한다 — explicit로 되돌렸을 때
-    // 스테일 diff로 잘못된 앵커가 잡히는 것을 막는다.
-    const previousCacheAnchorState = await loadCacheAnchorState();
-    const cachePlan = planCacheAnchors(previousCacheAnchorState, messages);
-    if (isExplicitPromptCacheMode(promptCacheMode)) {
-      requestMessages = markCacheBreakpoints(messages, cachePlan);
-    }
-    nextCacheAnchorState = cachePlan.nextState;
-    cacheBackoffTransition = resolveCacheBackoffTransition(
-      previousCacheAnchorState,
-      cachePlan.nextState,
-    );
-  } catch (error) {
-    // 앵커 처리 실패가 채팅 요청까지 죽여선 안 된다 — 이번 요청은 캐시 없이 보낸다.
-    console.error(
-      '[llm-gateway-provider] cache anchor handling failed; sending without breakpoints',
-      error,
-    );
-  }
+  const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
 
   const extraBody: OpenAIChatCompletionsExtraBody = {
-    ...createPromptCacheExtraBody(promptCacheMode),
+    ...cacheRequest.cacheExtraBody,
     ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
     // RisuAI 본체는 custom provider 인자를 고정 목록으로 만들어 이 두 값을 전달하지 않는다.
     // 따라서 플러그인 인자가 Chat Completions body로 보낼 수 있는 유일한 경로다.
@@ -235,7 +202,7 @@ async function requestLLMGateway(
   const context: GatewayRequestContext = {
     abortSignal,
     gatewayClient,
-    messages: requestMessages,
+    messages: cacheRequest.requestMessages,
     requestOptions,
   };
 
@@ -244,8 +211,7 @@ async function requestLLMGateway(
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
       const result = await consumeGatewayStream(context);
       await completeSuccessfulRequest(
-        nextCacheAnchorState,
-        cacheBackoffTransition,
+        cacheRequest.pendingCommit,
         result.usage,
         undefined,
         model,
@@ -260,8 +226,7 @@ async function requestLLMGateway(
       signal: context.abortSignal,
     });
     await completeSuccessfulRequest(
-      nextCacheAnchorState,
-      cacheBackoffTransition,
+      cacheRequest.pendingCommit,
       output.usage,
       output.raw,
       model,
