@@ -24,14 +24,6 @@ const SETTINGS_STYLE_ID = 'llm-gateway-styles';
 const SETTINGS_BODY_CLASS =
   'm-0 flex min-h-screen items-center justify-center bg-black/55 p-5 font-sans text-ui-content max-[420px]:p-2.5';
 
-interface SettingsAppProps {
-  cacheBackoffActive: boolean;
-}
-
-export function SettingsApp({ cacheBackoffActive }: SettingsAppProps) {
-  return <SettingsPanel cacheBackoffActive={cacheBackoffActive} />;
-}
-
 function injectSettingsStyles(): void {
   if (document.getElementById(SETTINGS_STYLE_ID)) return;
   const style = document.createElement('style');
@@ -40,11 +32,11 @@ function injectSettingsStyles(): void {
   document.head.appendChild(style);
 }
 
-function renderSettings(initialValues: SettingsAppProps): void {
+function renderSettings(cacheBackoffActive: boolean): void {
   injectSettingsStyles();
   document.documentElement.className = 'bg-transparent';
   document.body.className = SETTINGS_BODY_CLASS;
-  render(<SettingsApp {...initialValues} />, document.body);
+  render(<SettingsPanel cacheBackoffActive={cacheBackoffActive} />, document.body);
 }
 
 export async function openSettings(
@@ -87,8 +79,6 @@ export async function openSettings(
     verbosity,
   });
   initializeSettingsSignals();
-  renderSettings({
-    cacheBackoffActive: isCacheBackoffActive(cacheAnchorState),
-  });
+  renderSettings(isCacheBackoffActive(cacheAnchorState));
   applyTheme(await resolveScheme());
 }
