@@ -507,6 +507,203 @@ function createTrimSaturationTrajectory(): GoldenTrajectory {
   };
 }
 
+// 블라인드 사용 일지(모듈 수집가·모바일 라이트) 번역: 방 3개를 한 프리셋으로
+// 순환하는 실사용 타임라인. 플러그인의 anchor state는 전역 단일 슬롯이라 방
+// 전환마다 직전 방 fingerprint와 diff되어, 서버에 이전 방문의 entry가 살아
+// 있어도(30m 내 복귀) 그 경계에 marker를 다시 찍지 못해 exact 매칭 히트를
+// 놓친다 — per-chat anchor state 분리의 손익 근거를 측정한다.
+function createMultiRoomRoundRobinTrajectory(): GoldenTrajectory {
+  const sharedMain = makeMessage('system', makeBlock('mrr-shared-main', 2_480));
+  const sharedPersona = makeMessage('user', makeBlock('mrr-shared-persona', 360));
+  const sharedNote = makeMessage('user', makeBlock('mrr-shared-global-note', 260));
+  interface RoundRobinRoom {
+    description: LlmMessage;
+    lorebook: LlmMessage;
+    turns: LlmMessage[];
+  }
+  const rooms: Record<'A' | 'B' | 'C', RoundRobinRoom> = {
+    A: {
+      description: makeMessage('system', makeBlock('mrr-room-A-description', 2_300)),
+      lorebook: makeMessage('system', makeBlock('mrr-room-A-lorebook', 4_600)),
+      turns: [],
+    },
+    B: {
+      description: makeMessage('system', makeBlock('mrr-room-B-description', 1_100)),
+      lorebook: makeMessage('system', makeBlock('mrr-room-B-lorebook', 650)),
+      turns: [],
+    },
+    C: {
+      description: makeMessage('system', makeBlock('mrr-room-C-description', 1_700)),
+      lorebook: makeMessage('system', makeBlock('mrr-room-C-lorebook', 2_100)),
+      turns: [],
+    },
+  };
+
+  // 방문 스케줄은 일지의 세션 패턴: 방문 내 턴 간격 2~4분, 방문 사이는
+  // TTL(30m) 안쪽 복귀 한 번(A, +7분)과 수 시간 공백(전 entry 사망)을 섞는다.
+  const visits: readonly { room: keyof typeof rooms; turnCount: number; gapMinutes: number }[] = [
+    { room: 'A', turnCount: 4, gapMinutes: 0 },
+    { room: 'B', turnCount: 3, gapMinutes: 8 },
+    { room: 'A', turnCount: 3, gapMinutes: 7 },
+    { room: 'C', turnCount: 4, gapMinutes: 300 },
+    { room: 'A', turnCount: 2, gapMinutes: 540 },
+  ];
+
+  const requests: TrajectoryRequest[] = [];
+  let requestNumber = 0;
+  for (const visit of visits) {
+    const room = rooms[visit.room];
+    for (let turn = 0; turn < visit.turnCount; turn += 1) {
+      requestNumber += 1;
+      const input = makeMessage('user', makeBlock(`mrr-input-${requestNumber}`, 150));
+      requests.push(
+        request(
+          [
+            sharedMain,
+            room.description,
+            sharedPersona,
+            room.lorebook,
+            ...room.turns,
+            input,
+            sharedNote,
+          ],
+          turn === 0 ? visit.gapMinutes : 2 + (requestNumber % 3),
+        ),
+      );
+      room.turns.push(input, makeMessage('assistant', makeBlock(`mrr-reply-${requestNumber}`, 1_500)));
+    }
+  }
+
+  return {
+    id: '15-multi-room-roundrobin',
+    label: 'shared preset rooms interleaved within and beyond TTL',
+    requests,
+  };
+}
+
+// 블라인드 사용 일지(그룹챗 유저) 번역: 응답 캐릭터마다 description·캐릭터
+// 로어북 블록(#1·#3)이 교체되는 그룹챗. 한 유저 턴에 캐릭터 2명이 순차
+// 응답하며 각 응답이 별도 요청이다. 프리픽스 초입이 요청마다 바뀌어 공통
+// 프리픽스가 main(185tok, sub-1024)뿐인 요청이 대부분 — 13번보다 얕은 변동.
+function createGroupSpeakerRotationTrajectory(): GoldenTrajectory {
+  const main = makeMessage('system', makeBlock('gsr-main', 742));
+  const persona = makeMessage('user', makeBlock('gsr-persona', 486));
+  const groupLore = makeMessage('system', makeBlock('gsr-group-lorebook', 1_400));
+  const postInstruction = makeMessage('user', makeBlock('gsr-post-instruction', 46));
+  const characters = ['yun', 'sena', 'dari', 'nox'].map((name, index) => ({
+    description: makeMessage('system', makeBlock(`gsr-desc-${name}`, 1_480 + index * 250)),
+    lorebook: makeMessage('system', makeBlock(`gsr-lore-${name}`, 400 + index * 180)),
+  }));
+
+  // 일지의 발화 패턴: 확률 순서라 연속 동일 응답자도 가끔 나온다.
+  const speakerPairs = [
+    [0, 1],
+    [0, 2],
+    [1, 1],
+    [3, 0],
+    [2, 3],
+    [1, 0],
+    [0, 0],
+    [2, 1],
+  ];
+
+  const chat: LlmMessage[] = [];
+  const requests: TrajectoryRequest[] = [];
+  speakerPairs.forEach((pair, turnIndex) => {
+    const input = makeMessage('user', makeBlock(`gsr-input-${turnIndex + 1}`, 180));
+    chat.push(input);
+    pair.forEach((speakerIndex, replyIndex) => {
+      const speaker = characters[speakerIndex];
+      requests.push(
+        request(
+          [
+            main,
+            speaker.description,
+            persona,
+            groupLore,
+            speaker.lorebook,
+            ...chat,
+            postInstruction,
+          ],
+          turnIndex === 0 && replyIndex === 0 ? 0 : 2,
+        ),
+      );
+      chat.push(
+        makeMessage('assistant', makeBlock(`gsr-reply-${turnIndex + 1}-${replyIndex + 1}`, 1_100)),
+      );
+    });
+  });
+
+  return {
+    id: '16-group-speaker-rotation',
+    label: 'per-responder description swap in group chat',
+    requests,
+  };
+}
+
+// 블라인드 사용 일지(리롤 헤비) 번역: 히스토리 중간 수정(in-place), 마지막
+// N턴 통삭 후 재진행(prefix 수축→재성장), 이어쓰기(마지막 응답 내용 변경)를
+// 일반 append 사이에 끼워 넣은 타임라인. 04(동일 길이 리롤)·06(뭉텅이 트림)이
+// 못 덮는 과거 개서 동역학이다.
+function createMidHistoryEditsTrajectory(): GoldenTrajectory {
+  const head = [
+    makeMessage('system', makeBlock('mhe-main', 1_760)),
+    makeMessage('system', makeBlock('mhe-description', 4_850)),
+    makeMessage('user', makeBlock('mhe-persona', 860)),
+    makeMessage('system', makeBlock('mhe-lorebook', 2_960)),
+  ];
+  const tailNote = makeMessage('user', makeBlock('mhe-global-note', 430));
+
+  const chat: LlmMessage[] = [];
+  const appendTurn = (turnNumber: number, variant = '') => {
+    chat.push(
+      makeMessage('user', makeBlock(`mhe-input-${turnNumber}${variant}`, 250)),
+      makeMessage('assistant', makeBlock(`mhe-reply-${turnNumber}${variant}`, 1_500)),
+    );
+  };
+  for (let turn = 1; turn <= 6; turn += 1) appendTurn(turn);
+
+  const snapshot = () =>
+    request([...head, ...chat, tailNote], 3);
+  const requests: TrajectoryRequest[] = [{ ...snapshot(), elapsedMinutes: 0 }];
+
+  // 7~8턴 일반 진행.
+  appendTurn(7);
+  requests.push(snapshot());
+  appendTurn(8);
+  requests.push(snapshot());
+
+  // 과거 응답 in-place 수정: 3턴째 응답을 고쳐 그 지점부터 프리픽스가 끊긴다.
+  chat[5] = makeMessage('assistant', makeBlock('mhe-reply-3-edited', 1_420));
+  requests.push(snapshot());
+
+  // 마지막 2턴 통삭 후 재진행: 요청이 직전 요청의 프리픽스로 수축했다가 다시 자란다.
+  chat.splice(chat.length - 4, 4);
+  requests.push(snapshot());
+  appendTurn(7, 'redo');
+  requests.push(snapshot());
+  appendTurn(8, 'redo');
+  requests.push(snapshot());
+
+  // 이어쓰기: 마지막 응답 내용이 늘어난다.
+  chat[chat.length - 1] = makeMessage('assistant', makeBlock('mhe-reply-8redo-extended', 2_100));
+  requests.push(snapshot());
+
+  // 깊은 단일 메시지 삭제(shift) 후 일반 진행 재개.
+  chat.splice(2, 2);
+  requests.push(snapshot());
+  appendTurn(9);
+  requests.push(snapshot());
+  appendTurn(10);
+  requests.push(snapshot());
+
+  return {
+    id: '17-mid-history-edits',
+    label: 'in-place edits, rollback replay, and deep deletion',
+    requests,
+  };
+}
+
 export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
   return [
     createAppendOnlyTrajectory(),
@@ -523,5 +720,8 @@ export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
     createChurnOscillatingTrajectory(),
     ...MANUAL_SUMMARY_SCALES.map(createManualSummaryAdditiveTrajectory),
     createTrimSaturationTrajectory(),
+    createMultiRoomRoundRobinTrajectory(),
+    createGroupSpeakerRotationTrajectory(),
+    createMidHistoryEditsTrajectory(),
   ];
 }

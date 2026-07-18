@@ -214,6 +214,28 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
     return;
   }
+  if (trajectory.id === '15-multi-room-roundrobin') {
+    // 방문 내 append 히트가 방 전환 cold write를 상각해 현 정책으로도 흑자다.
+    // 단, 단일 anchor state 한계로 TTL 내 방 복귀의 기존 entry 히트는 회수하지
+    // 못한 값 — per-chat state 분리 개선의 상한 근거로 남긴다.
+    expect(calibrated.totalReadTokens).toBeGreaterThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
+  if (trajectory.id === '16-group-speaker-rotation') {
+    // 응답자별 description 교체(#1)가 요청마다 프리픽스 초입을 갈아, 공통
+    // 프리픽스가 sub-1024 main뿐인 요청이 대부분이다 — 현 정책에선
+    // no-cache(0)가 더 나은 케이스로 남는다.
+    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+    return;
+  }
+  if (trajectory.id === '17-mid-history-edits') {
+    // 과거 개서(수정·롤백 재진행·이어쓰기·깊은 삭제)는 이벤트당 손실이
+    // 유계라 append 구간의 히트가 상각한다.
+    expect(calibrated.totalReadTokens).toBeGreaterThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
 }
 
@@ -242,8 +264,8 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존·정책 비용 케이스 19개를 고정한다', () => {
-    expect(trajectories).toHaveLength(19);
+  it('실존·정책 비용 케이스 22개를 고정한다', () => {
+    expect(trajectories).toHaveLength(22);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
@@ -335,6 +357,23 @@ describe('adaptive policy golden comparisons', () => {
         expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
       }
     }
+  });
+
+  it('mid-history 개서에서 reroll-aware는 production을 유지하고 순수 2-strike는 회귀한다', () => {
+    // in-place 수정·이어쓰기는 메시지 수가 같아 reroll-like로 분류된다. 순수
+    // 2-strike는 이를 frontier 사망으로 세어 억제 비용을 내지만, reroll-aware는
+    // 무시해 production과 같다 — 실사용 개서 패턴에서 판별의 존재 이유를 고정한다.
+    const trajectory = requireTrajectoryById('17-mid-history-edits');
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
+    const rerollAware = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'adaptive-2strike-reroll-aware',
+    );
+
+    expect(adaptive.totalNetSavedTokens).toBeLessThan(production.totalNetSavedTokens);
+    expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
   });
 
   it('포화 트림에서 2-strike는 구제하지만 reroll-aware는 오분류로 production과 같다', () => {
