@@ -43,9 +43,10 @@ import {
   type Verbosity,
 } from '../options';
 import { applyTheme, resolveScheme } from '../theme';
-import { SettingsPanel, type LedgerDisplay } from './components/SettingsPanel';
+import type { LedgerDisplay } from './components/SettingsPanel/components/SettingsFooter';
+import { SettingsPanel } from './components/SettingsPanel/SettingsPanel';
 
-export type { LedgerDisplay } from './components/SettingsPanel';
+export type { LedgerDisplay } from './components/SettingsPanel/components/SettingsFooter';
 
 const SETTINGS_STYLE_ID = 'llm-gateway-styles';
 const SETTINGS_BODY_CLASS =

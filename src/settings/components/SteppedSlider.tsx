@@ -1,6 +1,4 @@
-export const FIELD_CLASS = 'flex min-w-0 flex-col gap-1.5';
-export const FIELD_CAPTION_CLASS =
-  'text-[11px] font-medium leading-tight tracking-[0.01em] text-ui-muted';
+import { FIELD_CAPTION_CLASS, FIELD_CLASS } from './constants';
 
 export interface SteppedSliderOption<Value extends string> {
   label: string;
