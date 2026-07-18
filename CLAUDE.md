@@ -111,8 +111,10 @@ npm test
 - **max_tokens**: llm-io ChatCompletions 포맷이 `max_completion_tokens`로 직렬화한다 (GPT-5.6 대응).
 - **reasoning/verbosity 경로**: RisuAI는 플러그인 provider 인자를 하드코딩해 두 값을 전달하지 않는다.
   플러그인 인자에서 읽어 llm-io `OpenAIChatCompletionsExtraBody`로 보내는 경로가 유일하다.
-- **스트리밍 등록 스냅샷**: `streaming_mode`와 flags는 플러그인 로드 때 읽어 provider 동작과
-  model metadata를 함께 고정한다. 설정 변경 후에는 새로고침이 필요하다.
+- **flags 등록 스냅샷**: flags는 플러그인 로드 때 읽어 provider model metadata에 고정한다.
+  변경 적용에는 새로고침이 필요하다. `streaming_mode`는 매 요청 라이브로 읽어 저장 즉시
+  반영된다 — hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌기 때문
+  (plugin.ts requestLLMGateway 주석 참고).
 - **LLMFlags 숫자 동기화**: `src/options.ts`의 이름→숫자 매핑은 RisuAI
   `src/ts/model/types.ts`의 `LLMFlags`가 출처다. 본체 값 변경 시 반드시 함께 갱신한다.
 - **tokenizer**: legacy custom 경로용 addProvider top-level `o200k_base`와 V3 모델 메타용
