@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
   API_KEY_ARGUMENT,
   FLAGS_ARGUMENT,
@@ -20,8 +20,10 @@ import {
 } from '../cache';
 import {
   calculateNetSavedTokens,
-  loadCacheLedger,
+  getCacheLedgerSnapshot,
+  refreshCacheLedgerSnapshot,
   resetCacheLedger,
+  subscribeCacheLedger,
   type CacheLedger,
 } from '../ledger';
 import {
@@ -205,8 +207,15 @@ export function buildModelOptionList(currentModel: string): readonly string[] {
 
 interface SettingsAppProps extends SettingsValues {
   cacheBackoffActive: boolean;
-  cacheLedger: CacheLedger;
   registrationSignature: string;
+}
+
+function useCacheLedgerSnapshot(): CacheLedger {
+  const [snapshot, setSnapshot] = useState<CacheLedger>(getCacheLedgerSnapshot);
+  // 요청 완료와 원장 초기화는 컴포넌트 밖에서 일어나므로 ledger store의 publish를
+  // 구독해 화면용 snapshot만 갱신한다. 원장의 원천은 외부 store에 유지한다.
+  useEffect(() => subscribeCacheLedger(() => setSnapshot(getCacheLedgerSnapshot())), []);
+  return snapshot;
 }
 
 export function SettingsApp(initialValues: SettingsAppProps) {
@@ -221,7 +230,7 @@ export function SettingsApp(initialValues: SettingsAppProps) {
   const [flagNames, setFlagNames] = useState(initialValues.flagNames);
   const [reloadNeeded, setReloadNeeded] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
-  const [cacheLedger, setCacheLedger] = useState(initialValues.cacheLedger);
+  const cacheLedger = useCacheLedgerSnapshot();
   const [ledgerResetting, setLedgerResetting] = useState(false);
   const [ledgerResetFailed, setLedgerResetFailed] = useState(false);
   const ledgerDisplay = buildLedgerDisplay(cacheLedger);
@@ -258,7 +267,6 @@ export function SettingsApp(initialValues: SettingsAppProps) {
     setLedgerResetFailed(false);
     try {
       await resetCacheLedger();
-      setCacheLedger(await loadCacheLedger());
     } catch (error) {
       setLedgerResetFailed(true);
       console.error('[llm-gateway-provider] Failed to reset cache ledger', error);
@@ -353,7 +361,6 @@ export async function openSettings(
     streamingMode,
     flagNames,
     cacheAnchorState,
-    cacheLedger,
   ] = await Promise.all([
     loadApiKey(),
     loadModel(),
@@ -364,13 +371,12 @@ export async function openSettings(
     loadStreamingMode(),
     loadConfigurableLlmFlagNames(),
     loadCacheAnchorState(),
-    loadCacheLedger(),
+    refreshCacheLedgerSnapshot(),
   ]);
 
   renderSettings({
     apiKey,
     cacheBackoffActive: isCacheBackoffActive(cacheAnchorState),
-    cacheLedger,
     flagNames,
     model,
     promptCacheMode,

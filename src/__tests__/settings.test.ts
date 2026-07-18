@@ -4,7 +4,7 @@ import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
 import { PRESET_SCHEMES } from '../constants';
-import { CACHE_LEDGER_STORAGE_KEY, createEmptyCacheLedger } from '../ledger';
+import { CACHE_LEDGER_STORAGE_KEY, accumulateCacheUsage, createEmptyCacheLedger } from '../ledger';
 import {
   buildLedgerDisplay,
   formatTokenCount,
@@ -566,6 +566,43 @@ describe('settings UI', () => {
     }
     expect(JSON.parse(storedLedger)).toMatchObject({ readTokens: 0, writeTokens: 0 });
     expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('아직 기록 없음');
+  });
+
+  it('요청부가 원장을 갱신하면 숨겨진 설정 화면과 재오픈 표시에 반영한다', async () => {
+    const initialLedger = {
+      ...createEmptyCacheLedger(),
+      readTokens: 1_000,
+      writeTokens: 400,
+    };
+    const harness = await renderSettingsUi(
+      {},
+      { [CACHE_LEDGER_STORAGE_KEY]: JSON.stringify(initialLedger) },
+    );
+
+    expect(document.getElementById('ledger-read-detail')?.textContent).toBe('1.0k');
+
+    await act(async () => requireButton('close').click());
+    expect(harness.hideContainer).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      await accumulateCacheUsage(
+        { cacheReadInputTokens: 9_000, cacheCreationInputTokens: 3_600 },
+        {},
+        'gpt-5.6-sol',
+      );
+    });
+
+    expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
+    expect(document.getElementById('ledger-write-detail')?.textContent).toBe('4.0k');
+    expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
+
+    await act(async () => {
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+    });
+
+    expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
+    expect(document.getElementById('ledger-write-detail')?.textContent).toBe('4.0k');
+    expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
   });
 
   it('Tailwind 유틸리티와 호버·포커스 팝오버, sticky footer를 와이어한다', async () => {

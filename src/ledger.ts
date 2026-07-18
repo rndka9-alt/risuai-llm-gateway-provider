@@ -77,6 +77,27 @@ export function createEmptyCacheLedger(): CacheLedger {
   };
 }
 
+// pluginStorage는 변경 알림이 없으므로 요청부와 설정 UI가 같은 최신 원장을 보도록
+// 런타임 snapshot을 발행한다. 영속 쓰기에 성공한 값만 publish한다.
+type CacheLedgerListener = () => void;
+
+const cacheLedgerListeners = new Set<CacheLedgerListener>();
+let cacheLedgerSnapshot = createEmptyCacheLedger();
+
+export function getCacheLedgerSnapshot(): CacheLedger {
+  return cacheLedgerSnapshot;
+}
+
+export function subscribeCacheLedger(listener: CacheLedgerListener): () => void {
+  cacheLedgerListeners.add(listener);
+  return () => cacheLedgerListeners.delete(listener);
+}
+
+function publishCacheLedger(ledger: CacheLedger): void {
+  cacheLedgerSnapshot = ledger;
+  for (const listener of cacheLedgerListeners) listener();
+}
+
 // 입력 정가 토큰 등가 기준 순절감. 양수면 캐시가 이득이다.
 export function calculateNetSavedTokens(ledger: CacheLedger): number {
   return Math.round(
@@ -124,8 +145,13 @@ export async function loadCacheLedger(): Promise<CacheLedger> {
   return result.success ? result.data : createEmptyCacheLedger();
 }
 
+export async function refreshCacheLedgerSnapshot(): Promise<void> {
+  publishCacheLedger(await loadCacheLedger());
+}
+
 async function saveCacheLedger(ledger: CacheLedger): Promise<void> {
   await risuai.pluginStorage.setItem(CACHE_LEDGER_STORAGE_KEY, JSON.stringify(ledger));
+  publishCacheLedger(ledger);
 }
 
 function createLastCostSample(
