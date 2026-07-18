@@ -1,10 +1,12 @@
 import type { LlmMessage } from 'llm-io';
-import type { CacheAnchorState } from '../state/schema';
+import { FRONTIER_DEATH_MONITOR_THRESHOLD } from '../constants';
+import type { CacheAnchorState, MessageFingerprint } from '../state/schema';
 import type { CachePlan } from '../types';
 import { fingerprintMessage } from './fingerprint-message';
 import { commonPrefixLength } from './utils/common-prefix-length';
 import { commonSuffixLength } from './utils/common-suffix-length';
 import { createFirstTurnPlan } from './utils/create-first-turn-plan';
+import { isShiftedPrefixChange } from './utils/is-shifted-prefix-change';
 import { normalizeAnchorIndexes } from './utils/normalize-anchor-indexes';
 
 // ===== breakpoint 자동 배치 =====
@@ -56,7 +58,14 @@ export function planCacheAnchors(
     );
     return {
       anchorIndexes,
-      nextState: { anchorIndexes, consecutiveEpochResets: 0, fingerprints },
+      markingAnchorIndexes: anchorIndexes,
+      // 동일 요청 리롤은 frontier가 그대로 살아남은 것이므로 사망 이력을 지운다.
+      nextState: {
+        anchorIndexes,
+        consecutiveEpochResets: 0,
+        consecutiveFrontierDeaths: 0,
+        fingerprints,
+      },
     };
   }
 
@@ -70,9 +79,50 @@ export function planCacheAnchors(
   candidates.push(fingerprints.length - suffixLength - 1);
 
   const anchorIndexes = normalizeAnchorIndexes(candidates, fingerprints);
+  const consecutiveFrontierDeaths = resolveFrontierDeaths(
+    previousState,
+    fingerprints,
+    prefixLength,
+  );
+  // 사망이 임계에 닿으면 어차피 죽을 새 frontier의 마킹만 보류한다. 얕은 안정
+  // 앵커는 계속 마킹해 read를 유지하고, frontier가 살아남는 턴이 오면 카운터가
+  // 리셋되어 자동 재개된다. 실측 계약상(probe-cache-partial) 히트는 현재 요청
+  // marker와 entry의 exact 일치에서만 발생하므로, 죽을 지점의 write 프리미엄
+  // 차단이 read 손실 없이 성립한다.
+  const markingAnchorIndexes =
+    consecutiveFrontierDeaths >= FRONTIER_DEATH_MONITOR_THRESHOLD
+      ? anchorIndexes.slice(0, -1)
+      : anchorIndexes;
 
   return {
     anchorIndexes,
-    nextState: { anchorIndexes, consecutiveEpochResets: 0, fingerprints },
+    markingAnchorIndexes,
+    nextState: {
+      anchorIndexes,
+      consecutiveEpochResets: 0,
+      consecutiveFrontierDeaths,
+      fingerprints,
+    },
   };
+}
+
+// frontier 사망을 위치 기준으로 판별한다. 같은 메시지 수의 제자리 교체(리롤·
+// in-place 수정·churn)는 이벤트당 손실이 유계라 세지 않고 카운터만 유지하며,
+// 시프트(트림 포화)·성장·수축 사망은 구조적 반복이라 누적한다. 생존은 리셋한다.
+function resolveFrontierDeaths(
+  previousState: CacheAnchorState,
+  currentFingerprints: readonly MessageFingerprint[],
+  prefixLength: number,
+): number {
+  const previousFrontierIndex = previousState.anchorIndexes.at(-1);
+  if (previousFrontierIndex === undefined || prefixLength > previousFrontierIndex) return 0;
+
+  const sameLength = previousState.fingerprints.length === currentFingerprints.length;
+  if (
+    sameLength &&
+    !isShiftedPrefixChange(previousState.fingerprints, currentFingerprints, prefixLength)
+  ) {
+    return previousState.consecutiveFrontierDeaths;
+  }
+  return previousState.consecutiveFrontierDeaths + 1;
 }

@@ -71,6 +71,9 @@ function createMarkingPlan(
 
   return {
     anchorIndexes: plan.anchorIndexes.filter((anchorIndex) => anchorIndex !== frontierIndex),
+    markingAnchorIndexes: plan.markingAnchorIndexes.filter(
+      (anchorIndex) => anchorIndex !== frontierIndex,
+    ),
     nextState: plan.nextState,
   };
 }

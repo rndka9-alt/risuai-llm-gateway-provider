@@ -12,6 +12,11 @@ export const cacheAnchorStateSchema = z
   .object({
     anchorIndexes: z.array(z.number().int().nonnegative()).max(4),
     consecutiveEpochResets: z.number().int().nonnegative().default(0),
+    // 위치 판별형 2-strike의 frontier 연속 사망 횟수. 구버전 상태는 필드가
+    // 없으므로 0으로 마이그레이션하고, 구버전으로 롤백하면 소실 후 0에서
+    // 재시작한다(안전 리셋). 성공 응답 후에만 commit되는 anchor state에 실려
+    // 취소·실패 요청이 카운터를 오염시키지 못한다.
+    consecutiveFrontierDeaths: z.number().int().nonnegative().default(0),
     fingerprints: z.array(messageFingerprintSchema),
   })
   .superRefine((state, context) => {

@@ -186,32 +186,24 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     return;
   }
   if (trajectory.id.startsWith('13-manual-summary-additive-')) {
-    // 추가형 요약 구조는 얕은 앵커 히트만 남아 손익분기 read/write 비율
-    // (쓰기 프리미엄/읽기 절감)을 밑돌고, 요약 뒤 히스토리가 매턴 대량
-    // 재쓰기된다. 고정 head·장기기억 비중이 큰 작은 컨텍스트일수록 히트
-    // 비율이 올라가 손실이 완만해진다.
-    const breakEvenReadRatio = CACHE_WRITE_PREMIUM_RATE / CACHE_READ_SAVING_RATE;
+    // 위치 판별형 2-strike 승격으로 성장형 요약 변동은 frontier 마킹 보류로
+    // 구제된다 — 얕은 앵커 read는 유지되고 죽을 심층 write만 차단되어 전
+    // 스케일이 흑자다. 실측 mask(80k-mixed)만 안정 전이가 만든 심층 앵커
+    // write가 남아 음수지만, 승격 전(−63,268) 대비 회수 폭은 상한으로 고정한다.
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
-    if (trajectory.id === '13-manual-summary-additive-hist-2t') {
-      // 히스토리 축 단독 최소값: 고정 블록(로어북+장기기억 80k 배분) 질량이
-      // 커서 히트 비율이 손익분기를 살짝 넘는 경계 사례 — 같은 변동 요약
-      // 프리셋도 히스토리만 짧으면 흑자임을 고정한다.
-      expect(calibrated.totalReadTokens).toBeGreaterThan(
-        calibrated.totalWriteTokens * breakEvenReadRatio,
-      );
-      expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    if (trajectory.id === '13-manual-summary-additive-80k-mixed') {
+      expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+      expect(calibrated.totalNetSavedTokens).toBeGreaterThan(-10_000);
       return;
     }
-    expect(calibrated.totalReadTokens).toBeLessThan(
-      calibrated.totalWriteTokens * breakEvenReadRatio,
-    );
-    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
   if (trajectory.id === '14-trim-saturation') {
-    // 포화 트림 정상상태는 고정 head만 히트 가능해 production이 만성 적자다.
+    // 포화 트림의 "개수 유지 + 시프트"를 위치 판별이 스트라이크로 잡아, 고정
+    // head read는 유지한 채 매턴 죽던 심층 write를 차단해 흑자로 돌아선다.
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
-    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
   if (trajectory.id === '15-multi-room-roundrobin') {
@@ -345,7 +337,9 @@ describe('adaptive policy golden comparisons', () => {
     ).toBe(production.totalNetSavedTokens);
   });
 
-  it('2-strike 계열은 manual-summary 전 변형에서 production 손실을 회수한다', () => {
+  it('승격된 production은 manual-summary 전 변형에서 2-strike 후보들과 동률이다', () => {
+    // 위치 판별형 2-strike가 production에 내장되어, 과거 후보 정책들이 내던
+    // 회수분이 기본 동작이 됐다 — 후보 레이어의 추가 억제는 no-op이다.
     for (const scaleId of ['30k', '80k', '120k', '80k-mixed', 'hist-2t', 'hist-44t']) {
       const trajectory = requireTrajectoryById(`13-manual-summary-additive-${scaleId}`);
       const production = requireReplayResult(trajectory, 'calibrated', 'production');
@@ -354,7 +348,7 @@ describe('adaptive policy golden comparisons', () => {
         'adaptive-2strike-reroll-aware',
       ] satisfies readonly PolicyName[]) {
         const adaptive = requireReplayResult(trajectory, 'calibrated', policyName);
-        expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
+        expect(adaptive.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
       }
     }
   });
@@ -376,11 +370,9 @@ describe('adaptive policy golden comparisons', () => {
     expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
   });
 
-  it('포화 트림에서 2-strike는 구제하지만 reroll-aware는 오분류로 production과 같다', () => {
-    // reroll-aware의 "같은 메시지 수 = 리롤" 근사는 매턴 1턴 잘림+1턴 추가로
-    // 개수가 유지되는 포화 상태를 리롤로 오분류해 strike를 누적하지 못한다.
-    // 알려진 미탐 한계를 스코어로 고정해, 판별 신호 개선 시 이 테스트가 깨지며
-    // 개선을 증명하게 한다.
+  it('포화 트림 구제는 production에 내장되어 2-strike 후보들과 동률이다', () => {
+    // 과거 reroll-aware의 "같은 개수 = 리롤" 미탐은 위치 판별(시프트 감지)로
+    // 해소됐다 — 개수 유지 트림도 스트라이크로 잡혀 세 정책이 같은 점수를 낸다.
     const trajectory = requireTrajectoryById('14-trim-saturation');
     const production = requireReplayResult(trajectory, 'calibrated', 'production');
     const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
@@ -390,7 +382,7 @@ describe('adaptive policy golden comparisons', () => {
       'adaptive-2strike-reroll-aware',
     );
 
-    expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
+    expect(adaptive.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
     expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
   });
 

@@ -251,6 +251,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const previousState: CacheAnchorState = {
       anchorIndexes: [0, 2, 4, 6],
       consecutiveEpochResets: 0,
+      consecutiveFrontierDeaths: 0,
       fingerprints: previousMessages.map(fingerprintMessage),
     };
     const currentMessages = [...previousMessages, makeMessage('user', 'E'.repeat(4000))];
@@ -333,6 +334,77 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(recoveredPlan.nextState.consecutiveEpochResets).toBe(0);
     expect(isCacheBackoffActive(recoveredPlan.nextState)).toBe(false);
     expect(breakpointIndexes(markCacheBreakpoints(stableTurn, recoveredPlan))).toEqual([0]);
+  });
+});
+
+describe('frontier death monitor', () => {
+  const trimHead = makeMessage('system', LONG_SYSTEM_TEXT);
+  const turnPair = (turnNumber: number): LlmMessage[] => [
+    makeMessage('user', `input ${turnNumber} `.repeat(20)),
+    makeMessage('assistant', `reply ${turnNumber} `.repeat(60)),
+  ];
+  // 포화 트림 정상상태: 가장 오래된 턴이 잘리고 새 턴이 붙어 메시지 수가 같다.
+  const trimmedWindow = (startTurn: number): LlmMessage[] => [
+    trimHead,
+    ...[startTurn, startTurn + 1, startTurn + 2].flatMap(turnPair),
+    makeMessage('user', `current input ${startTurn}`),
+  ];
+
+  it('개수 유지 시프트가 2연속이면 새 frontier 마킹만 보류한다', () => {
+    const plan = planTurns([trimmedWindow(1), trimmedWindow(2), trimmedWindow(3)]);
+
+    expect(plan.nextState.consecutiveFrontierDeaths).toBe(2);
+    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes.slice(0, -1));
+  });
+
+  it('같은 개수의 제자리 교체(리롤·in-place 수정)는 스트라이크를 세지 않는다', () => {
+    const base = [
+      trimHead,
+      ...turnPair(1),
+      ...turnPair(2),
+      makeMessage('user', 'current input'),
+    ];
+    const editReplyOne = [...base];
+    editReplyOne[2] = makeMessage('assistant', 'edited reply 1 '.repeat(50));
+    const editReplyTwo = [...editReplyOne];
+    editReplyTwo[4] = makeMessage('assistant', 'edited reply 2 '.repeat(50));
+
+    const plan = planTurns([base, editReplyOne, editReplyTwo]);
+
+    expect(plan.nextState.consecutiveFrontierDeaths).toBe(0);
+    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes);
+  });
+
+  it('frontier가 살아남는 턴이 오면 카운터를 리셋하고 마킹을 재개한다', () => {
+    const monitored = trimmedWindow(3);
+    const survivedGrowth = [
+      ...monitored,
+      makeMessage('assistant', 'reply to current '.repeat(40)),
+      makeMessage('user', 'next input'),
+    ];
+
+    const plan = planTurns([trimmedWindow(1), trimmedWindow(2), monitored, survivedGrowth]);
+
+    expect(plan.nextState.consecutiveFrontierDeaths).toBe(0);
+    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes);
+  });
+
+  it('구버전 anchor state는 frontier 사망 카운터를 0으로 마이그레이션한다', async () => {
+    const legacyState = {
+      anchorIndexes: [0],
+      consecutiveEpochResets: 1,
+      fingerprints: [fingerprintMessage(makeMessage('system', 'legacy'))],
+    };
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async () => JSON.stringify(legacyState),
+      },
+    });
+
+    const state = await loadCacheAnchorState();
+
+    expect(state?.consecutiveFrontierDeaths).toBe(0);
+    expect(state?.consecutiveEpochResets).toBe(1);
   });
 });
 

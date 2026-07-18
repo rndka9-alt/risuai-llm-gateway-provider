@@ -8,3 +8,6 @@ export const CACHE_ANCHOR_STATE_STORAGE_KEY = 'llm-gateway-provider:cache-anchor
 // 지점의 breakpoint는 400이 될 수도 있으므로 미달 추정 시 마킹을 생략한다.
 export const MIN_CACHEABLE_PREFIX_TOKENS = 1024;
 export const CACHE_BACKOFF_EPOCH_RESET_THRESHOLD = 3;
+// frontier가 구조적 사망(성장·수축·시프트)을 이 횟수만큼 연속하면, 다음 새
+// frontier 마킹을 보류해 어차피 죽을 심층 write 프리미엄을 차단한다.
+export const FRONTIER_DEATH_MONITOR_THRESHOLD = 2;

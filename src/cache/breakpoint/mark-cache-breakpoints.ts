@@ -13,7 +13,7 @@ export function markCacheBreakpoints(messages: LlmMessage[], plan: CachePlan): L
   }
 
   const markableIndexes = new Set<number>();
-  for (const anchorIndex of plan.anchorIndexes) {
+  for (const anchorIndex of plan.markingAnchorIndexes) {
     const markableIndex = toMarkableIndex(messages, anchorIndex);
     if (
       markableIndex !== null &&
