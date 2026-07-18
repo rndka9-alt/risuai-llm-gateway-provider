@@ -27,8 +27,8 @@ function publishSettingsSignals(nextSignals: SettingsSignals): void {
   for (const listener of settingsSignalsListeners) listener();
 }
 
-export function initializeSettingsSignals(): void {
-  publishSettingsSignals({ reloadNeeded: false, saveFailed: false });
+export function initializeSettingsSignals(initialSignals?: Partial<SettingsSignals>): void {
+  publishSettingsSignals({ reloadNeeded: false, saveFailed: false, ...initialSignals });
 }
 
 export function setSettingsReloadNeeded(reloadNeeded: boolean): void {

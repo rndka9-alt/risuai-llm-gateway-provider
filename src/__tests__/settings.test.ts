@@ -531,6 +531,26 @@ describe('settings UI', () => {
     expect(document.getElementById('reload-notice')).toBeNull();
   });
 
+  it('flags 변경 후 설정창을 재오픈해도 새로고침 안내를 복원한다', async () => {
+    await renderSettingsUi();
+
+    const poolSupported = requireInput('flag-poolSupported');
+    poolSupported.checked = true;
+    await dispatchChange(poolSupported);
+    expect(document.getElementById('reload-notice')?.textContent).toContain(
+      '적용하려면 새로고침이 필요합니다.',
+    );
+
+    await act(async () => requireButton('close').click());
+    await act(async () => {
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+    });
+
+    expect(document.getElementById('reload-notice')?.textContent).toContain(
+      '적용하려면 새로고침이 필요합니다.',
+    );
+  });
+
   it('손익·백오프를 표시하고 원장 초기화를 저장소에 반영한다', async () => {
     const ledger = {
       ...createEmptyCacheLedger(),

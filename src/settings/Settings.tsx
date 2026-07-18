@@ -67,18 +67,24 @@ export async function openSettings(
     refreshCacheLedgerSnapshot(),
   ]);
 
+  const registrationSignature = createProviderRegistrationSignature(registrationSettings);
+
   initializeSettingsSnapshot({
     apiKey,
     flagNames,
     model,
     promptCacheMode,
     reasoningEffort,
-    registrationSignature: createProviderRegistrationSignature(registrationSettings),
+    registrationSignature,
     serviceTier,
     streamingMode,
     verbosity,
   });
-  initializeSettingsSignals();
+  // iframe이 유지되는 재오픈에서도 저장된 flags가 등록 스냅샷과 다르면 아직 미적용
+  // 상태이므로, 새로고침 안내를 false 리셋 대신 시그니처 비교로 복원한다.
+  initializeSettingsSignals({
+    reloadNeeded: createProviderRegistrationSignature({ flagNames }) !== registrationSignature,
+  });
   renderSettings(isCacheBackoffActive(cacheAnchorState));
   applyTheme(await resolveScheme());
 }
