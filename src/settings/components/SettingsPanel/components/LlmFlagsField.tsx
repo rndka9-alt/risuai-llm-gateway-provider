@@ -1,5 +1,10 @@
-import type { ConfigurableLlmFlagName } from '../../../../options';
+import { CONFIGURABLE_LLM_FLAG_NAMES, type ConfigurableLlmFlagName } from '../../../../options';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS } from '../../constants';
+import { persistSetting } from '../../../utils/persistence';
+import { createProviderRegistrationSignature } from '../../../utils/registration';
+import { setSettingsReloadNeeded } from '../../../utils/signals';
+import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../utils/settings-snapshot';
+import { saveConfigurableLlmFlagNames } from '../../../utils/storage';
 
 interface FlagOption {
   label: string;
@@ -14,12 +19,23 @@ const FLAG_OPTIONS: readonly FlagOption[] = [
   { label: 'Pool Supported', name: 'poolSupported' },
 ];
 
-interface LlmFlagsFieldProps {
-  flagNames: readonly ConfigurableLlmFlagName[];
-  onChange: (flagName: ConfigurableLlmFlagName, checked: boolean) => void;
-}
+export function LlmFlagsField() {
+  const { flagNames, registrationSignature } = useSettingsSnapshot();
 
-export function LlmFlagsField({ flagNames, onChange }: LlmFlagsFieldProps) {
+  const updateFlag = (flagName: ConfigurableLlmFlagName, checked: boolean): void => {
+    const selectedFlagNames = new Set(flagNames);
+    if (checked) selectedFlagNames.add(flagName);
+    else selectedFlagNames.delete(flagName);
+    const nextFlagNames = CONFIGURABLE_LLM_FLAG_NAMES.filter((candidate) =>
+      selectedFlagNames.has(candidate),
+    );
+    updateSettingsSnapshot({ flagNames: nextFlagNames });
+    setSettingsReloadNeeded(
+      createProviderRegistrationSignature({ flagNames: nextFlagNames }) !== registrationSignature,
+    );
+    persistSetting(() => saveConfigurableLlmFlagNames(nextFlagNames));
+  };
+
   return (
     <div class={FIELD_CLASS}>
       <span id="llm-flags-label" class={FIELD_CAPTION_CLASS}>
@@ -38,7 +54,7 @@ export function LlmFlagsField({ flagNames, onChange }: LlmFlagsFieldProps) {
               id={`flag-${option.name}`}
               type="checkbox"
               checked={flagNames.includes(option.name)}
-              onChange={(event) => onChange(option.name, event.currentTarget.checked)}
+              onChange={(event) => updateFlag(option.name, event.currentTarget.checked)}
               class="m-0 size-4 shrink-0 accent-ui-accent"
             />
             <span class="truncate">{option.label}</span>

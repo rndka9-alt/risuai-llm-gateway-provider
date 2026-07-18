@@ -1,14 +1,13 @@
-import type { StreamingMode } from '../../../../options';
 import { HelpTooltip } from './HelpTooltip';
 import { ToggleControl } from './ToggleControl';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS } from '../../constants';
+import { persistSetting } from '../../../utils/persistence';
+import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../utils/settings-snapshot';
+import { saveStreamingMode } from '../../../utils/storage';
 
-interface StreamingModeFieldProps {
-  onChange: (streamingMode: StreamingMode) => void;
-  streamingMode: StreamingMode;
-}
+export function StreamingModeField() {
+  const { streamingMode } = useSettingsSnapshot();
 
-export function StreamingModeField({ onChange, streamingMode }: StreamingModeFieldProps) {
   return (
     <div class={FIELD_CLASS}>
       <span class="flex min-h-4 items-center gap-1">
@@ -23,7 +22,11 @@ export function StreamingModeField({ onChange, streamingMode }: StreamingModeFie
         ariaLabel="응답 방식"
         checked={streamingMode === 'decoupled'}
         label={streamingMode === 'decoupled' ? '스트리밍 연결 · 완료 후 표시' : '일반 요청'}
-        onChange={(checked) => onChange(checked ? 'decoupled' : 'off')}
+        onChange={(checked) => {
+          const nextStreamingMode = checked ? 'decoupled' : 'off';
+          updateSettingsSnapshot({ streamingMode: nextStreamingMode });
+          persistSetting(() => saveStreamingMode(nextStreamingMode));
+        }}
       />
     </div>
   );

@@ -525,6 +525,10 @@ describe('settings UI', () => {
     expect(document.getElementById('reload-notice')?.textContent).toContain(
       '적용하려면 새로고침이 필요합니다.',
     );
+
+    poolSupported.checked = false;
+    await dispatchChange(poolSupported);
+    expect(document.getElementById('reload-notice')).toBeNull();
   });
 
   it('손익·백오프를 표시하고 원장 초기화를 저장소에 반영한다', async () => {
@@ -648,6 +652,11 @@ describe('settings UI', () => {
     await dispatchChange(apiKey);
     await act(async () => Promise.resolve());
     expect(document.getElementById('save-error')?.textContent).toContain('저장에 실패');
+
+    apiKey.value = 'will-succeed';
+    await dispatchChange(apiKey);
+    await act(async () => Promise.resolve());
+    expect(document.getElementById('save-error')).toBeNull();
   });
 
   it('재등록 대상인 flags 순서와 무관하게 동일한 설정으로 판별한다', () => {

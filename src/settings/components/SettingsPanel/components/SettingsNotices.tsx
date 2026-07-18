@@ -1,16 +1,13 @@
 import { NOTICE_CLASS } from '../../constants';
+import { useSettingsSignals } from '../../../utils/signals';
 
 interface SettingsNoticesProps {
   cacheBackoffActive: boolean;
-  reloadNeeded: boolean;
-  saveFailed: boolean;
 }
 
-export function SettingsNotices({
-  cacheBackoffActive,
-  reloadNeeded,
-  saveFailed,
-}: SettingsNoticesProps) {
+export function SettingsNotices({ cacheBackoffActive }: SettingsNoticesProps) {
+  const { reloadNeeded, saveFailed } = useSettingsSignals();
+
   return (
     <>
       {reloadNeeded && (

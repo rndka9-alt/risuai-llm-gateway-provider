@@ -1,18 +1,13 @@
+import { useState } from 'preact/hooks';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS, INPUT_CLASS } from '../../constants';
+import { persistSetting } from '../../../utils/persistence';
+import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../utils/settings-snapshot';
+import { saveApiKey } from '../../../utils/storage';
 
-interface ApiKeyFieldProps {
-  apiKey: string;
-  apiKeyVisible: boolean;
-  onApiKeyChange: (apiKey: string) => void;
-  onVisibilityToggle: () => void;
-}
+export function ApiKeyField() {
+  const { apiKey } = useSettingsSnapshot();
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
 
-export function ApiKeyField({
-  apiKey,
-  apiKeyVisible,
-  onApiKeyChange,
-  onVisibilityToggle,
-}: ApiKeyFieldProps) {
   return (
     <div class={FIELD_CLASS}>
       <label class={FIELD_CAPTION_CLASS} htmlFor="api-key">
@@ -26,7 +21,11 @@ export function ApiKeyField({
           autocomplete="off"
           spellcheck={false}
           value={apiKey}
-          onChange={(event) => onApiKeyChange(event.currentTarget.value)}
+          onChange={(event) => {
+            const nextApiKey = event.currentTarget.value;
+            updateSettingsSnapshot({ apiKey: nextApiKey });
+            persistSetting(() => saveApiKey(nextApiKey));
+          }}
           class={`${INPUT_CLASS} pr-[46px] tracking-[0.08em]`}
         />
         <button
@@ -34,7 +33,7 @@ export function ApiKeyField({
           type="button"
           aria-label={apiKeyVisible ? 'API 키 숨기기' : 'API 키 표시'}
           aria-pressed={apiKeyVisible}
-          onClick={onVisibilityToggle}
+          onClick={() => setApiKeyVisible((visible) => !visible)}
           class="absolute top-[7px] right-[7px] grid h-6 w-[30px] cursor-pointer place-items-center border-0 border-l border-ui-frame bg-transparent p-0 text-ui-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent"
         >
           <svg

@@ -1,7 +1,15 @@
-export interface LedgerDisplay {
-  amountText: string;
-  tone: 'gain' | 'loss' | 'neutral';
-}
+import { useEffect, useState } from 'preact/hooks';
+import {
+  getCacheLedgerSnapshot,
+  resetCacheLedger,
+  subscribeCacheLedger,
+  type CacheLedger,
+} from '../../../../ledger';
+import {
+  buildLedgerDisplay,
+  formatTokenCount,
+  type LedgerDisplay,
+} from '../../../utils/ledger-display';
 
 const LEDGER_TONE_CLASSES: Record<LedgerDisplay['tone'], string> = {
   gain: 'text-ui-gain',
@@ -9,25 +17,35 @@ const LEDGER_TONE_CLASSES: Record<LedgerDisplay['tone'], string> = {
   neutral: 'text-inherit',
 };
 
-interface SettingsFooterProps {
-  ledgerDisplay: LedgerDisplay;
-  ledgerReadText: string;
-  ledgerResetFailed: boolean;
-  ledgerResetting: boolean;
-  ledgerWriteText: string;
-  onClose: () => void;
-  onLedgerReset: () => void;
+function useCacheLedgerSnapshot(): CacheLedger {
+  const [snapshot, setSnapshot] = useState<CacheLedger>(getCacheLedgerSnapshot);
+  // 요청 완료와 원장 초기화는 컴포넌트 밖에서 일어나므로 ledger store의 publish를
+  // 구독해 화면용 snapshot만 갱신한다. 원장의 원천은 외부 store에 유지한다.
+  useEffect(() => subscribeCacheLedger(() => setSnapshot(getCacheLedgerSnapshot())), []);
+  return snapshot;
 }
 
-export function SettingsFooter({
-  ledgerDisplay,
-  ledgerReadText,
-  ledgerResetFailed,
-  ledgerResetting,
-  ledgerWriteText,
-  onClose,
-  onLedgerReset,
-}: SettingsFooterProps) {
+export function SettingsFooter() {
+  const cacheLedger = useCacheLedgerSnapshot();
+  const [ledgerResetting, setLedgerResetting] = useState(false);
+  const [ledgerResetFailed, setLedgerResetFailed] = useState(false);
+  const ledgerDisplay = buildLedgerDisplay(cacheLedger);
+  const ledgerReadText = formatTokenCount(cacheLedger.readTokens);
+  const ledgerWriteText = formatTokenCount(cacheLedger.writeTokens);
+
+  const resetLedger = async (): Promise<void> => {
+    setLedgerResetting(true);
+    setLedgerResetFailed(false);
+    try {
+      await resetCacheLedger();
+    } catch (error) {
+      setLedgerResetFailed(true);
+      console.error('[llm-gateway-provider] Failed to reset cache ledger', error);
+    } finally {
+      setLedgerResetting(false);
+    }
+  };
+
   return (
     <footer class="sticky bottom-0 z-10 flex min-h-14 items-center justify-between border-t border-ui-frame bg-ui-panel px-4 py-2.5">
       <div class="group relative flex min-w-0 items-center gap-0.5">
@@ -54,7 +72,7 @@ export function SettingsFooter({
           disabled={ledgerResetting}
           aria-label="캐시 손익 초기화"
           title="캐시 손익 초기화"
-          onClick={onLedgerReset}
+          onClick={() => void resetLedger()}
           class="grid size-[22px] cursor-pointer place-items-center rounded-[5px] border-0 bg-transparent p-0 text-[15px] leading-none text-ui-muted hover:bg-ui-content/10 hover:text-ui-content focus-visible:outline-2 focus-visible:outline-ui-accent disabled:cursor-wait disabled:opacity-70"
         >
           ×
@@ -88,7 +106,7 @@ export function SettingsFooter({
       <button
         id="close"
         type="button"
-        onClick={onClose}
+        onClick={() => void risuai.hideContainer()}
         class="min-w-[58px] cursor-pointer rounded-[9px] border border-ui-content/70 bg-ui-contrast px-3.5 py-2 text-xs font-semibold text-ui-background hover:bg-ui-contrast-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
       >
         닫기

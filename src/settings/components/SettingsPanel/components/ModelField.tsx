@@ -1,12 +1,13 @@
 import { FIELD_CAPTION_CLASS, FIELD_CLASS, SELECT_CLASS } from '../../constants';
+import { buildModelOptionList } from '../../../utils/model-options';
+import { persistSetting } from '../../../utils/persistence';
+import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../utils/settings-snapshot';
+import { saveModel } from '../../../utils/storage';
 
-interface ModelFieldProps {
-  model: string;
-  modelOptions: readonly string[];
-  onChange: (model: string) => void;
-}
+export function ModelField() {
+  const { model } = useSettingsSnapshot();
+  const modelOptions = buildModelOptionList(model);
 
-export function ModelField({ model, modelOptions, onChange }: ModelFieldProps) {
   return (
     <div class={FIELD_CLASS}>
       <label class={FIELD_CAPTION_CLASS} htmlFor="model">
@@ -16,7 +17,11 @@ export function ModelField({ model, modelOptions, onChange }: ModelFieldProps) {
         id="model"
         aria-label="모델"
         value={model}
-        onChange={(event) => onChange(event.currentTarget.value)}
+        onChange={(event) => {
+          const nextModel = event.currentTarget.value;
+          updateSettingsSnapshot({ model: nextModel });
+          persistSetting(() => saveModel(nextModel));
+        }}
         class={SELECT_CLASS}
       >
         {modelOptions.map((modelOption) => (
