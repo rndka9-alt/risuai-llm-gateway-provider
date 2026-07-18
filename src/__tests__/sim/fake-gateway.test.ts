@@ -125,9 +125,16 @@ describe('calibrated fake gateway contracts', () => {
     expect(accounting.writeTokens).toBe(0);
   });
 
-  it('optimistic kernel만 marker 불일치 구간의 부분 prefix를 읽는다', () => {
+  it('모든 preset은 marker 불일치 구간을 읽지 않고, partial은 명시적 override 전용이다', () => {
+    // 이 시나리오(seed [P|I*] → branch [P|J*])는 probe-cache-partial.mjs의
+    // R1/R2와 같은 모양이며, 실서버가 cached 0(exact 매칭)으로 실측 확정됐다.
+    // 따라서 optimistic preset도 exact로 동작해야 하고, partial-prefix는
+    // 가상 서버 탐구용 override로만 열린다.
     const exactKernel = createFakeGatewayKernel('calibrated');
-    const partialKernel = createFakeGatewayKernel('optimistic');
+    const optimisticKernel = createFakeGatewayKernel('optimistic');
+    const partialKernel = createFakeGatewayKernel('optimistic', {
+      markerMatchMode: 'partial-prefix',
+    });
     const key = 'partial-prefix';
     const stablePrefix = 'H'.repeat(5_000);
     const seedBody = serialize(
@@ -145,9 +152,15 @@ describe('calibrated fake gateway contracts', () => {
       key,
     );
     exactKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
+    optimisticKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
     partialKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
 
     const exactBranch = exactKernel.process({
+      atMinute: 1,
+      promptCacheKey: key,
+      requestBody: branchBody,
+    });
+    const optimisticBranch = optimisticKernel.process({
       atMinute: 1,
       promptCacheKey: key,
       requestBody: branchBody,
@@ -159,6 +172,7 @@ describe('calibrated fake gateway contracts', () => {
     });
 
     expect(exactBranch.readTokens).toBe(0);
+    expect(optimisticBranch.readTokens).toBe(0);
     expect(partialBranch.readTokens).toBeGreaterThanOrEqual(1024);
   });
 });

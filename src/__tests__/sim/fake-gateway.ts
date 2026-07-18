@@ -77,10 +77,13 @@ const PESSIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
   windowScope: 'global',
 };
 
+// 매칭 모드는 실측으로 확정돼(probe-cache-partial.mjs, 2026-07-19: 현재 요청의
+// marker prefix가 entry prefix와 정확히 일치할 때만 read·write 공제 — R2/R3/R4
+// cached 0, R5만 히트) 더 이상 불확실성 축이 아니다. optimistic은 TTL·생존
+// 가정만 낙관한다. partial-prefix 모드는 가상 서버 탐구용으로만 남긴다.
 const OPTIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
   ...CALIBRATED_OPTIONS,
   infiniteTtl: true,
-  markerMatchMode: 'partial-prefix',
   postMinimumSurvivalProbability: 1,
 };
 

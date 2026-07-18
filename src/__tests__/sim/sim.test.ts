@@ -165,7 +165,10 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalReadTokens).toBe(0);
     expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
     expect(calibrated.logs.map((log) => log.consecutiveEpochResets)).toEqual([0, 1, 0]);
-    expect(optimistic.totalNetSavedTokens).toBeGreaterThan(calibrated.totalNetSavedTokens);
+    // 과거엔 optimistic(partial-prefix)이 shared-global 부분 히트로 손실을
+    // 줄였지만, 매칭이 exact로 실측 확정된(probe-cache-partial.mjs) 뒤로는
+    // room switch 손실이 TTL 가정과 무관한 매칭 계약의 구조적 손실임을 고정한다.
+    expect(optimistic.totalNetSavedTokens).toBe(calibrated.totalNetSavedTokens);
     return;
   }
   if (trajectory.id === '10-ttl-gap') {
@@ -180,6 +183,35 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
     expect(calibrated.totalWriteTokens).toBeGreaterThan(0);
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
+  if (trajectory.id.startsWith('13-manual-summary-additive-')) {
+    // 추가형 요약 구조는 얕은 앵커 히트만 남아 손익분기 read/write 비율
+    // (쓰기 프리미엄/읽기 절감)을 밑돌고, 요약 뒤 히스토리가 매턴 대량
+    // 재쓰기된다. 고정 head·장기기억 비중이 큰 작은 컨텍스트일수록 히트
+    // 비율이 올라가 손실이 완만해진다.
+    const breakEvenReadRatio = CACHE_WRITE_PREMIUM_RATE / CACHE_READ_SAVING_RATE;
+    expect(calibrated.totalReadTokens).toBeGreaterThan(0);
+    if (trajectory.id === '13-manual-summary-additive-hist-2t') {
+      // 히스토리 축 단독 최소값: 고정 블록(로어북+장기기억 80k 배분) 질량이
+      // 커서 히트 비율이 손익분기를 살짝 넘는 경계 사례 — 같은 변동 요약
+      // 프리셋도 히스토리만 짧으면 흑자임을 고정한다.
+      expect(calibrated.totalReadTokens).toBeGreaterThan(
+        calibrated.totalWriteTokens * breakEvenReadRatio,
+      );
+      expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+      return;
+    }
+    expect(calibrated.totalReadTokens).toBeLessThan(
+      calibrated.totalWriteTokens * breakEvenReadRatio,
+    );
+    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+    return;
+  }
+  if (trajectory.id === '14-trim-saturation') {
+    // 포화 트림 정상상태는 고정 head만 히트 가능해 production이 만성 적자다.
+    expect(calibrated.totalReadTokens).toBeGreaterThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
     return;
   }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
@@ -210,8 +242,8 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존·정책 비용 케이스 12개를 고정한다', () => {
-    expect(trajectories).toHaveLength(12);
+  it('실존·정책 비용 케이스 19개를 고정한다', () => {
+    expect(trajectories).toHaveLength(19);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
@@ -289,6 +321,38 @@ describe('adaptive policy golden comparisons', () => {
       requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike-reroll-aware')
         .totalNetSavedTokens,
     ).toBe(production.totalNetSavedTokens);
+  });
+
+  it('2-strike 계열은 manual-summary 전 변형에서 production 손실을 회수한다', () => {
+    for (const scaleId of ['30k', '80k', '120k', '80k-mixed', 'hist-2t', 'hist-44t']) {
+      const trajectory = requireTrajectoryById(`13-manual-summary-additive-${scaleId}`);
+      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      for (const policyName of [
+        'adaptive-2strike',
+        'adaptive-2strike-reroll-aware',
+      ] satisfies readonly PolicyName[]) {
+        const adaptive = requireReplayResult(trajectory, 'calibrated', policyName);
+        expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
+      }
+    }
+  });
+
+  it('포화 트림에서 2-strike는 구제하지만 reroll-aware는 오분류로 production과 같다', () => {
+    // reroll-aware의 "같은 메시지 수 = 리롤" 근사는 매턴 1턴 잘림+1턴 추가로
+    // 개수가 유지되는 포화 상태를 리롤로 오분류해 strike를 누적하지 못한다.
+    // 알려진 미탐 한계를 스코어로 고정해, 판별 신호 개선 시 이 테스트가 깨지며
+    // 개선을 증명하게 한다.
+    const trajectory = requireTrajectoryById('14-trim-saturation');
+    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
+    const rerollAware = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'adaptive-2strike-reroll-aware',
+    );
+
+    expect(adaptive.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
+    expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
   });
 
   it('2-strike는 room switch의 same-index frontier write 손실을 일부 회수한다', () => {
