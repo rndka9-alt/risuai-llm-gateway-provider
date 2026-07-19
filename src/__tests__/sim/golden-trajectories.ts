@@ -704,6 +704,53 @@ function createMidHistoryEditsTrajectory(): GoldenTrajectory {
   };
 }
 
+// 2026-07-19 익명 실환경 trace의 89k·67k write 사건을 최소 구조로 번역한다.
+// 2-strike가 latest frontier를 억제한 상태에서도, 다음 length-change가 만드는
+// prefixLength-1 branch boundary는 중간 앵커가 되어 slice(0, -1)을 빠져나간다.
+// 실로그의 신규 경계 추정치(51k~63k)에 맞춰 큰 안정 히스토리를 60k로 둔다.
+function createSuppressedFrontierBranchBoundaryTrajectory(): GoldenTrajectory {
+  const stableHead = makeMessage('system', makeBlock('branch-bypass-head', 6_000));
+  const stableSuffix = makeMessage('user', 'Stable request footer.');
+  const largeStableHistory = makeMessage('user', makeBlock('branch-bypass-large-history', 240_000));
+  const stableMiddle = makeMessage('system', makeBlock('branch-bypass-stable-middle', 1_000));
+
+  return {
+    id: '18-suppressed-frontier-branch-boundary',
+    label: 'new branch boundary bypasses active frontier suppression',
+    requests: [
+      request(
+        [
+          stableHead,
+          makeMessage('system', makeBlock('branch-bypass-bootstrap-A', 1_000)),
+          stableSuffix,
+        ],
+        0,
+      ),
+      request([
+        stableHead,
+        makeMessage('system', makeBlock('branch-bypass-bootstrap-B', 1_000)),
+        makeMessage('system', makeBlock('branch-bypass-bootstrap-growth', 800)),
+        stableSuffix,
+      ]),
+      request([
+        stableHead,
+        largeStableHistory,
+        stableMiddle,
+        makeMessage('system', makeBlock('branch-bypass-volatile-A', 1_000)),
+        stableSuffix,
+      ]),
+      request([
+        stableHead,
+        largeStableHistory,
+        stableMiddle,
+        makeMessage('system', makeBlock('branch-bypass-volatile-B', 1_000)),
+        makeMessage('system', makeBlock('branch-bypass-new-frontier', 800)),
+        stableSuffix,
+      ]),
+    ],
+  };
+}
+
 export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
   return [
     createAppendOnlyTrajectory(),
@@ -723,5 +770,6 @@ export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
     createMultiRoomRoundRobinTrajectory(),
     createGroupSpeakerRotationTrajectory(),
     createMidHistoryEditsTrajectory(),
+    createSuppressedFrontierBranchBoundaryTrajectory(),
   ];
 }

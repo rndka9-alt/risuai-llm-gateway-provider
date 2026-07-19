@@ -228,6 +228,23 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
+  if (trajectory.id === '18-suppressed-frontier-branch-boundary') {
+    const monitoredRequest = calibrated.logs[2];
+    const bypassRequest = calibrated.logs[3];
+
+    // 세 번째 요청은 두 번째 구조적 사망으로 latest frontier 마킹을 억제한다.
+    expect(monitoredRequest.anchorIndexes).toEqual([0, 3]);
+    expect(monitoredRequest.policyMarkerCount).toBe(1);
+    // 네 번째 요청은 latest frontier(3)를 계속 억제하지만, 새 branch boundary(1)가
+    // 중간 앵커로 들어와 마킹되면서 실환경과 같은 대규모 cache write를 만든다.
+    expect(bypassRequest.anchorIndexes).toEqual([0, 2, 4]);
+    expect(bypassRequest.policyMarkerCount).toBe(2);
+    expect(bypassRequest.readTokens).toBeGreaterThan(0);
+    expect(bypassRequest.writeTokens).toBeGreaterThan(50_000);
+    expect(bypassRequest.netSavedTokens).toBeLessThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
+    return;
+  }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
 }
 
@@ -256,8 +273,8 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존·정책 비용 케이스 22개를 고정한다', () => {
-    expect(trajectories).toHaveLength(22);
+  it('실존·정책 비용 케이스 23개를 고정한다', () => {
+    expect(trajectories).toHaveLength(23);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
