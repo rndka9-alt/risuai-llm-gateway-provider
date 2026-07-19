@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ADMITTED_ANCHOR_SURVIVAL_COUNT } from '../constants';
 
 const messageFingerprintSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
@@ -8,8 +9,9 @@ const messageFingerprintSchema = z.object({
 
 const anchorAdmissionSchema = z.object({
   anchorIndex: z.number().int().nonnegative(),
-  // 0은 최초 관측, 1은 한 전이 생존, 2는 admission 가능한 두 전이 생존이다.
-  consecutiveSurvivals: z.number().int().min(0).max(2),
+  // 0은 최초 관측, 1은 과거 버전의 진행 중 후보, 2는 admission 완료 상태다.
+  // 조기 승격도 2로 정규화해 v0.8 상태·롤백 호환을 유지한다.
+  consecutiveSurvivals: z.number().int().min(0).max(ADMITTED_ANCHOR_SURVIVAL_COUNT),
   admitted: z.boolean(),
   // 구버전 전면 검증형 상태는 선택적 위험 판별 기록이 없으므로 true로 읽어
   // 이미 관찰 중이던 후보를 갑자기 공격적으로 마킹하지 않는다.
@@ -68,10 +70,10 @@ export const cacheAnchorStateSchema = z
           path: ['anchorAdmissions', position, 'anchorIndex'],
         });
       }
-      if (admission.admitted && admission.consecutiveSurvivals < 2) {
+      if (admission.admitted && admission.consecutiveSurvivals < ADMITTED_ANCHOR_SURVIVAL_COUNT) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'admitted anchor must survive two transitions',
+          message: 'admitted anchor must use the normalized survival count',
           path: ['anchorAdmissions', position, 'admitted'],
         });
       }

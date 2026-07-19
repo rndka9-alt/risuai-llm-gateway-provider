@@ -1,4 +1,4 @@
-import { ANCHOR_ADMISSION_SURVIVAL_THRESHOLD } from '../constants';
+import { ADMITTED_ANCHOR_SURVIVAL_COUNT, ANCHOR_ADMISSION_SURVIVAL_THRESHOLD } from '../constants';
 import type { AnchorAdmission, CacheAnchorState } from '../state/schema';
 
 export function resolveAnchorAdmissions(
@@ -39,6 +39,10 @@ export function resolveAnchorAdmissions(
   return observations.map((admission) =>
     admission.admitted || admission.consecutiveSurvivals < ANCHOR_ADMISSION_SURVIVAL_THRESHOLD
       ? admission
-      : { ...admission, admitted: true },
+      : {
+          ...admission,
+          admitted: true,
+          consecutiveSurvivals: ADMITTED_ANCHOR_SURVIVAL_COUNT,
+        },
   );
 }

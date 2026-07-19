@@ -65,12 +65,27 @@ function createLegacyProductionPlan(plan: CachePlan): CachePlan {
   };
 }
 
-function createOneSurvivalProductionPlan(plan: CachePlan): CachePlan {
-  const anchorAdmissions = plan.nextState.anchorAdmissions.map((admission) =>
-    admission.requiresValidation && !admission.admitted && admission.consecutiveSurvivals === 1
-      ? { ...admission, admitted: true, consecutiveSurvivals: 2 }
-      : admission,
+function createTwoSurvivalProductionPlan(
+  previousState: CacheAnchorState | null,
+  plan: CachePlan,
+): CachePlan {
+  const previousAdmissions = new Map(
+    (previousState === null ? [] : previousState.anchorAdmissions).map((admission) => [
+      admission.anchorIndex,
+      admission,
+    ]),
   );
+  const anchorAdmissions = plan.nextState.anchorAdmissions.map((admission) => {
+    if (!admission.requiresValidation || !admission.admitted) return admission;
+    const previousAdmission = previousAdmissions.get(admission.anchorIndex);
+    if (previousAdmission === undefined) {
+      throw new Error('Admitted validation candidate must exist in the previous state.');
+    }
+    if (previousAdmission.admitted || previousAdmission.consecutiveSurvivals >= 1) {
+      return admission;
+    }
+    return { ...admission, admitted: false, consecutiveSurvivals: 1 };
+  });
   const latestAnchorIndex = plan.anchorIndexes.at(-1);
   return {
     ...plan,
@@ -84,8 +99,7 @@ function createOneSurvivalProductionPlan(plan: CachePlan): CachePlan {
           ),
       )
       .map((admission) => admission.anchorIndex),
-    // 저장 schema는 admitted 상태에 survival 2를 요구한다. 실험 정책은 두 번째
-    // 요청에서 승격한 사실을 이 값으로 정규화해 다음 replay에서도 유지한다.
+    // 실제 production 승격 전의 두 번 생존 정책을 비교 대상으로 보존한다.
     nextState: { ...plan.nextState, anchorAdmissions },
   };
 }
@@ -273,12 +287,15 @@ export function createProductionCachePolicy(): ReplayCachePolicy {
   };
 }
 
-export function createOneSurvivalProductionCachePolicy(): ReplayCachePolicy {
+export function createTwoSurvivalProductionCachePolicy(): ReplayCachePolicy {
   return {
-    name: 'production-one-survival',
+    name: 'production-two-survival',
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
-      const plan = createOneSurvivalProductionPlan(planCacheAnchors(previousState, messages));
+      const plan = createTwoSurvivalProductionPlan(
+        previousState,
+        planCacheAnchors(previousState, messages),
+      );
       const markedMessages = markCacheBreakpoints([...messages], plan);
       await saveCacheAnchorState(plan.nextState);
       return createDecision(plan, markedMessages);

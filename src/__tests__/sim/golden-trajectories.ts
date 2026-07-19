@@ -752,8 +752,8 @@ function createSuppressedFrontierBranchBoundaryTrajectory(): GoldenTrajectory {
   };
 }
 
-// 16k는 즉시 write 허용선일 뿐 영구 상한이 아니다. 큰 안정 prefix가 두 번의
-// 전이를 생존한 뒤 write되고, 다음 동일 요청에서 read로 회수되는 비용을 고정한다.
+// 16k는 즉시 write 허용선일 뿐 영구 상한이 아니다. 큰 안정 prefix의 승격
+// 시점별 write와 이후 동일 요청에서의 read 회수 비용을 고정한다.
 function createLargeStablePrefixAdmissionTrajectory(): GoldenTrajectory {
   const messages = [
     makeMessage('system', makeBlock('large-stable-prefix', 80_000)),
@@ -762,13 +762,13 @@ function createLargeStablePrefixAdmissionTrajectory(): GoldenTrajectory {
 
   return {
     id: '19-large-stable-prefix-admission',
-    label: 'over-16k stable prefix admitted after two survivals',
+    label: 'over-16k stable prefix admission across repeated requests',
     requests: [request(messages, 0), request(messages), request(messages), request(messages)],
   };
 }
 
-// 큰 prefix가 admission되는 순간까지만 안정적이고, 다음 요청에서 바로 교체되면
-// cold write를 read로 회수하지 못한다. 생존 검증이 보장하지 못하는 꼬리 위험을 고정한다.
+// 큰 prefix가 반복된 뒤 바로 교체되는 경계에서 admission 시점에 따라 첫 hit을
+// 회수하거나 cold write만 남기는 차이를 고정한다.
 function createLargeStablePrefixInvalidatedAfterAdmissionTrajectory(): GoldenTrajectory {
   const stableMessages = [
     makeMessage('system', makeBlock('large-prefix-before-invalidation', 80_000)),
@@ -781,7 +781,7 @@ function createLargeStablePrefixInvalidatedAfterAdmissionTrajectory(): GoldenTra
 
   return {
     id: '20-large-prefix-invalidated-after-admission',
-    label: 'over-16k prefix invalidated immediately after admission',
+    label: 'over-16k repeated prefix invalidated before the next request',
     requests: [
       request(stableMessages, 0),
       request(stableMessages),

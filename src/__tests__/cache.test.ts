@@ -374,7 +374,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
 });
 
 describe('anchor admission', () => {
-  it('16k를 넘는 첫 prefix는 즉시 쓰지 않고 두 번 생존하면 admission한다', () => {
+  it('16k를 넘는 첫 prefix는 즉시 쓰지 않고 한 번 생존하면 admission한다', () => {
     const messages = [
       makeMessage('system', 'L'.repeat(80_000)),
       makeMessage('user', 'current input'),
@@ -382,11 +382,9 @@ describe('anchor admission', () => {
 
     const firstPlan = planTurns([messages]);
     const onceSurvivedPlan = planTurns([messages, messages]);
-    const admittedPlan = planTurns([messages, messages, messages]);
 
     expect(firstPlan.markingAnchorIndexes).toEqual([]);
-    expect(onceSurvivedPlan.markingAnchorIndexes).toEqual([]);
-    expect(admittedPlan.nextState.anchorAdmissions).toEqual([
+    expect(onceSurvivedPlan.nextState.anchorAdmissions).toEqual([
       {
         admitted: true,
         anchorIndex: 0,
@@ -394,7 +392,38 @@ describe('anchor admission', () => {
         requiresValidation: true,
       },
     ]);
-    expect(admittedPlan.markingAnchorIndexes).toEqual([0]);
+    expect(onceSurvivedPlan.markingAnchorIndexes).toEqual([0]);
+  });
+
+  it('v0.8에서 생존 1회로 저장된 후보를 다음 요청에서 호환 승격한다', () => {
+    const messages = [
+      makeMessage('system', 'L'.repeat(80_000)),
+      makeMessage('user', 'current input'),
+    ];
+    const firstPlan = planTurns([messages]);
+    const previousState: CacheAnchorState = {
+      ...firstPlan.nextState,
+      anchorAdmissions: [
+        {
+          admitted: false,
+          anchorIndex: 0,
+          consecutiveSurvivals: 1,
+          requiresValidation: true,
+        },
+      ],
+    };
+
+    const plan = planCacheAnchors(previousState, messages);
+
+    expect(plan.nextState.anchorAdmissions).toEqual([
+      {
+        admitted: true,
+        anchorIndex: 0,
+        consecutiveSurvivals: 2,
+        requiresValidation: true,
+      },
+    ]);
+    expect(plan.markingAnchorIndexes).toEqual([0]);
   });
 
   it('구조적 성장으로 기존 frontier가 죽으면 16k 이하 신규 앵커도 검증한다', () => {
@@ -480,7 +509,7 @@ describe('frontier death monitor', () => {
     const plan = planTurns([trimmedWindow(1), trimmedWindow(2), monitored, survivedGrowth]);
 
     expect(plan.nextState.consecutiveFrontierDeaths).toBe(0);
-    expect(plan.markingAnchorIndexes).toEqual([0, 9]);
+    expect(plan.markingAnchorIndexes).toEqual([0, 7, 9]);
   });
 
   it('구버전 anchor state는 frontier 사망 카운터를 0으로 마이그레이션한다', async () => {
