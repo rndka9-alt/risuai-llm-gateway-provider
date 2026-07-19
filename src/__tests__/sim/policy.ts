@@ -1,5 +1,11 @@
 import type { LlmMessage } from 'llm-io';
 import {
+  FRONTIER_DEATH_MONITOR_THRESHOLD,
+  MAX_NEW_CACHE_WRITE_TOKENS,
+} from '../../cache/constants';
+import { sumTokenEstimatesBetween } from '../../cache/planner/utils/sum-token-estimates-between';
+import type { AnchorAdmission } from '../../cache/state/schema';
+import {
   fingerprintMessage,
   getPromptCacheKey,
   loadCacheAnchorState,
@@ -46,6 +52,100 @@ function createDecision(plan: CachePlan, messages: readonly LlmMessage[]): Cache
     consecutiveEpochResets: plan.nextState.consecutiveEpochResets,
     messages,
     promptCacheKey: getPromptCacheKey('explicit'),
+  };
+}
+
+function createLegacyProductionPlan(plan: CachePlan): CachePlan {
+  return {
+    ...plan,
+    markingAnchorIndexes:
+      plan.nextState.consecutiveFrontierDeaths >= FRONTIER_DEATH_MONITOR_THRESHOLD
+        ? plan.anchorIndexes.slice(0, -1)
+        : plan.anchorIndexes,
+  };
+}
+
+function resolveHistoricalHardCappedAdmissions(
+  previousState: CacheAnchorState | null,
+  plan: CachePlan,
+): AnchorAdmission[] {
+  const previousAdmissions = new Map(
+    (previousState === null ? [] : previousState.anchorAdmissions).map((admission) => [
+      admission.anchorIndex,
+      admission,
+    ]),
+  );
+  const deepestExistingAdmissionIndex = plan.nextState.anchorAdmissions.reduce(
+    (deepestIndex, admission) => {
+      const previousAdmission = previousAdmissions.get(admission.anchorIndex);
+      return admission.admitted && previousAdmission?.admitted === true
+        ? Math.max(deepestIndex, admission.anchorIndex)
+        : deepestIndex;
+    },
+    -1,
+  );
+
+  return plan.nextState.anchorAdmissions.map((admission) => {
+    const previousAdmission = previousAdmissions.get(admission.anchorIndex);
+    if (!admission.admitted || previousAdmission?.admitted === true) return admission;
+
+    const estimatedNewWriteTokens =
+      admission.anchorIndex <= deepestExistingAdmissionIndex
+        ? 0
+        : sumTokenEstimatesBetween(
+            plan.nextState.fingerprints,
+            deepestExistingAdmissionIndex,
+            admission.anchorIndex,
+          );
+    return estimatedNewWriteTokens <= MAX_NEW_CACHE_WRITE_TOKENS
+      ? admission
+      : { ...admission, admitted: false };
+  });
+}
+
+function createHistoricalHardCappedPlan(
+  previousState: CacheAnchorState | null,
+  plan: CachePlan,
+  validateEveryCandidate: boolean,
+): CachePlan {
+  const anchorAdmissions = resolveHistoricalHardCappedAdmissions(previousState, plan);
+  const latestAnchorIndex = plan.anchorIndexes.at(-1);
+  return {
+    ...plan,
+    markingAnchorIndexes: anchorAdmissions
+      .filter(
+        (admission) =>
+          (validateEveryCandidate
+            ? admission.admitted
+            : !admission.requiresValidation || admission.admitted) &&
+          !(
+            plan.nextState.consecutiveFrontierDeaths >= FRONTIER_DEATH_MONITOR_THRESHOLD &&
+            admission.anchorIndex === latestAnchorIndex
+          ),
+      )
+      .map((admission) => admission.anchorIndex),
+    nextState: { ...plan.nextState, anchorAdmissions },
+  };
+}
+
+function createHistoricalHardCappedPolicy(options: {
+  name: 'selective-hard-cap' | 'validated-all';
+  validateEveryCandidate: boolean;
+}): ReplayCachePolicy {
+  return {
+    name: options.name,
+    async apply(messages) {
+      const previousState = await loadCacheAnchorState();
+      const plan = planCacheAnchors(previousState, messages);
+      const historicalPlan = createHistoricalHardCappedPlan(
+        previousState,
+        plan,
+        options.validateEveryCandidate,
+      );
+      const markedMessages = markCacheBreakpoints([...messages], historicalPlan);
+      await saveCacheAnchorState(historicalPlan.nextState);
+      return createDecision(historicalPlan, markedMessages);
+    },
   };
 }
 
@@ -121,8 +221,9 @@ function createAdaptiveTwoStrikePolicy(options: AdaptiveTwoStrikeOptions): Repla
       }
 
       const plan = planCacheAnchors(previousState, messages);
+      const legacyPlan = createLegacyProductionPlan(plan);
       const markingPlan = createMarkingPlan(
-        plan,
+        legacyPlan,
         previousState,
         currentFingerprints,
         monitorFrontier,
@@ -145,6 +246,34 @@ export function createProductionCachePolicy(): ReplayCachePolicy {
       return createDecision(plan, markedMessages);
     },
   };
+}
+
+export function createLegacyProductionCachePolicy(): ReplayCachePolicy {
+  return {
+    name: 'legacy-production',
+    async apply(messages) {
+      const previousState = await loadCacheAnchorState();
+      const plan = planCacheAnchors(previousState, messages);
+      const legacyPlan = createLegacyProductionPlan(plan);
+      const markedMessages = markCacheBreakpoints([...messages], legacyPlan);
+      await saveCacheAnchorState(plan.nextState);
+      return createDecision(plan, markedMessages);
+    },
+  };
+}
+
+export function createValidatedAllCachePolicy(): ReplayCachePolicy {
+  return createHistoricalHardCappedPolicy({
+    name: 'validated-all',
+    validateEveryCandidate: true,
+  });
+}
+
+export function createSelectiveHardCapCachePolicy(): ReplayCachePolicy {
+  return createHistoricalHardCappedPolicy({
+    name: 'selective-hard-cap',
+    validateEveryCandidate: false,
+  });
 }
 
 export function createAdaptiveTwoStrikeCachePolicy(): ReplayCachePolicy {
@@ -172,10 +301,11 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
           ? 0
           : commonFingerprintPrefixLength(previousState.fingerprints, currentFingerprints);
       const plan = planCacheAnchors(previousState, messages);
+      const legacyPlan = createLegacyProductionPlan(plan);
       const markedMessages =
         previousState === null || prefixLength === 0
           ? [...messages]
-          : markCacheBreakpoints([...messages], plan);
+          : markCacheBreakpoints([...messages], legacyPlan);
       await saveCacheAnchorState(plan.nextState);
       return createDecision(plan, markedMessages);
     },

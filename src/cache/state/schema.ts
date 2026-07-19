@@ -6,11 +6,25 @@ const messageFingerprintSchema = z.object({
   tokenEstimate: z.number(),
 });
 
+const anchorAdmissionSchema = z.object({
+  anchorIndex: z.number().int().nonnegative(),
+  // 0은 최초 관측, 1은 한 전이 생존, 2는 admission 가능한 두 전이 생존이다.
+  consecutiveSurvivals: z.number().int().min(0).max(2),
+  admitted: z.boolean(),
+  // 구버전 전면 검증형 상태는 선택적 위험 판별 기록이 없으므로 true로 읽어
+  // 이미 관찰 중이던 후보를 갑자기 공격적으로 마킹하지 않는다.
+  requiresValidation: z.boolean().default(true),
+});
+
 // 구버전 frontierIndex 상태는 anchorIndexes가 없어 파싱에 실패하고 새 epoch로
 // 회복한다. 캐시 최적화 상태라 손실이 무해하고, 경계를 추측해 승계하는 것보다 안전하다.
 export const cacheAnchorStateSchema = z
   .object({
     anchorIndexes: z.array(z.number().int().nonnegative()).max(4),
+    // 구버전 상태는 후보 검증 기록이 없으므로 빈 배열로 안전 마이그레이션한다.
+    // 기존 앵커를 곧바로 admitted로 간주하면 업데이트 직후 미검증 write가 다시
+    // 발생할 수 있어, 두 번의 생존 확인을 새로 거친다.
+    anchorAdmissions: z.array(anchorAdmissionSchema).max(4).default([]),
     consecutiveEpochResets: z.number().int().nonnegative().default(0),
     // 위치 판별형 2-strike의 frontier 연속 사망 횟수. 구버전 상태는 필드가
     // 없으므로 0으로 마이그레이션하고, 구버전으로 롤백하면 소실 후 0에서
@@ -36,7 +50,34 @@ export const cacheAnchorStateSchema = z
         });
       }
     });
+    state.anchorAdmissions.forEach((admission, position) => {
+      if (!state.anchorIndexes.includes(admission.anchorIndex)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'anchor admission must reference an anchor index',
+          path: ['anchorAdmissions', position, 'anchorIndex'],
+        });
+      }
+      if (
+        position > 0 &&
+        state.anchorAdmissions[position - 1].anchorIndex >= admission.anchorIndex
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'anchor admissions must be strictly ascending',
+          path: ['anchorAdmissions', position, 'anchorIndex'],
+        });
+      }
+      if (admission.admitted && admission.consecutiveSurvivals < 2) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'admitted anchor must survive two transitions',
+          path: ['anchorAdmissions', position, 'admitted'],
+        });
+      }
+    });
   });
 
 export type MessageFingerprint = z.infer<typeof messageFingerprintSchema>;
+export type AnchorAdmission = z.infer<typeof anchorAdmissionSchema>;
 export type CacheAnchorState = z.infer<typeof cacheAnchorStateSchema>;

@@ -110,7 +110,9 @@ describe('calibrated fake gateway contracts', () => {
 
   it('planner가 통과시킨 비ASCII prefix를 독립 tokenizer는 1024 미달로 거부할 수 있다', () => {
     const messages = [createUserMessage('한'.repeat(2_100)), createUserMessage('input')];
-    const plan = planCacheAnchors(null, messages);
+    const observedPlan = planCacheAnchors(null, messages);
+    const confirmedPlan = planCacheAnchors(observedPlan.nextState, messages);
+    const plan = planCacheAnchors(confirmedPlan.nextState, messages);
     const markedMessages = markCacheBreakpoints(messages, plan);
     const key = 'tokenizer-separation';
     const accounting = createFakeGatewayKernel('calibrated').process({

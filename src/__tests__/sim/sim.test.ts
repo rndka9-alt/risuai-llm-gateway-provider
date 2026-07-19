@@ -7,8 +7,11 @@ import {
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
   createFirstTurnSafeCachePolicy,
+  createLegacyProductionCachePolicy,
   createNoCachePolicy,
   createProductionCachePolicy,
+  createSelectiveHardCapCachePolicy,
+  createValidatedAllCachePolicy,
   type ReplayCachePolicy,
 } from './policy';
 import {
@@ -27,6 +30,9 @@ const trajectories = createGoldenTrajectories();
 const pluginStorage = new Map<string, string>();
 const replayResults: ReplayResult[] = [];
 const POLICY_FACTORIES: readonly (() => ReplayCachePolicy)[] = [
+  createLegacyProductionCachePolicy,
+  createValidatedAllCachePolicy,
+  createSelectiveHardCapCachePolicy,
   createProductionCachePolicy,
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
@@ -34,6 +40,9 @@ const POLICY_FACTORIES: readonly (() => ReplayCachePolicy)[] = [
   createNoCachePolicy,
 ];
 const POLICY_NAMES = [
+  'legacy-production',
+  'validated-all',
+  'selective-hard-cap',
   'production',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
@@ -111,9 +120,9 @@ function expectCommonInvariants(result: ReplayResult): void {
 }
 
 function expectGoldenDirection(trajectory: GoldenTrajectory): void {
-  const calibrated = requireReplayResult(trajectory, 'calibrated', 'production');
-  const pessimistic = requireReplayResult(trajectory, 'pessimistic', 'production');
-  const optimistic = requireReplayResult(trajectory, 'optimistic', 'production');
+  const calibrated = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
+  const pessimistic = requireReplayResult(trajectory, 'pessimistic', 'legacy-production');
+  const optimistic = requireReplayResult(trajectory, 'optimistic', 'legacy-production');
 
   if (trajectory.id === '01-append') {
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
@@ -245,6 +254,18 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
     return;
   }
+  if (trajectory.id === '19-large-stable-prefix-admission') {
+    expect(calibrated.totalWriteTokens).toBeGreaterThan(16_384);
+    expect(calibrated.totalReadTokens).toBeGreaterThan(calibrated.totalWriteTokens);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
+  if (trajectory.id === '20-large-prefix-invalidated-after-admission') {
+    expect(calibrated.totalWriteTokens).toBeGreaterThan(16_384);
+    expect(calibrated.totalReadTokens).toBe(calibrated.totalWriteTokens);
+    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
 }
 
@@ -273,8 +294,8 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존·정책 비용 케이스 23개를 고정한다', () => {
-    expect(trajectories).toHaveLength(23);
+  it('실존·정책 비용 케이스 25개를 고정한다', () => {
+    expect(trajectories).toHaveLength(25);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
@@ -316,7 +337,7 @@ describe('adaptive policy golden comparisons', () => {
   it('2-strike 계열은 양수 골든에서 production 대비 회귀하지 않는다', () => {
     for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       for (const policyName of [
         'adaptive-2strike',
         'adaptive-2strike-reroll-aware',
@@ -329,7 +350,7 @@ describe('adaptive policy golden comparisons', () => {
 
   it('2-strike는 상습 휘발 assistant 꼬리에서 production 이상을 유지한다', () => {
     const trajectory = requireTrajectoryById('08-lua-post-edit');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
 
     for (const policyName of [
       'adaptive-2strike',
@@ -343,7 +364,7 @@ describe('adaptive policy golden comparisons', () => {
 
   it('02의 손실은 첫 턴 cold write라 2-strike로 회수되지 않는 측정 결과를 고정한다', () => {
     const trajectory = requireTrajectoryById('02-cbs-trap');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
 
     expect(
       requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike').totalNetSavedTokens,
@@ -359,7 +380,7 @@ describe('adaptive policy golden comparisons', () => {
     // 회수분이 기본 동작이 됐다 — 후보 레이어의 추가 억제는 no-op이다.
     for (const scaleId of ['30k', '80k', '120k', '80k-mixed', 'hist-2t', 'hist-44t']) {
       const trajectory = requireTrajectoryById(`13-manual-summary-additive-${scaleId}`);
-      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       for (const policyName of [
         'adaptive-2strike',
         'adaptive-2strike-reroll-aware',
@@ -375,7 +396,7 @@ describe('adaptive policy golden comparisons', () => {
     // 2-strike는 이를 frontier 사망으로 세어 억제 비용을 내지만, reroll-aware는
     // 무시해 production과 같다 — 실사용 개서 패턴에서 판별의 존재 이유를 고정한다.
     const trajectory = requireTrajectoryById('17-mid-history-edits');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
     const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
     const rerollAware = requireReplayResult(
       trajectory,
@@ -391,7 +412,7 @@ describe('adaptive policy golden comparisons', () => {
     // 과거 reroll-aware의 "같은 개수 = 리롤" 미탐은 위치 판별(시프트 감지)로
     // 해소됐다 — 개수 유지 트림도 스트라이크로 잡혀 세 정책이 같은 점수를 낸다.
     const trajectory = requireTrajectoryById('14-trim-saturation');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
     const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
     const rerollAware = requireReplayResult(
       trajectory,
@@ -405,7 +426,7 @@ describe('adaptive policy golden comparisons', () => {
 
   it('2-strike는 room switch의 same-index frontier write 손실을 일부 회수한다', () => {
     const trajectory = requireTrajectoryById('09-room-switch');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
     const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
     const rerollAware = requireReplayResult(
       trajectory,
@@ -419,7 +440,7 @@ describe('adaptive policy golden comparisons', () => {
 
   it('first-turn-safe는 room switch 첫 턴의 회수 전 write 손실을 줄인다', () => {
     const trajectory = requireTrajectoryById('09-room-switch');
-    const production = requireReplayResult(trajectory, 'calibrated', 'production');
+    const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
     const firstTurnSafe = requireReplayResult(trajectory, 'calibrated', 'first-turn-safe');
 
     expect(firstTurnSafe.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
@@ -428,12 +449,166 @@ describe('adaptive policy golden comparisons', () => {
   it('first-turn-safe가 양수 골든 7종 모두에서 10% 초과 회귀한 결과를 노출한다', () => {
     const regressedTrajectoryIds = POSITIVE_TRAJECTORY_IDS.filter((trajectoryId) => {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       const firstTurnSafe = requireReplayResult(trajectory, 'calibrated', 'first-turn-safe');
       return firstTurnSafe.totalNetSavedTokens < production.totalNetSavedTokens * 0.9;
     });
 
     expect(regressedTrajectoryIds).toEqual(POSITIVE_TRAJECTORY_IDS);
+  });
+});
+
+describe('validated admission policy comparisons', () => {
+  it('실측 branch boundary 우회 손실을 대규모 write 없이 얕은 cold write로 제한한다', () => {
+    const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
+    const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
+    const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
+    const legacyBypassRequest = legacy.logs[3];
+    const validatedBypassRequest = validated.logs[3];
+
+    expect(legacyBypassRequest.writeTokens).toBeGreaterThan(50_000);
+    expect(validatedBypassRequest.writeTokens).toBeLessThan(2_000);
+    expect(validated.totalWriteTokens).toBeLessThan(2_000);
+    expect(validated.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
+  });
+
+  it('기존 양수 골든에서는 warm-up 비용을 내되 흑자를 유지한다', () => {
+    for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
+      const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
+
+      expect(validated.totalNetSavedTokens).toBeGreaterThan(0);
+      expect(validated.totalNetSavedTokens).toBeLessThan(legacy.totalNetSavedTokens);
+      expect(validated.totalWriteTokens).toBeLessThanOrEqual(legacy.totalWriteTokens);
+    }
+  });
+
+  it('기존 23개 골든 합계에서는 write를 80% 이상 줄이고 순절감의 90% 이상을 유지한다', () => {
+    const calibrated = replayResults.filter(
+      (result) =>
+        result.kernelName === 'calibrated' &&
+        result.trajectoryId !== '19-large-stable-prefix-admission' &&
+        result.trajectoryId !== '20-large-prefix-invalidated-after-admission',
+    );
+    const totalsFor = (policyName: PolicyName) => {
+      const policyResults = calibrated.filter((result) => result.policyName === policyName);
+      return {
+        netSavedTokens: policyResults.reduce(
+          (total, result) => total + result.totalNetSavedTokens,
+          0,
+        ),
+        writeTokens: policyResults.reduce((total, result) => total + result.totalWriteTokens, 0),
+      };
+    };
+    const legacy = totalsFor('legacy-production');
+    const validated = totalsFor('validated-all');
+
+    expect(validated.writeTokens).toBeLessThan(legacy.writeTokens * 0.2);
+    expect(validated.netSavedTokens).toBeGreaterThan(legacy.netSavedTokens * 0.9);
+    expect(validated.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
+  });
+
+  it('선택적 검증은 전면 검증보다 read를 회복하고 hard cap보다 순절감을 높인다', () => {
+    const calibrated = replayResults.filter((result) => result.kernelName === 'calibrated');
+    const totalsFor = (policyName: PolicyName) => {
+      const policyResults = calibrated.filter((result) => result.policyName === policyName);
+      return {
+        netSavedTokens: policyResults.reduce(
+          (total, result) => total + result.totalNetSavedTokens,
+          0,
+        ),
+        readTokens: policyResults.reduce((total, result) => total + result.totalReadTokens, 0),
+        writeTokens: policyResults.reduce((total, result) => total + result.totalWriteTokens, 0),
+      };
+    };
+    const legacy = totalsFor('legacy-production');
+    const validated = totalsFor('validated-all');
+    const hardCapped = totalsFor('selective-hard-cap');
+    const selective = totalsFor('production');
+
+    expect(selective.netSavedTokens).toBeGreaterThan(validated.netSavedTokens);
+    expect(selective.netSavedTokens).toBeGreaterThan(hardCapped.netSavedTokens);
+    expect(selective.readTokens).toBeGreaterThan(validated.readTokens);
+    expect(selective.readTokens).toBeGreaterThan(hardCapped.readTokens);
+    expect(selective.writeTokens).toBeGreaterThan(hardCapped.writeTokens);
+    expect(selective.writeTokens).toBeLessThan(legacy.writeTokens * 0.25);
+  });
+
+  it('선택적 검증의 분기 우회 방어는 기존과 전면 검증 사이의 손실로 수렴한다', () => {
+    const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
+    const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
+    const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
+    const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+
+    expect(selective.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
+    expect(selective.totalNetSavedTokens).toBeLessThan(validated.totalNetSavedTokens);
+    expect(selective.totalWriteTokens).toBeLessThan(legacy.totalWriteTokens);
+    expect(selective.totalWriteTokens).toBeGreaterThan(validated.totalWriteTokens);
+  });
+
+  it('안전한 일반 흐름에서는 기존 순절감을 즉시 복원한다', () => {
+    for (const trajectoryId of [
+      '01-append',
+      '04-reroll',
+      '05-lore-toggle',
+      '06-context-trim',
+      '08-lua-post-edit',
+    ]) {
+      const trajectory = requireTrajectoryById(trajectoryId);
+      const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
+      const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+
+      expect(selective.totalNetSavedTokens).toBe(legacy.totalNetSavedTokens);
+    }
+  });
+
+  it('16k 초과 안정 prefix는 두 번 생존한 뒤 write하고 다음 요청에서 회수한다', () => {
+    const trajectory = requireTrajectoryById('19-large-stable-prefix-admission');
+    const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
+    const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+
+    expect(hardCapped.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 0, 0]);
+    expect(hardCapped.totalNetSavedTokens).toBe(0);
+    expect(selective.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 1, 1]);
+    expect(selective.logs[2].writeTokens).toBeGreaterThan(16_384);
+    expect(selective.logs[2].netSavedTokens).toBeLessThan(0);
+    expect(selective.logs[3].readTokens).toBe(selective.logs[2].writeTokens);
+    expect(selective.logs[3].netSavedTokens).toBeGreaterThan(0);
+    expect(selective.totalWriteTokens).toBeGreaterThan(16_384);
+    expect(selective.totalReadTokens).toBe(selective.totalWriteTokens);
+    expect(selective.totalNetSavedTokens).toBeGreaterThan(0);
+  });
+
+  it('16k 초과 prefix가 admission 직후 깨지면 cold write를 회수하지 못한다', () => {
+    const trajectory = requireTrajectoryById('20-large-prefix-invalidated-after-admission');
+    const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
+    const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+
+    expect(hardCapped.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 0, 0]);
+    expect(hardCapped.totalNetSavedTokens).toBe(0);
+    expect(selective.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 1, 0]);
+    expect(selective.logs[2].writeTokens).toBeGreaterThan(16_384);
+    expect(selective.logs[2].netSavedTokens).toBeLessThan(0);
+    expect(selective.logs[3].readTokens).toBe(0);
+    expect(selective.totalReadTokens).toBe(0);
+    expect(selective.totalWriteTokens).toBe(selective.logs[2].writeTokens);
+    expect(selective.totalNetSavedTokens).toBeLessThan(0);
+  });
+
+  it('hard cap 해제의 비용 차이는 16k 초과 생존 케이스에만 발생한다', () => {
+    const changedTrajectoryIds = trajectories
+      .filter((trajectory) => {
+        const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
+        const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+        return hardCapped.totalNetSavedTokens !== selective.totalNetSavedTokens;
+      })
+      .map((trajectory) => trajectory.id);
+
+    expect(changedTrajectoryIds).toEqual([
+      '19-large-stable-prefix-admission',
+      '20-large-prefix-invalidated-after-admission',
+    ]);
   });
 });
 
@@ -462,7 +637,7 @@ describe('adaptive policy cost golden comparisons', () => {
   it.each(KERNEL_PRESETS)('%s kernel에서도 지연 write 비용 방향이 유지된다', (kernelPreset) => {
     for (const trajectoryId of ['11-churn-then-stable', '12-churn-oscillating']) {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(trajectory, kernelPreset, 'production');
+      const production = requireReplayResult(trajectory, kernelPreset, 'legacy-production');
       const adaptive = requireReplayResult(trajectory, kernelPreset, 'adaptive-2strike');
       const rerollAware = requireReplayResult(
         trajectory,
@@ -484,7 +659,7 @@ describe('adaptive policy cost golden comparisons', () => {
     '%s은 억제 턴과 직후 안정 턴에서 production보다 손해를 본다',
     (trajectoryId, expectedDifferenceIndexes) => {
       const trajectory = requireTrajectoryById(trajectoryId);
-      const production = requireReplayResult(trajectory, 'calibrated', 'production');
+      const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       const adaptive = requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike');
       const rerollAware = requireReplayResult(
         trajectory,
@@ -508,12 +683,16 @@ describe('adaptive policy cost golden comparisons', () => {
   it('진동 손실은 안정 턴마다 초기화되어 3회 cycle에 선형으로 누적된다', () => {
     const stableTrajectory = requireTrajectoryById('11-churn-then-stable');
     const oscillatingTrajectory = requireTrajectoryById('12-churn-oscillating');
-    const stableProduction = requireReplayResult(stableTrajectory, 'calibrated', 'production');
+    const stableProduction = requireReplayResult(
+      stableTrajectory,
+      'calibrated',
+      'legacy-production',
+    );
     const stableAdaptive = requireReplayResult(stableTrajectory, 'calibrated', 'adaptive-2strike');
     const oscillatingProduction = requireReplayResult(
       oscillatingTrajectory,
       'calibrated',
-      'production',
+      'legacy-production',
     );
     const oscillatingAdaptive = requireReplayResult(
       oscillatingTrajectory,

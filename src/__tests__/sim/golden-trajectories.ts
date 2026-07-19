@@ -434,8 +434,7 @@ function createManualSummaryAdditiveTrajectory(scale: ManualSummaryScale): Golde
   let summaryMutations = 0;
   const requests = Array.from({ length: totalRequests }, (_, requestIndex) => {
     const stableTransition =
-      scale.stableSummaryPeriod !== undefined &&
-      requestIndex % scale.stableSummaryPeriod === 1;
+      scale.stableSummaryPeriod !== undefined && requestIndex % scale.stableSummaryPeriod === 1;
     if (requestIndex > 0 && !stableTransition) summaryMutations += 1;
     const turnCount = scale.initialTurns + requestIndex;
     const recentStart = Math.max(0, turnCount - recentWindowTurns);
@@ -570,7 +569,10 @@ function createMultiRoomRoundRobinTrajectory(): GoldenTrajectory {
           turn === 0 ? visit.gapMinutes : 2 + (requestNumber % 3),
         ),
       );
-      room.turns.push(input, makeMessage('assistant', makeBlock(`mrr-reply-${requestNumber}`, 1_500)));
+      room.turns.push(
+        input,
+        makeMessage('assistant', makeBlock(`mrr-reply-${requestNumber}`, 1_500)),
+      );
     }
   }
 
@@ -663,8 +665,7 @@ function createMidHistoryEditsTrajectory(): GoldenTrajectory {
   };
   for (let turn = 1; turn <= 6; turn += 1) appendTurn(turn);
 
-  const snapshot = () =>
-    request([...head, ...chat, tailNote], 3);
+  const snapshot = () => request([...head, ...chat, tailNote], 3);
   const requests: TrajectoryRequest[] = [{ ...snapshot(), elapsedMinutes: 0 }];
 
   // 7~8턴 일반 진행.
@@ -751,6 +752,45 @@ function createSuppressedFrontierBranchBoundaryTrajectory(): GoldenTrajectory {
   };
 }
 
+// 16k는 즉시 write 허용선일 뿐 영구 상한이 아니다. 큰 안정 prefix가 두 번의
+// 전이를 생존한 뒤 write되고, 다음 동일 요청에서 read로 회수되는 비용을 고정한다.
+function createLargeStablePrefixAdmissionTrajectory(): GoldenTrajectory {
+  const messages = [
+    makeMessage('system', makeBlock('large-stable-prefix', 80_000)),
+    makeMessage('user', 'Large stable prefix admission input.'),
+  ];
+
+  return {
+    id: '19-large-stable-prefix-admission',
+    label: 'over-16k stable prefix admitted after two survivals',
+    requests: [request(messages, 0), request(messages), request(messages), request(messages)],
+  };
+}
+
+// 큰 prefix가 admission되는 순간까지만 안정적이고, 다음 요청에서 바로 교체되면
+// cold write를 read로 회수하지 못한다. 생존 검증이 보장하지 못하는 꼬리 위험을 고정한다.
+function createLargeStablePrefixInvalidatedAfterAdmissionTrajectory(): GoldenTrajectory {
+  const stableMessages = [
+    makeMessage('system', makeBlock('large-prefix-before-invalidation', 80_000)),
+    makeMessage('user', 'Large prefix invalidation input.'),
+  ];
+  const invalidatedMessages = [
+    makeMessage('system', makeBlock('large-prefix-after-invalidation', 80_000)),
+    makeMessage('user', 'Large prefix invalidation input.'),
+  ];
+
+  return {
+    id: '20-large-prefix-invalidated-after-admission',
+    label: 'over-16k prefix invalidated immediately after admission',
+    requests: [
+      request(stableMessages, 0),
+      request(stableMessages),
+      request(stableMessages),
+      request(invalidatedMessages),
+    ],
+  };
+}
+
 export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
   return [
     createAppendOnlyTrajectory(),
@@ -771,5 +811,7 @@ export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
     createGroupSpeakerRotationTrajectory(),
     createMidHistoryEditsTrajectory(),
     createSuppressedFrontierBranchBoundaryTrajectory(),
+    createLargeStablePrefixAdmissionTrajectory(),
+    createLargeStablePrefixInvalidatedAfterAdmissionTrajectory(),
   ];
 }

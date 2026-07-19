@@ -43,6 +43,9 @@ export interface ReplayResult {
 
 const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
 const SCOREBOARD_POLICIES = [
+  'legacy-production',
+  'validated-all',
+  'selective-hard-cap',
   'production',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
@@ -167,6 +170,40 @@ function formatScore(score: number | undefined): string {
   return score === undefined ? 'missing' : score.toFixed(1);
 }
 
+function formatPolicyTotals(results: readonly ReplayResult[]): string {
+  const calibratedResults = results.filter((result) => result.kernelName === 'calibrated');
+  const totals = SCOREBOARD_POLICIES.map((policyName) => {
+    const policyResults = calibratedResults.filter((result) => result.policyName === policyName);
+    return {
+      netSavedTokens: policyResults.reduce(
+        (total, result) => total + result.totalNetSavedTokens,
+        0,
+      ),
+      policyName,
+      readTokens: policyResults.reduce((total, result) => total + result.totalReadTokens, 0),
+      writeTokens: policyResults.reduce((total, result) => total + result.totalWriteTokens, 0),
+    };
+  });
+  const legacyNetSavedTokens = totals.find(
+    (total) => total.policyName === 'legacy-production',
+  )?.netSavedTokens;
+  if (legacyNetSavedTokens === undefined) {
+    throw new Error('Missing legacy-production aggregate score.');
+  }
+
+  return formatTable(
+    'Calibrated policy totals (all trajectories)',
+    ['policy', 'net', 'vs legacy', 'read', 'write'],
+    totals.map((total) => [
+      total.policyName,
+      total.netSavedTokens.toFixed(1),
+      (total.netSavedTokens - legacyNetSavedTokens).toFixed(1),
+      total.readTokens.toFixed(0),
+      total.writeTokens.toFixed(0),
+    ]),
+  );
+}
+
 function formatRankingReversals(
   trajectoryOrder: readonly string[],
   labels: ReadonlyMap<string, string>,
@@ -241,6 +278,7 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
   });
 
   return [
+    formatPolicyTotals(results),
     formatTable(
       'Production by kernel (net token equivalents)',
       ['trajectory', ...SCOREBOARD_KERNELS],

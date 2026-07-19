@@ -105,7 +105,7 @@ function markedIndexesOfLastTurn(turns: readonly (readonly LlmMessage[])[]): num
 const LONG_SYSTEM_TEXT = 'S'.repeat(6000);
 
 describe('planCacheAnchors / markCacheBreakpoints', () => {
-  it('첫 턴은 마지막 user 직전을 frontier로 잡고, assistant는 건너뛰어 마킹한다', () => {
+  it('16k 이하 첫 턴 frontier는 즉시 assistant를 건너뛰어 마킹한다', () => {
     const firstTurn = [
       makeMessage('system', LONG_SYSTEM_TEXT),
       makeMessage('assistant', 'greeting'),
@@ -114,35 +114,59 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
 
     const plan = planTurns([firstTurn]);
     expect(plan.anchorIndexes).toEqual([1]);
+    expect(plan.markingAnchorIndexes).toEqual([1]);
+    expect(plan.nextState.anchorAdmissions).toEqual([
+      {
+        admitted: false,
+        anchorIndex: 1,
+        consecutiveSurvivals: 0,
+        requiresValidation: false,
+      },
+    ]);
+
     // index 1은 assistant — llm-io가 문자열로 직렬화해 marker가 유실되므로 system(0)으로 물러난다.
-    expect(markedIndexesOfLastTurn([firstTurn])).toEqual([0]);
+    expect(breakpointIndexes(markCacheBreakpoints(firstTurn, plan))).toEqual([0]);
   });
 
   it('프리픽스가 최소 캐시 토큰 미만이면 마킹하지 않는다', () => {
     const messages = [makeMessage('system', 'short'), makeMessage('user', 'hi')];
 
-    expect(markedIndexesOfLastTurn([messages])).toEqual([]);
+    expect(markedIndexesOfLastTurn([messages, messages, messages])).toEqual([]);
   });
 
   it('한국어 프리픽스는 문자수/4 근사보다 후하게 추정해 마킹한다', () => {
     // 2,100자 한글 ≈ 1,050토큰(2자/토큰) — 구 근사(/4)로는 529토큰이라 생략되던 케이스.
     const messages = [makeMessage('system', '한'.repeat(2100)), makeMessage('user', '질문')];
 
-    expect(markedIndexesOfLastTurn([messages])).toEqual([0]);
+    expect(markedIndexesOfLastTurn([messages, messages, messages])).toEqual([0]);
   });
 
-  it('append-only 성장이면 요청 끝에 frontier를 찍는다', () => {
+  it('16k 이하 append-only 성장은 새 frontier를 즉시 마킹한다', () => {
     const firstTurn = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input 1')];
     const secondTurn = [
       ...firstTurn,
       makeMessage('assistant', 'reply 1'),
       makeMessage('user', 'input 2'),
     ];
+    const thirdTurn = [
+      ...secondTurn,
+      makeMessage('assistant', 'reply 2'),
+      makeMessage('user', 'input 3'),
+    ];
+    const fourthTurn = [
+      ...thirdTurn,
+      makeMessage('assistant', 'reply 3'),
+      makeMessage('user', 'input 4'),
+    ];
 
     expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([0, 3]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, thirdTurn])).toEqual([0, 3, 5]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, thirdTurn, fourthTurn])).toEqual([
+      0, 3, 5, 7,
+    ]);
   });
 
-  it('중간 삽입형이면 공통 서픽스(후행 블록) 직전에 frontier를 찍는다', () => {
+  it('16k 이하 중간 삽입형도 후행 블록 직전 frontier를 즉시 마킹한다', () => {
     const trailingBlock = makeMessage('system', 'post history instruction');
     const firstTurn = [
       makeMessage('system', LONG_SYSTEM_TEXT),
@@ -158,6 +182,10 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     ];
 
     expect(markedIndexesOfLastTurn([firstTurn, secondTurn])).toEqual([0, 3]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, secondTurn])).toEqual([0, 3]);
+    expect(markedIndexesOfLastTurn([firstTurn, secondTurn, secondTurn, secondTurn])).toEqual([
+      0, 3,
+    ]);
   });
 
   it('직전 요청과 동일하면(리롤) 현재 길이 안의 기존 앵커를 유지한다', () => {
@@ -235,6 +263,13 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
 
     const plan = planTurns([firstTurn, secondTurn, divergedTurn]);
     expect(plan.anchorIndexes).toEqual([1, 2, 4]);
+    expect(plan.markingAnchorIndexes).toEqual([1, 2, 4]);
+    expect(plan.nextState.anchorAdmissions).toContainEqual({
+      admitted: false,
+      anchorIndex: 2,
+      consecutiveSurvivals: 0,
+      requiresValidation: false,
+    });
     expect(breakpointIndexes(markCacheBreakpoints(divergedTurn, plan))).toEqual([1, 2, 4]);
   });
 
@@ -249,6 +284,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('user', 'D'.repeat(400)),
     ];
     const previousState: CacheAnchorState = {
+      anchorAdmissions: [],
       anchorIndexes: [0, 2, 4, 6],
       consecutiveEpochResets: 0,
       consecutiveFrontierDeaths: 0,
@@ -261,7 +297,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(plan.anchorIndexes).toEqual([0, 2, 6, 7]);
   });
 
-  it('최대 4개 앵커를 모두 1024토큰 가드와 markable role 규칙으로 마킹한다', () => {
+  it('최대 4개로 정규화된 안전 앵커를 모두 마킹한다', () => {
     const firstTurn = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input 1')];
     const secondTurn = [...firstTurn, makeMessage('user', 'input 2')];
     const thirdTurn = [...secondTurn, makeMessage('user', 'input 3')];
@@ -278,7 +314,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('assistant', 'greeting'),
       makeMessage('user', 'first input'),
     ];
-    const plan = planTurns([firstTurn]);
+    const plan = planTurns([firstTurn, firstTurn, firstTurn]);
     const marked = markCacheBreakpoints([...firstTurn], plan);
 
     const format = new OpenAIChatCompletionsFormat({ model: 'gpt-5.6-sol' });
@@ -294,7 +330,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('user', 'first input'),
     ];
 
-    const plan = planCacheAnchors(null, messages);
+    const plan = planTurns([messages, messages, messages]);
     const marked = markCacheBreakpoints(messages, plan);
 
     expect(marked).not.toBe(messages);
@@ -322,7 +358,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(breakpointIndexes(markCacheBreakpoints(lastTurn, backoffPlan))).toEqual([]);
   });
 
-  it('백오프 중 공통 프리픽스가 돌아오면 카운터를 리셋하고 마킹을 재개한다', () => {
+  it('백오프 중 공통 프리픽스가 돌아오면 카운터를 리셋하고 즉시 재개한다', () => {
     const changingTurns = ['A', 'B', 'C', 'D'].map((prefix) => [
       makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
       makeMessage('user', 'input'),
@@ -334,6 +370,64 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(recoveredPlan.nextState.consecutiveEpochResets).toBe(0);
     expect(isCacheBackoffActive(recoveredPlan.nextState)).toBe(false);
     expect(breakpointIndexes(markCacheBreakpoints(stableTurn, recoveredPlan))).toEqual([0]);
+  });
+});
+
+describe('anchor admission', () => {
+  it('16k를 넘는 첫 prefix는 즉시 쓰지 않고 두 번 생존하면 admission한다', () => {
+    const messages = [
+      makeMessage('system', 'L'.repeat(80_000)),
+      makeMessage('user', 'current input'),
+    ];
+
+    const firstPlan = planTurns([messages]);
+    const onceSurvivedPlan = planTurns([messages, messages]);
+    const admittedPlan = planTurns([messages, messages, messages]);
+
+    expect(firstPlan.markingAnchorIndexes).toEqual([]);
+    expect(onceSurvivedPlan.markingAnchorIndexes).toEqual([]);
+    expect(admittedPlan.nextState.anchorAdmissions).toEqual([
+      {
+        admitted: true,
+        anchorIndex: 0,
+        consecutiveSurvivals: 2,
+        requiresValidation: true,
+      },
+    ]);
+    expect(admittedPlan.markingAnchorIndexes).toEqual([0]);
+  });
+
+  it('구조적 성장으로 기존 frontier가 죽으면 16k 이하 신규 앵커도 검증한다', () => {
+    const firstTurn = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'stable input'),
+      makeMessage('user', 'old frontier'),
+    ];
+    const structurallyChangedTurn = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('assistant', 'inserted branch'),
+      makeMessage('user', 'stable input'),
+      makeMessage('user', 'new frontier'),
+    ];
+
+    const plan = planTurns([firstTurn, structurallyChangedTurn]);
+
+    expect(plan.nextState.consecutiveFrontierDeaths).toBe(1);
+    expect(plan.nextState.anchorAdmissions).toEqual([
+      {
+        admitted: false,
+        anchorIndex: 0,
+        consecutiveSurvivals: 0,
+        requiresValidation: true,
+      },
+      {
+        admitted: false,
+        anchorIndex: 3,
+        consecutiveSurvivals: 0,
+        requiresValidation: true,
+      },
+    ]);
+    expect(plan.markingAnchorIndexes).toEqual([]);
   });
 });
 
@@ -351,19 +445,19 @@ describe('frontier death monitor', () => {
   ];
 
   it('개수 유지 시프트가 2연속이면 새 frontier 마킹만 보류한다', () => {
-    const plan = planTurns([trimmedWindow(1), trimmedWindow(2), trimmedWindow(3)]);
+    const plan = planTurns([
+      trimmedWindow(1),
+      trimmedWindow(2),
+      trimmedWindow(3),
+      trimmedWindow(4),
+    ]);
 
-    expect(plan.nextState.consecutiveFrontierDeaths).toBe(2);
-    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes.slice(0, -1));
+    expect(plan.nextState.consecutiveFrontierDeaths).toBe(3);
+    expect(plan.markingAnchorIndexes).toEqual([0]);
   });
 
   it('같은 개수의 제자리 교체(리롤·in-place 수정)는 스트라이크를 세지 않는다', () => {
-    const base = [
-      trimHead,
-      ...turnPair(1),
-      ...turnPair(2),
-      makeMessage('user', 'current input'),
-    ];
+    const base = [trimHead, ...turnPair(1), ...turnPair(2), makeMessage('user', 'current input')];
     const editReplyOne = [...base];
     editReplyOne[2] = makeMessage('assistant', 'edited reply 1 '.repeat(50));
     const editReplyTwo = [...editReplyOne];
@@ -372,7 +466,7 @@ describe('frontier death monitor', () => {
     const plan = planTurns([base, editReplyOne, editReplyTwo]);
 
     expect(plan.nextState.consecutiveFrontierDeaths).toBe(0);
-    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes);
+    expect(plan.markingAnchorIndexes).toEqual([1, 2, 4]);
   });
 
   it('frontier가 살아남는 턴이 오면 카운터를 리셋하고 마킹을 재개한다', () => {
@@ -386,7 +480,7 @@ describe('frontier death monitor', () => {
     const plan = planTurns([trimmedWindow(1), trimmedWindow(2), monitored, survivedGrowth]);
 
     expect(plan.nextState.consecutiveFrontierDeaths).toBe(0);
-    expect(plan.markingAnchorIndexes).toEqual(plan.anchorIndexes);
+    expect(plan.markingAnchorIndexes).toEqual([0, 9]);
   });
 
   it('구버전 anchor state는 frontier 사망 카운터를 0으로 마이그레이션한다', async () => {
@@ -581,6 +675,7 @@ describe('cache anchor state storage', () => {
     });
 
     await expect(loadCacheAnchorState()).resolves.toMatchObject({
+      anchorAdmissions: [],
       anchorIndexes: [0],
       consecutiveEpochResets: 0,
     });
