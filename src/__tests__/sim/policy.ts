@@ -65,6 +65,31 @@ function createLegacyProductionPlan(plan: CachePlan): CachePlan {
   };
 }
 
+function createOneSurvivalProductionPlan(plan: CachePlan): CachePlan {
+  const anchorAdmissions = plan.nextState.anchorAdmissions.map((admission) =>
+    admission.requiresValidation && !admission.admitted && admission.consecutiveSurvivals === 1
+      ? { ...admission, admitted: true, consecutiveSurvivals: 2 }
+      : admission,
+  );
+  const latestAnchorIndex = plan.anchorIndexes.at(-1);
+  return {
+    ...plan,
+    markingAnchorIndexes: anchorAdmissions
+      .filter(
+        (admission) =>
+          (!admission.requiresValidation || admission.admitted) &&
+          !(
+            plan.nextState.consecutiveFrontierDeaths >= FRONTIER_DEATH_MONITOR_THRESHOLD &&
+            admission.anchorIndex === latestAnchorIndex
+          ),
+      )
+      .map((admission) => admission.anchorIndex),
+    // 저장 schema는 admitted 상태에 survival 2를 요구한다. 실험 정책은 두 번째
+    // 요청에서 승격한 사실을 이 값으로 정규화해 다음 replay에서도 유지한다.
+    nextState: { ...plan.nextState, anchorAdmissions },
+  };
+}
+
 function resolveHistoricalHardCappedAdmissions(
   previousState: CacheAnchorState | null,
   plan: CachePlan,
@@ -241,6 +266,19 @@ export function createProductionCachePolicy(): ReplayCachePolicy {
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
       const plan = planCacheAnchors(previousState, messages);
+      const markedMessages = markCacheBreakpoints([...messages], plan);
+      await saveCacheAnchorState(plan.nextState);
+      return createDecision(plan, markedMessages);
+    },
+  };
+}
+
+export function createOneSurvivalProductionCachePolicy(): ReplayCachePolicy {
+  return {
+    name: 'production-one-survival',
+    async apply(messages) {
+      const previousState = await loadCacheAnchorState();
+      const plan = createOneSurvivalProductionPlan(planCacheAnchors(previousState, messages));
       const markedMessages = markCacheBreakpoints([...messages], plan);
       await saveCacheAnchorState(plan.nextState);
       return createDecision(plan, markedMessages);

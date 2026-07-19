@@ -9,6 +9,7 @@ import {
   createFirstTurnSafeCachePolicy,
   createLegacyProductionCachePolicy,
   createNoCachePolicy,
+  createOneSurvivalProductionCachePolicy,
   createProductionCachePolicy,
   createSelectiveHardCapCachePolicy,
   createValidatedAllCachePolicy,
@@ -34,6 +35,7 @@ const POLICY_FACTORIES: readonly (() => ReplayCachePolicy)[] = [
   createValidatedAllCachePolicy,
   createSelectiveHardCapCachePolicy,
   createProductionCachePolicy,
+  createOneSurvivalProductionCachePolicy,
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
   createFirstTurnSafeCachePolicy,
@@ -44,6 +46,7 @@ const POLICY_NAMES = [
   'validated-all',
   'selective-hard-cap',
   'production',
+  'production-one-survival',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
   'first-turn-safe',
@@ -581,6 +584,30 @@ describe('validated admission policy comparisons', () => {
     expect(selective.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
   });
 
+  it('한 번 생존 admission은 현재보다 read를 회복하면서 공격형보다 write를 억제한다', () => {
+    const calibrated = replayResults.filter((result) => result.kernelName === 'calibrated');
+    const totalsFor = (policyName: PolicyName) => {
+      const policyResults = calibrated.filter((result) => result.policyName === policyName);
+      return {
+        netSavedTokens: policyResults.reduce(
+          (total, result) => total + result.totalNetSavedTokens,
+          0,
+        ),
+        readTokens: policyResults.reduce((total, result) => total + result.totalReadTokens, 0),
+        writeTokens: policyResults.reduce((total, result) => total + result.totalWriteTokens, 0),
+      };
+    };
+    const legacy = totalsFor('legacy-production');
+    const current = totalsFor('production');
+    const oneSurvival = totalsFor('production-one-survival');
+
+    expect(oneSurvival.netSavedTokens).toBeGreaterThan(current.netSavedTokens);
+    expect(oneSurvival.netSavedTokens).toBeGreaterThan(legacy.netSavedTokens * 0.8);
+    expect(oneSurvival.readTokens).toBeGreaterThan(current.readTokens);
+    expect(oneSurvival.writeTokens).toBeGreaterThan(current.writeTokens);
+    expect(oneSurvival.writeTokens).toBeLessThan(legacy.writeTokens * 0.5);
+  });
+
   it('선택적 검증의 분기 우회 방어는 기존과 전면 검증 사이의 손실로 수렴한다', () => {
     const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
     const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
@@ -625,6 +652,30 @@ describe('validated admission policy comparisons', () => {
     expect(selective.totalWriteTokens).toBeGreaterThan(16_384);
     expect(selective.totalReadTokens).toBe(selective.totalWriteTokens);
     expect(selective.totalNetSavedTokens).toBeGreaterThan(0);
+  });
+
+  it('한 번 생존한 16k 초과 prefix를 두 번째 요청에서 write한다', () => {
+    const trajectory = requireTrajectoryById('19-large-stable-prefix-admission');
+    const current = requireReplayResult(trajectory, 'calibrated', 'production');
+    const oneSurvival = requireReplayResult(trajectory, 'calibrated', 'production-one-survival');
+
+    expect(oneSurvival.logs.map((log) => log.policyMarkerCount)).toEqual([0, 1, 1, 1]);
+    expect(oneSurvival.logs[1].writeTokens).toBeGreaterThan(16_384);
+    expect(oneSurvival.logs[2].readTokens).toBe(oneSurvival.logs[1].writeTokens);
+    expect(oneSurvival.totalReadTokens).toBe(oneSurvival.totalWriteTokens * 2);
+    expect(oneSurvival.totalNetSavedTokens).toBeGreaterThan(current.totalNetSavedTokens);
+  });
+
+  it('한 번만 재사용되고 깨지는 prefix도 첫 hit으로 write를 회수한다', () => {
+    const trajectory = requireTrajectoryById('20-large-prefix-invalidated-after-admission');
+    const current = requireReplayResult(trajectory, 'calibrated', 'production');
+    const oneSurvival = requireReplayResult(trajectory, 'calibrated', 'production-one-survival');
+
+    expect(oneSurvival.logs.map((log) => log.policyMarkerCount)).toEqual([0, 1, 1, 0]);
+    expect(oneSurvival.logs[1].writeTokens).toBeGreaterThan(16_384);
+    expect(oneSurvival.logs[2].readTokens).toBe(oneSurvival.logs[1].writeTokens);
+    expect(oneSurvival.totalNetSavedTokens).toBeGreaterThan(0);
+    expect(oneSurvival.totalNetSavedTokens).toBeGreaterThan(current.totalNetSavedTokens);
   });
 
   it('16k 초과 prefix가 admission 직후 깨지면 cold write를 회수하지 못한다', () => {

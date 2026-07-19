@@ -47,6 +47,7 @@ const SCOREBOARD_POLICIES = [
   'validated-all',
   'selective-hard-cap',
   'production',
+  'production-one-survival',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
   'first-turn-safe',
