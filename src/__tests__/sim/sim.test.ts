@@ -132,8 +132,8 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
   if (trajectory.id === '02-cbs-trap') {
     expect(calibrated.totalReadTokens).toBe(0);
     expect(calibrated.totalNetSavedTokens).toBeLessThanOrEqual(0);
-    expect(Math.abs(calibrated.totalNetSavedTokens) / calibrated.totalInputTokens).toBeLessThan(
-      0.1,
+    expect(Math.abs(calibrated.totalNetSavedTokens) / calibrated.totalInputTokens).toBeGreaterThan(
+      0.2,
     );
     return;
   }
@@ -195,24 +195,28 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     return;
   }
   if (trajectory.id.startsWith('13-manual-summary-additive-')) {
-    // 위치 판별형 2-strike 승격으로 성장형 요약 변동은 frontier 마킹 보류로
-    // 구제된다 — 얕은 앵커 read는 유지되고 죽을 심층 write만 차단되어 전
-    // 스케일이 흑자다. 실측 mask(80k-mixed)만 안정 전이가 만든 심층 앵커
-    // write가 남아 음수지만, 승격 전(−63,268) 대비 회수 폭은 상한으로 고정한다.
+    // 현실 크기에서는 summary 앞의 얕은 hit가 뒤쪽 대규모 write를 항상
+    // 상각하지 못한다. 큰 history·mixed mask의 적자를 그대로 노출한다.
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
-    if (trajectory.id === '13-manual-summary-additive-80k-mixed') {
+    if (
+      [
+        '13-manual-summary-additive-typical-110k',
+        '13-manual-summary-additive-ceiling-150k',
+        '13-manual-summary-additive-typical-110k-mixed',
+        '13-manual-summary-additive-hist-32t',
+      ].includes(trajectory.id)
+    ) {
       expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
-      expect(calibrated.totalNetSavedTokens).toBeGreaterThan(-10_000);
       return;
     }
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
   if (trajectory.id === '14-trim-saturation') {
-    // 포화 트림의 "개수 유지 + 시프트"를 위치 판별이 스트라이크로 잡아, 고정
-    // head read는 유지한 채 매턴 죽던 심층 write를 차단해 흑자로 돌아선다.
+    // 3k~6k 응답 30개가 든 포화 창에서는 얕은 head read만으로 rolling
+    // history의 대규모 write를 상각하지 못한다.
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
-    expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    expect(calibrated.totalNetSavedTokens).toBeLessThan(0);
     return;
   }
   if (trajectory.id === '15-multi-room-roundrobin') {
@@ -287,7 +291,7 @@ beforeAll(async () => {
     }
   }
   console.log(formatScoreboard(replayResults));
-});
+}, 60_000);
 
 afterAll(() => {
   vi.unstubAllGlobals();
@@ -296,6 +300,38 @@ afterAll(() => {
 describe('deterministic replay golden trajectories', () => {
   it('실존·정책 비용 케이스 25개를 고정한다', () => {
     expect(trajectories).toHaveLength(25);
+  });
+
+  it('실사용 context·응답 규모를 유지한다', () => {
+    const inputTokens = replayResults
+      .filter((result) => result.kernelName === 'calibrated' && result.policyName === 'no-cache')
+      .flatMap((result) => result.logs.map((log) => log.inputTokens));
+    expect(Math.min(...inputTokens)).toBeGreaterThanOrEqual(50_000);
+    expect(Math.max(...inputTokens)).toBeLessThanOrEqual(160_000);
+    const typicalInputCount = inputTokens.filter(
+      (tokens) => tokens >= 80_000 && tokens <= 120_000,
+    ).length;
+    expect(typicalInputCount / inputTokens.length).toBeGreaterThanOrEqual(0.6);
+
+    const assistantTokenSizes = new Set<number>();
+    trajectories.forEach((trajectory) => {
+      trajectory.requests.forEach((trajectoryRequest) => {
+        trajectoryRequest.messages.forEach((message) => {
+          if (message.role !== 'assistant') return;
+          const characters = message.content.reduce(
+            (total, part) => total + (part.type === 'text' ? part.text.length : 0),
+            0,
+          );
+          const tokens = Math.ceil(characters / 4);
+          expect(tokens).toBeGreaterThanOrEqual(3_000);
+          expect(tokens).toBeLessThanOrEqual(32_000);
+          assistantTokenSizes.add(tokens);
+        });
+      });
+    });
+    expect([...assistantTokenSizes].sort((left, right) => left - right)).toEqual([
+      3_000, 6_000, 12_000, 20_000, 32_000,
+    ]);
   });
 
   describe.each(trajectories)('$id $label', (trajectory) => {
@@ -362,13 +398,13 @@ describe('adaptive policy golden comparisons', () => {
     }
   });
 
-  it('02의 손실은 첫 턴 cold write라 2-strike로 회수되지 않는 측정 결과를 고정한다', () => {
+  it('02의 대규모 휘발 write는 순수 2-strike만 일부 차단한다', () => {
     const trajectory = requireTrajectoryById('02-cbs-trap');
     const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
 
     expect(
       requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike').totalNetSavedTokens,
-    ).toBe(production.totalNetSavedTokens);
+    ).toBeGreaterThan(production.totalNetSavedTokens);
     expect(
       requireReplayResult(trajectory, 'calibrated', 'adaptive-2strike-reroll-aware')
         .totalNetSavedTokens,
@@ -378,7 +414,14 @@ describe('adaptive policy golden comparisons', () => {
   it('승격된 production은 manual-summary 전 변형에서 2-strike 후보들과 동률이다', () => {
     // 위치 판별형 2-strike가 production에 내장되어, 과거 후보 정책들이 내던
     // 회수분이 기본 동작이 됐다 — 후보 레이어의 추가 억제는 no-op이다.
-    for (const scaleId of ['30k', '80k', '120k', '80k-mixed', 'hist-2t', 'hist-44t']) {
+    for (const scaleId of [
+      'floor-80k',
+      'typical-110k',
+      'ceiling-150k',
+      'typical-110k-mixed',
+      'hist-2t',
+      'hist-32t',
+    ]) {
       const trajectory = requireTrajectoryById(`13-manual-summary-additive-${scaleId}`);
       const production = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       for (const policyName of [
@@ -472,19 +515,20 @@ describe('validated admission policy comparisons', () => {
     expect(validated.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
   });
 
-  it('기존 양수 골든에서는 warm-up 비용을 내되 흑자를 유지한다', () => {
+  it('영구 hard cap은 현실 크기의 기존 양수 골든도 admission하지 못한다', () => {
     for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
       const trajectory = requireTrajectoryById(trajectoryId);
       const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
 
-      expect(validated.totalNetSavedTokens).toBeGreaterThan(0);
+      expect(validated.totalNetSavedTokens).toBe(0);
       expect(validated.totalNetSavedTokens).toBeLessThan(legacy.totalNetSavedTokens);
-      expect(validated.totalWriteTokens).toBeLessThanOrEqual(legacy.totalWriteTokens);
+      expect(validated.totalReadTokens).toBe(0);
+      expect(validated.totalWriteTokens).toBe(0);
     }
   });
 
-  it('기존 23개 골든 합계에서는 write를 80% 이상 줄이고 순절감의 90% 이상을 유지한다', () => {
+  it('영구 hard cap은 write와 함께 기존 순절감도 대부분 포기한다', () => {
     const calibrated = replayResults.filter(
       (result) =>
         result.kernelName === 'calibrated' &&
@@ -504,8 +548,9 @@ describe('validated admission policy comparisons', () => {
     const legacy = totalsFor('legacy-production');
     const validated = totalsFor('validated-all');
 
-    expect(validated.writeTokens).toBeLessThan(legacy.writeTokens * 0.2);
-    expect(validated.netSavedTokens).toBeGreaterThan(legacy.netSavedTokens * 0.9);
+    expect(validated.writeTokens).toBeLessThan(legacy.writeTokens * 0.02);
+    expect(validated.netSavedTokens).toBeLessThan(legacy.netSavedTokens * 0.05);
+    expect(validated.netSavedTokens).toBeGreaterThan(0);
     expect(validated.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
   });
 
@@ -532,7 +577,8 @@ describe('validated admission policy comparisons', () => {
     expect(selective.readTokens).toBeGreaterThan(validated.readTokens);
     expect(selective.readTokens).toBeGreaterThan(hardCapped.readTokens);
     expect(selective.writeTokens).toBeGreaterThan(hardCapped.writeTokens);
-    expect(selective.writeTokens).toBeLessThan(legacy.writeTokens * 0.25);
+    expect(selective.writeTokens).toBeLessThan(legacy.writeTokens * 0.35);
+    expect(selective.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
   });
 
   it('선택적 검증의 분기 우회 방어는 기존과 전면 검증 사이의 손실로 수렴한다', () => {
@@ -542,12 +588,12 @@ describe('validated admission policy comparisons', () => {
     const selective = requireReplayResult(trajectory, 'calibrated', 'production');
 
     expect(selective.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
-    expect(selective.totalNetSavedTokens).toBeLessThan(validated.totalNetSavedTokens);
+    expect(selective.totalNetSavedTokens).toBe(validated.totalNetSavedTokens);
     expect(selective.totalWriteTokens).toBeLessThan(legacy.totalWriteTokens);
-    expect(selective.totalWriteTokens).toBeGreaterThan(validated.totalWriteTokens);
+    expect(selective.totalWriteTokens).toBe(validated.totalWriteTokens);
   });
 
-  it('안전한 일반 흐름에서는 기존 순절감을 즉시 복원한다', () => {
+  it('안전한 일반 흐름도 대규모 첫 prefix의 warm-up 비용을 내되 흑자를 유지한다', () => {
     for (const trajectoryId of [
       '01-append',
       '04-reroll',
@@ -559,7 +605,8 @@ describe('validated admission policy comparisons', () => {
       const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
       const selective = requireReplayResult(trajectory, 'calibrated', 'production');
 
-      expect(selective.totalNetSavedTokens).toBe(legacy.totalNetSavedTokens);
+      expect(selective.totalNetSavedTokens).toBeGreaterThan(0);
+      expect(selective.totalNetSavedTokens).toBeLessThan(legacy.totalNetSavedTokens);
     }
   });
 
@@ -596,7 +643,7 @@ describe('validated admission policy comparisons', () => {
     expect(selective.totalNetSavedTokens).toBeLessThan(0);
   });
 
-  it('hard cap 해제의 비용 차이는 16k 초과 생존 케이스에만 발생한다', () => {
+  it('hard cap 해제는 현실 크기의 일반 흐름에서도 admission 차이를 만든다', () => {
     const changedTrajectoryIds = trajectories
       .filter((trajectory) => {
         const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
@@ -605,10 +652,11 @@ describe('validated admission policy comparisons', () => {
       })
       .map((trajectory) => trajectory.id);
 
-    expect(changedTrajectoryIds).toEqual([
-      '19-large-stable-prefix-admission',
-      '20-large-prefix-invalidated-after-admission',
-    ]);
+    expect(changedTrajectoryIds).toContain('01-append');
+    expect(changedTrajectoryIds).toContain('19-large-stable-prefix-admission');
+    expect(changedTrajectoryIds).toContain('20-large-prefix-invalidated-after-admission');
+    expect(changedTrajectoryIds).not.toContain('02-cbs-trap');
+    expect(changedTrajectoryIds).not.toContain('14-trim-saturation');
   });
 });
 
