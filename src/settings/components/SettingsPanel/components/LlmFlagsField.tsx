@@ -60,11 +60,6 @@ export function LlmFlagsField() {
             <span class="truncate">{option.label}</span>
           </label>
         ))}
-        {/* convert.ts가 미디어를 보존할 때까지 대표 항목만 비활성 노출한다. */}
-        <label class="flex min-w-0 items-center gap-[7px] text-xs text-ui-muted opacity-70">
-          <input type="checkbox" disabled class="m-0 size-4 shrink-0" />
-          <span class="truncate">Image Input · 미지원</span>
-        </label>
       </fieldset>
     </div>
   );

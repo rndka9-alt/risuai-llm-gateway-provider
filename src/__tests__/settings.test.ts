@@ -399,7 +399,7 @@ async function renderSettingsUi(
 }
 
 describe('settings UI', () => {
-  it('저장된 인자와 미지원 flag 상태를 Preact DOM에 반영한다', async () => {
+  it('저장된 인자와 flag 상태를 Preact DOM에 반영한다', async () => {
     const harness = await renderSettingsUi({
       api_key: 'llmgtwy_secret',
       flags: 'hasFirstSystemPrompt,poolSupported',
@@ -427,8 +427,7 @@ describe('settings UI', () => {
     expect(requireInput('flag-hasFirstSystemPrompt').checked).toBe(true);
     expect(requireInput('flag-poolSupported').checked).toBe(true);
 
-    const disabledMediaInput = document.querySelector<HTMLInputElement>('input:disabled');
-    expect(disabledMediaInput?.parentElement?.textContent).toContain('Image Input · 미지원');
+    expect(document.body.textContent).not.toContain('Image Input · 미지원');
     expect(document.body.textContent).not.toContain('Image Output');
   });
 
