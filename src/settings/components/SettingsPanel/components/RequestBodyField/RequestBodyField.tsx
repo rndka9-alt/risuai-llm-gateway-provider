@@ -66,8 +66,7 @@ export function RequestBodyField() {
       <span id="request-body-label" class={`${FIELD_CAPTION_CLASS} flex items-center gap-1`}>
         커스텀 요청 body (JSON)
         <HelpTooltip id="request-body-help" label="커스텀 요청 body 도움말">
-          요청 직전 body에 deep merge되고, 겹치는 필드는 이 값이 덮어써요. JSON이 유효하지 않으면 그
-          요청에서는 통째로 무시돼요. 자동완성·검증은 GPT-5.6 × Gateway 계약 기준이에요.
+          요청 body에 덮어씌워 전송합니다. 에러가 있으면 전체가 무시됩니다.
         </HelpTooltip>
       </span>
       {/* 완성 팝업이 에디터 상자 밖으로 나갈 수 있어야 하므로 overflow를 자르지 않는다 */}
