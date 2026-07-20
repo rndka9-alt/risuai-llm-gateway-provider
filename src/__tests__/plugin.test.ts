@@ -233,7 +233,6 @@ describe('provider registration metadata', () => {
     );
 
     expect(harness.providerOptions?.model?.flags).toEqual([
-      RISUAI_LLM_FLAGS.hasImageInput,
       RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
       RISUAI_LLM_FLAGS.poolSupported,
     ]);
@@ -247,10 +246,7 @@ describe('provider registration metadata', () => {
 
     const harness = await loadProvider([], {}, true);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([
-      RISUAI_LLM_FLAGS.hasImageInput,
-      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
-    ]);
+    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
     expect(harness.startupEvents).toContain('addProvider');
     expect(consoleError).toHaveBeenCalledWith(
       '[llm-gateway-provider] config startup initialization failed; continuing with defaults',
@@ -268,11 +264,7 @@ describe('provider registration metadata', () => {
       tokenizer: 'o200k_base',
       model: {
         name: 'LLM Gateway',
-        flags: [
-          RISUAI_LLM_FLAGS.hasImageInput,
-          RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
-          RISUAI_LLM_FLAGS.poolSupported,
-        ],
+        flags: [RISUAI_LLM_FLAGS.hasFirstSystemPrompt, RISUAI_LLM_FLAGS.poolSupported],
         parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'],
         tokenizer: RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
       },
@@ -282,16 +274,22 @@ describe('provider registration metadata', () => {
   it('미지정 기본값은 Full System Prompt 하나이고 streaming flag를 넣지 않는다', async () => {
     const harness = await loadProvider([]);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([
-      RISUAI_LLM_FLAGS.hasImageInput,
-      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
-    ]);
+    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
   });
 
-  it('none sentinel이어도 고정 이미지 입력 flag는 등록한다', async () => {
+  it('none sentinel이면 이미지 입력을 포함한 모든 flag를 해제한다', async () => {
     const harness = await loadProvider([], { flags: 'none' });
 
-    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasImageInput]);
+    expect(harness.providerOptions?.model?.flags).toEqual([]);
+  });
+
+  it('이미지 입력을 선택한 경우에만 해당 flag를 등록한다', async () => {
+    const harness = await loadProvider([], { flags: 'hasFullSystemPrompt,hasImageInput' });
+
+    expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
+      RISUAI_LLM_FLAGS.hasImageInput,
+    ]);
   });
 });
 

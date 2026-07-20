@@ -17,6 +17,7 @@ const FLAG_OPTIONS: readonly FlagOption[] = [
   { label: 'Alternate Role', name: 'requiresAlternateRole' },
   { label: 'Must Start With User', name: 'mustStartWithUserInput' },
   { label: 'Pool Supported', name: 'poolSupported' },
+  { label: 'Image Input', name: 'hasImageInput' },
 ];
 
 export function LlmFlagsField() {

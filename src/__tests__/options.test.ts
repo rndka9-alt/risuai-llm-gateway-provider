@@ -84,19 +84,18 @@ describe('RisuAI LLM flags', () => {
     expect(resolveConfigurableLlmFlagNames('none')).toEqual([]);
   });
 
-  it('지원 flag만 중복 없이 파싱하고 고정·미지원 미디어 및 알 수 없는 이름은 제외한다', () => {
+  it('지원 flag만 중복 없이 파싱하고 미지원 flag와 알 수 없는 이름은 제외한다', () => {
     expect(
       resolveConfigurableLlmFlagNames(
         'hasFirstSystemPrompt, hasImageInput, poolSupported, poolSupported, unknown',
       ),
-    ).toEqual(['hasFirstSystemPrompt', 'poolSupported']);
+    ).toEqual(['hasFirstSystemPrompt', 'hasImageInput', 'poolSupported']);
   });
 
-  it('선택한 이름만 본체 숫자로 변환하고 hasStreaming은 자동 추가하지 않는다', () => {
+  it('선택한 이름만 본체 숫자로 변환하고 이미지·스트리밍 flag는 자동 추가하지 않는다', () => {
     const flagNames = resolveConfigurableLlmFlagNames('hasFullSystemPrompt,requiresAlternateRole');
 
     expect(resolveProviderLlmFlags(flagNames)).toEqual([
-      RISUAI_LLM_FLAGS.hasImageInput,
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
       RISUAI_LLM_FLAGS.requiresAlternateRole,
     ]);

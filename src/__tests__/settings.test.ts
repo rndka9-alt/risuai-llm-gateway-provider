@@ -427,6 +427,9 @@ describe('settings UI', () => {
     expect(requireInput('flag-hasFirstSystemPrompt').checked).toBe(true);
     expect(requireInput('flag-poolSupported').checked).toBe(true);
 
+    expect(requireInput('flag-hasImageInput').checked).toBe(false);
+    expect(requireInput('flag-hasImageInput').disabled).toBe(false);
+    expect(document.querySelector('fieldset label:last-child')?.textContent).toBe('Image Input');
     expect(document.body.textContent).not.toContain('Image Input · 미지원');
     expect(document.body.textContent).not.toContain('Image Output');
   });
@@ -508,12 +511,16 @@ describe('settings UI', () => {
     poolSupported.checked = true;
     await dispatchChange(poolSupported);
 
+    const imageInput = requireInput('flag-hasImageInput');
+    imageInput.checked = true;
+    await dispatchChange(imageInput);
+
     const storedConfig = harness.storage.get(CONFIG_STORAGE_KEY);
     expect(typeof storedConfig).toBe('string');
     if (typeof storedConfig !== 'string') throw new Error('Expected serialized config');
     expect(JSON.parse(storedConfig)).toEqual({
       api_key: 'llmgtwy_changed',
-      flags: 'hasFullSystemPrompt,poolSupported',
+      flags: 'hasFullSystemPrompt,poolSupported,hasImageInput',
       model: 'gpt-5.6-luna',
       prompt_cache_mode: 'disabled',
       reasoning_effort: 'xhigh',
@@ -527,6 +534,8 @@ describe('settings UI', () => {
 
     poolSupported.checked = false;
     await dispatchChange(poolSupported);
+    imageInput.checked = false;
+    await dispatchChange(imageInput);
     expect(document.getElementById('reload-notice')).toBeNull();
   });
 

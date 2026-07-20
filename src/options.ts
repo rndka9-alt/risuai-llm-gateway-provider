@@ -64,7 +64,8 @@ export type ConfigurableLlmFlagName =
   | 'hasFirstSystemPrompt'
   | 'requiresAlternateRole'
   | 'mustStartWithUserInput'
-  | 'poolSupported';
+  | 'poolSupported'
+  | 'hasImageInput';
 
 export const CONFIGURABLE_LLM_FLAG_NAMES: readonly ConfigurableLlmFlagName[] = [
   'hasFullSystemPrompt',
@@ -72,6 +73,7 @@ export const CONFIGURABLE_LLM_FLAG_NAMES: readonly ConfigurableLlmFlagName[] = [
   'requiresAlternateRole',
   'mustStartWithUserInput',
   'poolSupported',
+  'hasImageInput',
 ];
 
 export type UnsupportedMediaLlmFlagName =
@@ -148,11 +150,7 @@ export function serializeConfigurableLlmFlagNames(
 
 export function resolveProviderLlmFlags(flagNames: readonly ConfigurableLlmFlagName[]): number[] {
   // decoupled도 RisuAI에는 완성 문자열을 반환하므로 hasStreaming 선언은 거짓이 된다.
-  // 이미지 입력은 설정과 무관한 provider 고정 capability다.
-  return [
-    RISUAI_LLM_FLAGS.hasImageInput,
-    ...flagNames.map((flagName) => RISUAI_LLM_FLAGS[flagName]),
-  ];
+  return flagNames.map((flagName) => RISUAI_LLM_FLAGS[flagName]);
 }
 
 // 플러그인은 Flex 요청만 명시하고, 비활성 상태에서는 provider 기본값을 따른다.
