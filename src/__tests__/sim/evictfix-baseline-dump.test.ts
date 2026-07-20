@@ -10,15 +10,16 @@ import { createProceduralTrajectories } from './neutral-procedural';
 import { createProductionCachePolicy } from './policy';
 import { replayTrajectory } from './replay';
 
-// 축출 보호 실험의 대조군: 무패치(stock) production을 동일 스위트에 돌려
-// 케이스별 수치를 JSON으로 남긴다. longrun-evictfix.test.ts의 fix JSON과 diff용.
+// 현재 구현(frontier 보호 축출 규칙) 기준 production의 케이스별 수치를 JSON으로
+// 남긴다. longrun-evictfix.test.ts의 구 규칙 JSON과 diff하면 보호 규칙의 효과를
+// 케이스 단위로 확인할 수 있다.
 
-const OUTPUT_PATH = join(tmpdir(), 'llm-gateway-evictfix-stock.json');
+const OUTPUT_PATH = join(tmpdir(), 'llm-gateway-evictfix-current.json');
 
 export const SWEEP_TURN_COUNTS = [8, 15, 25, 40, 60] as const;
 
 describe('evictfix baseline dump', () => {
-  it('stock production의 케이스별 결과를 JSON으로 남긴다', async () => {
+  it('현재 구현 production의 케이스별 결과를 JSON으로 남긴다', async () => {
     const pluginStorage = new Map<string, string>();
     vi.stubGlobal('risuai', {
       pluginStorage: {
@@ -60,6 +61,16 @@ describe('evictfix baseline dump', () => {
     }
     writeFileSync(OUTPUT_PATH, JSON.stringify({ scenarios }, null, 2));
     expect(scenarios.length).toBeGreaterThan(0);
+
+    // 경제성 회귀 가드: frontier 보호 규칙이 깨지면 장기 append 효율이
+    // 20%대로 추락한다 (구 규칙 실측 21.2%, 보호 후 86.7%).
+    const longestAppendSweep = scenarios.find((scenario) => scenario.id === 'sweep-append-t60');
+    if (longestAppendSweep === undefined) {
+      throw new Error('append-sweep 60턴 시나리오가 덤프에 존재해야 한다.');
+    }
+    expect(
+      longestAppendSweep.netSavedTokens / longestAppendSweep.inputTokens,
+    ).toBeGreaterThanOrEqual(0.8);
     vi.unstubAllGlobals();
   }, 300_000);
 });

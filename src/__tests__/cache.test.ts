@@ -106,6 +106,35 @@ function markedIndexesOfLastTurn(turns: readonly (readonly LlmMessage[])[]): num
 const LONG_SYSTEM_TEXT = 'S'.repeat(6000);
 
 describe('planCacheAnchors / markCacheBreakpoints', () => {
+  it('정속 append로 앵커가 포화돼도 직전 frontier 앵커를 유지한다', () => {
+    // exact-match 계약에서 직전 턴에 write한 frontier 엔트리는 이번 요청에 같은
+    // 지점 마커가 있어야만 read된다. 직전 frontier가 축출되면 read 체인이 끊겨
+    // 매턴 대형 re-write가 발생한다 (60턴 append 실측 eff 21.2% → 보호 후 86.7%).
+    const messages: LlmMessage[] = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'user turn 1'),
+    ];
+    const turns: (readonly LlmMessage[])[] = [[...messages]];
+    for (let turn = 2; turn <= 9; turn += 1) {
+      messages.push(
+        makeMessage('assistant', `assistant reply ${turn - 1} `.repeat(60)),
+        makeMessage('user', `user turn ${turn} `.repeat(30)),
+      );
+      turns.push([...messages]);
+    }
+
+    let state: CacheAnchorState | null = null;
+    let previousFrontierIndex: number | null = null;
+    for (const turn of turns) {
+      const plan = planCacheAnchors(state, turn);
+      if (previousFrontierIndex !== null) {
+        expect(plan.anchorIndexes).toContain(previousFrontierIndex);
+      }
+      previousFrontierIndex = plan.anchorIndexes.at(-1) ?? null;
+      state = plan.nextState;
+    }
+  });
+
   it('16k 이하 첫 턴 frontier는 즉시 assistant를 건너뛰어 마킹한다', () => {
     const firstTurn = [
       makeMessage('system', LONG_SYSTEM_TEXT),
