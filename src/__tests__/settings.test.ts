@@ -360,6 +360,21 @@ async function dispatchInput(element: HTMLInputElement): Promise<void> {
   });
 }
 
+async function dispatchBlur(element: HTMLElement): Promise<void> {
+  await act(async () => {
+    element.focus();
+    element.blur();
+    await Promise.resolve();
+  });
+}
+
+async function expandSettingsAccordion(id: string): Promise<void> {
+  const toggle = requireButton(`${id}-toggle`);
+  if (toggle.getAttribute('aria-expanded') === 'true') return;
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+}
+
 function stubSettingsUi(
   configValues: Readonly<Record<string, string>> = {},
   storageValues: Readonly<Record<string, unknown>> = {},
@@ -415,15 +430,22 @@ describe('settings UI', () => {
     });
 
     expect(harness.showContainer).toHaveBeenCalledWith('fullscreen');
+    expect(requireInput('api-key').disabled).toBe(true);
     expect(requireInput('api-key').value).toBe('llmgtwy_secret');
     expect(requireInput('api-key').type).toBe('password');
-    expect(requireSelect('model').value).toBe('gpt-5.6-custom');
+    expect(requireButton('api-key-edit').disabled).toBe(false);
+    expect(document.getElementById('status-streaming-chip')?.textContent).toBe('실시간');
+    expect(document.getElementById('status-flex-chip')?.textContent).toBe('flex');
+    expect(document.getElementById('status-model')?.textContent).toBe('gpt-5.6-custom');
     expect(requireSelect('prompt-cache-mode').value).toBe('disabled');
     expect(requireRange('reasoning-effort').value).toBe('4');
     expect(requireRange('reasoning-effort').getAttribute('aria-valuetext')).toBe('high');
     expect(requireRange('reasoning-effort').dataset.unset).toBe('false');
     expect(requireRange('verbosity').value).toBe('2');
     expect(requireRange('verbosity').getAttribute('aria-valuetext')).toBe('medium');
+
+    await expandSettingsAccordion('advanced-settings');
+    expect(requireSelect('model').value).toBe('gpt-5.6-custom');
     expect(requireInput('streaming-mode').checked).toBe(true);
     expect(requireInput('service-tier').checked).toBe(true);
     expect(requireInput('flag-hasFullSystemPrompt').checked).toBe(false);
@@ -442,10 +464,113 @@ describe('settings UI', () => {
     const input = requireInput('api-key');
     const button = requireButton('api-key-visibility');
 
+    await act(async () => requireButton('api-key-edit').click());
     await act(async () => button.click());
+    expect(input.disabled).toBe(false);
     expect(input.type).toBe('text');
     expect(button.getAttribute('aria-label')).toBe('API 키 숨기기');
     expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('API key를 blur에서 저장하고 상태바 전환 순서와 활성 칩을 유지한다', async () => {
+    const harness = await renderSettingsUi({
+      model: 'gpt-5.6-terra',
+      service_tier: 'flex',
+      streaming_mode: 'decoupled',
+    });
+    const app = document.getElementById('app');
+    const editor = document.getElementById('api-key-editor');
+    const summary = document.getElementById('settings-status-summary');
+    if (app === null || editor === null || summary === null) {
+      throw new Error('Expected settings status bar elements');
+    }
+
+    expect(app.className).toContain('min-h-[420px]');
+    expect(app.className).toContain('max-h-[min(720px,calc(100vh-40px))]');
+    expect(editor.className).toContain('w-full');
+    expect(editor.className).toContain('duration-150');
+    expect(summary.className).toContain('opacity-0');
+    expect(summary.className).toContain('delay-0');
+    expect(document.getElementById('status-streaming-chip')?.textContent).toBe('실시간');
+    expect(document.getElementById('status-flex-chip')?.textContent).toBe('flex');
+    expect(document.getElementById('status-model')?.textContent).toBe('Terra');
+
+    const input = requireInput('api-key');
+    input.value = 'llmgtwy_blurred';
+    await dispatchInput(input);
+    expect(requireConfigStorage(harness)).not.toHaveProperty('api_key');
+
+    await dispatchBlur(input);
+    expect(requireConfigStorage(harness)).toMatchObject({ api_key: 'llmgtwy_blurred' });
+    expect(input.disabled).toBe(true);
+    expect(editor.className).toContain('w-0');
+    expect(editor.className).toContain('opacity-0');
+    expect(summary.className).toContain('opacity-100');
+    expect(summary.className).toContain('delay-100');
+    expect(summary.className).toContain('duration-200');
+
+    await act(async () => requireButton('api-key-edit').click());
+    expect(input.disabled).toBe(false);
+    expect(editor.className).toContain('w-full');
+    expect(summary.className).toContain('opacity-0');
+    expect(summary.className).toContain('delay-0');
+  });
+
+  it('아코디언은 기본 접힘이고 상태 점·전환·재오픈 상태를 유지한다', async () => {
+    await renderSettingsUi({ extra_body: '{"temperature": 1}' });
+    const requestBodyToggle = requireButton('request-body-settings-toggle');
+    const advancedToggle = requireButton('advanced-settings-toggle');
+    const requestBodyContent = document.getElementById('request-body-settings-content');
+    if (requestBodyContent === null) throw new Error('Expected request body accordion content');
+
+    expect(requestBodyToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(advancedToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(requestBodyContent.getAttribute('aria-hidden')).toBe('true');
+    expect(requestBodyContent.className).toContain('grid-rows-[0fr]');
+    expect(requestBodyContent.className).toContain('duration-150');
+    expect(requestBodyContent.className).toContain('motion-reduce:transition-none');
+    expect(document.getElementById('request-body-settings-indicator')?.className).toContain(
+      'bg-ui-gain',
+    );
+
+    await expandSettingsAccordion('request-body-settings');
+    await expandSettingsAccordion('advanced-settings');
+    expect(requestBodyContent.className).toContain('grid-rows-[1fr]');
+    expect(requestBodyContent.className).toContain('opacity-100');
+
+    await act(async () => requireButton('close').click());
+    await act(async () => {
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+    });
+    expect(requireButton('request-body-settings-toggle').getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(requireButton('advanced-settings-toggle').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('비활성 상태 칩은 숨기고 모델명은 항상 짧은 라벨로 표시한다', async () => {
+    await renderSettingsUi({ api_key: 'llmgtwy_secret', model: 'gpt-5.6-luna' });
+
+    expect(document.getElementById('status-streaming-chip')).toBeNull();
+    expect(document.getElementById('status-flex-chip')).toBeNull();
+    expect(document.getElementById('status-model')?.textContent).toBe('Luna');
+    // 축약 라벨이어도 전체 모델 ID는 title로 확인할 수 있어야 한다
+    expect(document.getElementById('status-model')?.getAttribute('title')).toBe('gpt-5.6-luna');
+  });
+
+  it('커스텀 body 상태 점은 에러·워닝·빈 객체를 구분한다', async () => {
+    await renderSettingsUi({ extra_body: '{ "stream": tru' });
+    expect(document.getElementById('request-body-settings-indicator')?.className).toContain(
+      'bg-ui-loss',
+    );
+
+    await renderSettingsUi({ extra_body: '{ "stream": true }' });
+    expect(document.getElementById('request-body-settings-indicator')?.className).toContain(
+      'bg-ui-warn',
+    );
+
+    await renderSettingsUi({ extra_body: '{}' });
+    expect(document.getElementById('request-body-settings-indicator')).toBeNull();
   });
 
   it('지정 안 함을 slider 첫 단계의 muted 상태로 표시한다', async () => {
@@ -479,12 +604,15 @@ describe('settings UI', () => {
     expect(requireConfigStorage(harness)).toMatchObject({ reasoning_effort: '' });
   });
 
-  it('native input/change마다 config JSON으로 즉시 저장한다', async () => {
+  it('폼 변경은 즉시, API key는 blur에서 config JSON으로 저장한다', async () => {
     const harness = await renderSettingsUi();
 
     const apiKey = requireInput('api-key');
     apiKey.value = 'llmgtwy_changed';
-    await dispatchChange(apiKey);
+    await dispatchInput(apiKey);
+    await dispatchBlur(apiKey);
+
+    await expandSettingsAccordion('advanced-settings');
 
     const model = requireSelect('model');
     model.value = 'gpt-5.6-luna';
@@ -545,6 +673,7 @@ describe('settings UI', () => {
 
   it('flags 변경 후 설정창을 재오픈해도 새로고침 안내를 복원한다', async () => {
     await renderSettingsUi();
+    await expandSettingsAccordion('advanced-settings');
 
     const poolSupported = requireInput('flag-poolSupported');
     poolSupported.checked = true;
@@ -643,6 +772,7 @@ describe('settings UI', () => {
 
   it('Tailwind 유틸리티와 호버·포커스 팝오버, sticky footer를 와이어한다', async () => {
     await renderSettingsUi();
+    await expandSettingsAccordion('advanced-settings');
 
     expect(document.getElementById('llm-gateway-styles')).not.toBeNull();
     expect(document.body.classList.contains('bg-black/55')).toBe(true);
@@ -664,6 +794,7 @@ describe('settings UI', () => {
 
   it('도움말·닫기 동작과 저장 실패 표시를 유지한다', async () => {
     const harness = await renderSettingsUi();
+    await expandSettingsAccordion('advanced-settings');
     expect(document.getElementById('prompt-cache-mode-tooltip')?.textContent).toContain(
       '추가 캐시 쓰기 비용이 발생하지 않습니다.',
     );
@@ -681,12 +812,15 @@ describe('settings UI', () => {
     harness.setItem.mockRejectedValueOnce(new Error('storage unavailable'));
     const apiKey = requireInput('api-key');
     apiKey.value = 'will-fail';
-    await dispatchChange(apiKey);
+    await dispatchInput(apiKey);
+    await dispatchBlur(apiKey);
     await act(async () => Promise.resolve());
     expect(document.getElementById('save-error')?.textContent).toContain('저장에 실패');
 
+    await act(async () => requireButton('api-key-edit').click());
     apiKey.value = 'will-succeed';
-    await dispatchChange(apiKey);
+    await dispatchInput(apiKey);
+    await dispatchBlur(apiKey);
     await act(async () => Promise.resolve());
     expect(document.getElementById('save-error')).toBeNull();
   });

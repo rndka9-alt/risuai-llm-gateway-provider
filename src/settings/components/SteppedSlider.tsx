@@ -53,7 +53,7 @@ export function SteppedSlider<Value extends string>({
       <div
         id={`${id}-control`}
         data-unset={isUnset}
-        class="stepped-slider-control relative h-[38px] w-full"
+        class="stepped-slider-control relative isolate h-[38px] w-full"
         style={`--stepped-slider-progress: ${progressPercentage}%; --stepped-slider-thumb-offset: ${thumbOffsetPixels}px`}
       >
         <div

@@ -47,7 +47,7 @@ export function SettingsFooter() {
   };
 
   return (
-    <footer class="sticky bottom-0 z-10 flex min-h-14 items-center justify-between border-t border-ui-frame bg-ui-panel px-4 py-2.5">
+    <footer class="sticky bottom-0 z-10 flex min-h-14 shrink-0 items-center justify-between border-t border-ui-frame bg-ui-panel px-4 py-2.5">
       <div class="group relative flex min-w-0 items-center gap-0.5">
         <button
           id="ledger-summary"

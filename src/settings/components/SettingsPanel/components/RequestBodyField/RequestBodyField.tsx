@@ -1,9 +1,5 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
-import {
-  createJsonEditorCore,
-  gpt56ChatCompletionsRequestSchema,
-  gpt56ExcludedKeyMessages,
-} from '../../../../../json-editor';
+import type { JsonDiagnostic, JsonEditorCore } from '../../../../../json-editor';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS } from '../../../constants';
 import { persistSetting } from '../../../../utils/persistence';
 import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../../utils/settings-snapshot';
@@ -16,25 +12,18 @@ import type { JsonEditorApi } from './components/JsonEditorArea';
 
 const PERSIST_DEBOUNCE_MS = 600;
 
-export function RequestBodyField() {
+interface RequestBodyFieldProps {
+  /** 코어·진단은 아코디언 헤더의 상태 점과 공유하므로 상위(RequestBodyAccordion)가 소유한다 */
+  core: JsonEditorCore;
+  diagnostics: JsonDiagnostic[];
+}
+
+export function RequestBodyField({ core, diagnostics }: RequestBodyFieldProps) {
   const { extraBody } = useSettingsSnapshot();
   const [caretOffset, setCaretOffset] = useState(0);
   const editorApiRef = useRef<JsonEditorApi | null>(null);
   const persistTimerRef = useRef<number | undefined>(undefined);
 
-  const core = useMemo(
-    () =>
-      createJsonEditorCore({
-        schema: gpt56ChatCompletionsRequestSchema,
-        unrecognizedKeyMessages: gpt56ExcludedKeyMessages,
-      }),
-    [],
-  );
-  // 빈 초안은 기능이 꺼진 상태이므로 진단하지 않는다
-  const diagnostics = useMemo(
-    () => (extraBody.trim() === '' ? [] : core.analyze(extraBody).diagnostics),
-    [core, extraBody],
-  );
   const breadcrumbSegments = useMemo(
     () => core.breadcrumbAt(extraBody, caretOffset),
     [core, extraBody, caretOffset],
@@ -64,7 +53,7 @@ export function RequestBodyField() {
   return (
     <div class={FIELD_CLASS}>
       <span id="request-body-label" class={`${FIELD_CAPTION_CLASS} flex items-center gap-1`}>
-        커스텀 요청 body (JSON)
+        JSON
         <HelpTooltip id="request-body-help" label="커스텀 요청 body 도움말">
           요청 body에 덮어씌워 전송합니다. 에러가 있으면 전체가 무시됩니다.
         </HelpTooltip>

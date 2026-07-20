@@ -1,38 +1,31 @@
 import { SettingsFooter } from './components/SettingsFooter';
 import { SettingsNotices } from './components/SettingsNotices';
-import { ApiKeyField } from './components/ApiKeyField';
-import { LlmFlagsField } from './components/LlmFlagsField';
-import { ModelField } from './components/ModelField';
+import { AdvancedSettingsAccordion } from './components/AdvancedSettingsAccordion';
 import { PromptCacheModeField } from './components/PromptCacheModeField';
 import { ReasoningEffortField } from './components/ReasoningEffortField';
-import { RequestBodyField } from './components/RequestBodyField/RequestBodyField';
-import { ServiceTierField } from './components/ServiceTierField';
-import { StreamingModeField } from './components/StreamingModeField';
+import { RequestBodyAccordion } from './components/RequestBodyAccordion';
+import { SettingsStatusBar } from './components/SettingsStatusBar';
 import { VerbosityField } from './components/VerbosityField';
-
-function AdvancedDivider() {
-  return (
-    <div class="mt-0.5 flex items-center gap-2.5 text-[11px] text-ui-muted">
-      <span class="w-2 border-t border-dashed border-ui-frame" />
-      <span>고급</span>
-      <span class="flex-1 border-t border-dashed border-ui-frame" />
-    </div>
-  );
-}
 
 interface SettingsPanelProps {
   cacheBackoffActive: boolean;
 }
 
 export function SettingsPanel({ cacheBackoffActive }: SettingsPanelProps) {
+  // 접힌 기본 상태는 컴팩트(min 420px)하게, 아코디언이 펼쳐지면 내용을 따라
+  // min(720px, 100vh-40px)까지 자라고 그 이상은 내부 스크롤로 처리한다.
   return (
     <main
       id="app"
-      class="max-h-[calc(100vh-40px)] w-full max-w-96 overflow-auto rounded-[14px] border border-ui-frame bg-ui-panel shadow-2xl max-[420px]:max-h-[calc(100vh-20px)]"
+      class="flex max-h-[min(720px,calc(100vh-40px))] min-h-[420px] w-full max-w-96 flex-col overflow-hidden rounded-[14px] border border-ui-frame bg-ui-panel shadow-2xl max-[420px]:max-h-[calc(100vh-20px)]"
     >
-      <form id="settings-form" class="flex flex-col" onSubmit={(event) => event.preventDefault()}>
-        <div class="flex flex-col gap-3 px-[18px] pt-5 pb-[18px] max-[420px]:px-4">
-          <ApiKeyField />
+      <form
+        id="settings-form"
+        class="flex min-h-0 flex-1 flex-col"
+        onSubmit={(event) => event.preventDefault()}
+      >
+        <div class="settings-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-[18px] pb-[18px] max-[420px]:px-4">
+          <SettingsStatusBar />
 
           <PromptCacheModeField />
 
@@ -40,17 +33,9 @@ export function SettingsPanel({ cacheBackoffActive }: SettingsPanelProps) {
 
           <VerbosityField />
 
-          <ModelField />
+          <RequestBodyAccordion />
 
-          <AdvancedDivider />
-
-          <StreamingModeField />
-
-          <ServiceTierField />
-
-          <LlmFlagsField />
-
-          <RequestBodyField />
+          <AdvancedSettingsAccordion />
 
           <SettingsNotices cacheBackoffActive={cacheBackoffActive} />
         </div>
