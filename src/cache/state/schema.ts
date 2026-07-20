@@ -42,14 +42,14 @@ export const cacheAnchorStateSchema = z
     state.anchorIndexes.forEach((anchorIndex, position) => {
       if (anchorIndex >= state.fingerprints.length) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'anchor index must reference a fingerprint',
           path: ['anchorIndexes', position],
         });
       }
       if (position > 0 && state.anchorIndexes[position - 1] >= anchorIndex) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'anchor indexes must be strictly ascending',
           path: ['anchorIndexes', position],
         });
@@ -58,7 +58,7 @@ export const cacheAnchorStateSchema = z
     state.anchorAdmissions.forEach((admission, position) => {
       if (!state.anchorIndexes.includes(admission.anchorIndex)) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'anchor admission must reference an anchor index',
           path: ['anchorAdmissions', position, 'anchorIndex'],
         });
@@ -68,14 +68,14 @@ export const cacheAnchorStateSchema = z
         state.anchorAdmissions[position - 1].anchorIndex >= admission.anchorIndex
       ) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'anchor admissions must be strictly ascending',
           path: ['anchorAdmissions', position, 'anchorIndex'],
         });
       }
       if (admission.admitted && admission.consecutiveSurvivals < ADMITTED_ANCHOR_SURVIVAL_COUNT) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'admitted anchor must use the normalized survival count',
           path: ['anchorAdmissions', position, 'admitted'],
         });

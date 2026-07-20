@@ -12,6 +12,7 @@ import { initializeSettingsSnapshot } from './utils/settings-snapshot';
 import {
   loadApiKey,
   loadConfigurableLlmFlagNames,
+  loadExtraBody,
   loadModel,
   loadPromptCacheMode,
   loadReasoningEffort,
@@ -53,6 +54,7 @@ export async function openSettings(
     verbosity,
     streamingMode,
     flagNames,
+    extraBody,
     cacheAnchorState,
   ] = await Promise.all([
     loadApiKey(),
@@ -63,6 +65,7 @@ export async function openSettings(
     loadVerbosity(),
     loadStreamingMode(),
     loadConfigurableLlmFlagNames(),
+    loadExtraBody(),
     loadCacheAnchorState(),
     refreshCacheLedgerSnapshot(),
   ]);
@@ -71,6 +74,7 @@ export async function openSettings(
 
   initializeSettingsSnapshot({
     apiKey,
+    extraBody,
     flagNames,
     model,
     promptCacheMode,

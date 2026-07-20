@@ -13,9 +13,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "jsonc-parser": "^3.3.1",
     "llm-io": "github:rndka9-alt/llm-io",
     "preact": "^10.29.7",
-    "zod": "^3.25.0"
+    "vscode-json-languageservice": "^5.7.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

@@ -49,6 +49,14 @@ npm test
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
 - `src/options.ts` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자
+- `src/json-editor/` — 스키마 기반 JSON 에디터 코어 (구문·스키마 진단, breadcrumb, 자동완성, format).
+  UI 독립 — (text, offset)만 주고받는다. zod 스키마(`zod/v4` 서브패스) 하나에서 검증(safeParse)과
+  자동완성(toJSONSchema → vscode-json-languageservice)을 모두 파생한다. `request-body-schema.ts`는
+  GPT-5.6 × llmgateway.io 한정 요청 body 스키마 — 느슨한 Gateway ingress를 복제하지 않고 실제
+  의미 있는 요청만 허용하며, `.describe()`가 자동완성 문서로 노출된다
+- `src/extra-body.ts` — 설정의 커스텀 요청 body(JSON, config `extra_body`)를 요청 직전 extraBody에
+  deep merge (겹치는 필드는 커스텀 우선, invalid JSON이면 그 요청에서는 통째로 무시). 편집 UI는
+  설정 패널의 RequestBodyField (json-editor 소비자)
 - `src/settings.ts` + `src/theme.ts` + `src/constants.ts` — 설정 UI (인자 편집 + 손익 표시/리셋)
 - `src/toast.ts` — 캐시 백오프 발동/해제 메인 DOM 토스트 (`SafeDocument`, 실패 시 경고 폴백)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.

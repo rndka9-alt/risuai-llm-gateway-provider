@@ -17,11 +17,11 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonValueSchema),
-    z.record(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
   ]),
 );
 
-const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema);
+const jsonObjectSchema: z.ZodType<JsonObject> = z.record(z.string(), jsonValueSchema);
 
 const lastCostSampleSchema = z.object({
   cost: z.number().optional(),

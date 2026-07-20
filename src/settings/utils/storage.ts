@@ -1,6 +1,7 @@
 import { resolvePromptCacheMode, type PromptCacheMode } from '../../cache';
 import {
   API_KEY_ARGUMENT,
+  EXTRA_BODY_ARGUMENT,
   FLAGS_ARGUMENT,
   MODEL_ARGUMENT,
   PROMPT_CACHE_MODE_ARGUMENT,
@@ -105,8 +106,17 @@ export async function saveConfigurableLlmFlagNames(
   });
 }
 
+export async function loadExtraBody(): Promise<string> {
+  return (await loadConfig())[EXTRA_BODY_ARGUMENT];
+}
+
+export async function saveExtraBody(value: string): Promise<void> {
+  await saveConfig({ [EXTRA_BODY_ARGUMENT]: value });
+}
+
 export interface SettingsValues {
   apiKey: string;
+  extraBody: string;
   flagNames: readonly ConfigurableLlmFlagName[];
   model: string;
   promptCacheMode: PromptCacheMode;
@@ -119,6 +129,7 @@ export interface SettingsValues {
 export async function saveSettings(values: SettingsValues): Promise<void> {
   await saveConfig({
     [API_KEY_ARGUMENT]: values.apiKey,
+    [EXTRA_BODY_ARGUMENT]: values.extraBody,
     [MODEL_ARGUMENT]: values.model,
     [PROMPT_CACHE_MODE_ARGUMENT]: values.promptCacheMode,
     [SERVICE_TIER_ARGUMENT]: values.serviceTier === 'flex' ? 'flex' : '',

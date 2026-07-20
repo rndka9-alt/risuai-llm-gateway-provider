@@ -20,6 +20,8 @@
   --color-ui-knob: color-mix(in srgb, var(--text) 20%, var(--background));
   --color-ui-gain: #4ade80;
   --color-ui-loss: #f87171;
+  /* json-editor의 스키마 warning 표시용 — 권장 이탈은 loss(에러)보다 옅은 톤 */
+  --color-ui-warn: #fbbf24;
 }
 
 .stepped-slider {

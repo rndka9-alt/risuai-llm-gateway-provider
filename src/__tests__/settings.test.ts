@@ -87,6 +87,7 @@ describe('API key settings', () => {
 
     expect(requireConfigStorage(pluginStorage)).toMatchObject({
       api_key: 'llmgtwy_new_secret',
+      extra_body: '',
     });
   });
 });
@@ -124,6 +125,7 @@ describe('prompt cache settings', () => {
 
     await saveSettings({
       apiKey: 'llmgtwy_new_secret',
+      extraBody: '',
       flagNames: ['hasFullSystemPrompt', 'poolSupported'],
       model: 'gpt-5.6-luna',
       promptCacheMode: 'explicit',
@@ -135,6 +137,7 @@ describe('prompt cache settings', () => {
 
     expect(requireConfigStorage(pluginStorage)).toEqual({
       api_key: 'llmgtwy_new_secret',
+      extra_body: '',
       flags: 'hasFullSystemPrompt,poolSupported',
       model: 'gpt-5.6-luna',
       prompt_cache_mode: 'explicit',
@@ -520,6 +523,7 @@ describe('settings UI', () => {
     if (typeof storedConfig !== 'string') throw new Error('Expected serialized config');
     expect(JSON.parse(storedConfig)).toEqual({
       api_key: 'llmgtwy_changed',
+      extra_body: '',
       flags: 'hasFullSystemPrompt,poolSupported,hasImageInput',
       model: 'gpt-5.6-luna',
       prompt_cache_mode: 'disabled',

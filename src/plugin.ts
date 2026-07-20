@@ -18,6 +18,7 @@ import {
 } from './cache';
 import {
   API_KEY_ARGUMENT,
+  EXTRA_BODY_ARGUMENT,
   FLAGS_ARGUMENT,
   MODEL_ARGUMENT,
   PROMPT_CACHE_MODE_ARGUMENT,
@@ -29,6 +30,7 @@ import {
   loadConfig,
 } from './config';
 import { toLlmMessages } from './convert';
+import { applyCustomExtraBody } from './extra-body';
 import { accumulateCacheUsage } from './ledger';
 import {
   DEFAULT_MODEL,
@@ -186,8 +188,11 @@ async function requestLLMGateway(
       : { presence_penalty: providerArguments.presence_penalty }),
     ...(streamingMode === 'off' ? {} : { stream_options: { include_usage: true } }),
   };
+  // 설정 편집기의 커스텀 body(JSON)를 요청 직전에 deep merge한다 — 겹치는 필드는 커스텀이
+  // 우선하고, invalid JSON이면 이번 요청에서는 통째로 무시된다 (extra-body.ts 계약)
+  const requestExtraBody = applyCustomExtraBody(extraBody, config[EXTRA_BODY_ARGUMENT]);
   const gatewayClient: GatewayClient = new Llm({
-    format: new OpenAIChatCompletionsFormat({ model, extraBody }),
+    format: new OpenAIChatCompletionsFormat({ model, extraBody: requestExtraBody }),
     // 엔드포인트는 llm-io 기본값(공식 llmgateway.io)으로 고정한다. 인자로 열어두면
     // 타 플러그인이 v2 setArg로 바꿔칠 수 있어 api_key가 임의 주소로 전송될 수 있다.
     provider: new LLMGatewayProvider({ apiKey }),

@@ -6,6 +6,7 @@ const LEGACY_ARGUMENT_BACKUP_STORAGE_KEY = 'llm-gateway-provider:arguments-backu
 
 const DEFAULT_CONFIG = {
   api_key: '',
+  extra_body: '',
   flags: '',
   model: '',
   prompt_cache_mode: '',
@@ -73,6 +74,7 @@ describe('config storage', () => {
 
     await saveConfig({
       api_key: 'llmgtwy_secret',
+      extra_body: '',
       flags: 'hasFirstSystemPrompt,poolSupported',
       model: 'gpt-5.6-luna',
       prompt_cache_mode: 'disabled',
@@ -84,6 +86,7 @@ describe('config storage', () => {
 
     await expect(loadConfig()).resolves.toEqual({
       api_key: 'llmgtwy_secret',
+      extra_body: '',
       flags: 'hasFirstSystemPrompt,poolSupported',
       model: 'gpt-5.6-luna',
       prompt_cache_mode: 'disabled',

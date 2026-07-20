@@ -5,6 +5,7 @@ import { LlmFlagsField } from './components/LlmFlagsField';
 import { ModelField } from './components/ModelField';
 import { PromptCacheModeField } from './components/PromptCacheModeField';
 import { ReasoningEffortField } from './components/ReasoningEffortField';
+import { RequestBodyField } from './components/RequestBodyField/RequestBodyField';
 import { ServiceTierField } from './components/ServiceTierField';
 import { StreamingModeField } from './components/StreamingModeField';
 import { VerbosityField } from './components/VerbosityField';
@@ -48,6 +49,8 @@ export function SettingsPanel({ cacheBackoffActive }: SettingsPanelProps) {
           <ServiceTierField />
 
           <LlmFlagsField />
+
+          <RequestBodyField />
 
           <SettingsNotices cacheBackoffActive={cacheBackoffActive} />
         </div>

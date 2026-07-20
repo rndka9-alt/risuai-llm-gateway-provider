@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   API_KEY_ARGUMENT,
+  EXTRA_BODY_ARGUMENT,
   FLAGS_ARGUMENT,
   MODEL_ARGUMENT,
   PROMPT_CACHE_MODE_ARGUMENT,
@@ -19,6 +20,8 @@ export const configSchema = z.object({
   [VERBOSITY_ARGUMENT]: z.string().default(''),
   [STREAMING_MODE_ARGUMENT]: z.string().default(''),
   [FLAGS_ARGUMENT]: z.string().default(''),
+  // json-editor로 편집하는 요청 body 초안(raw JSON 텍스트). 유효하지 않은 중간 상태도 보존한다
+  [EXTRA_BODY_ARGUMENT]: z.string().default(''),
 });
 
 export type Config = z.infer<typeof configSchema>;

@@ -35,6 +35,23 @@ try {
   ]);
   const settingsStyles = await readFile(generatedCssPath, 'utf8');
 
+  // zod v4 classic은 `export * as locales`로 53개 언어팩(원본 1.2MB)을 배럴로 묶는데,
+  // 네임스페이스 배럴 특성상 트리셰이킹이 안 돼 통째로 번들된다. 이 플러그인은 z.locales를
+  // 쓰지 않고, 기본 en 메시지는 classic이 en.js를 직접 import하므로 배럴만 빈 모듈로 바꾼다.
+  const stubZodLocalesPlugin = {
+    name: 'stub-zod-locales',
+    setup(pluginBuild) {
+      pluginBuild.onResolve({ filter: /\.\.\/locales\/index\.js$/ }, (args) =>
+        args.importer.includes('/zod/')
+          ? { path: 'zod-locales-empty', namespace: 'zod-locales-stub' }
+          : undefined,
+      );
+      pluginBuild.onLoad({ filter: /^zod-locales-empty$/, namespace: 'zod-locales-stub' }, () => ({
+        contents: 'export {};',
+      }));
+    },
+  };
+
   // 1. esbuild: TSX + generated Tailwind CSS → single IIFE bundle
   await build({
     entryPoints: ['src/plugin.ts'],
@@ -45,6 +62,7 @@ try {
     outfile: 'plugin.js',
     jsx: 'automatic',
     jsxImportSource: 'preact',
+    plugins: [stubZodLocalesPlugin],
     define: {
       __SETTINGS_STYLES__: JSON.stringify(settingsStyles),
       __VERSION__: JSON.stringify(version),

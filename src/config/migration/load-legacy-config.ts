@@ -6,7 +6,7 @@ import {
 } from '../constants';
 import { configSchema, type Config, type ConfigUpdate } from '../storage/schema';
 
-const legacyArgumentBackupSchema = z.record(z.string());
+const legacyArgumentBackupSchema = z.record(z.string(), z.string());
 
 function selectNonEmptyConfigValues(
   values: Readonly<Record<string, string | undefined>>,
