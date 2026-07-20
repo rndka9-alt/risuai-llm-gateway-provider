@@ -3,7 +3,8 @@ import type { JsonCompletion } from '../../../../../../json-editor';
 interface CompletionPopupProps {
   completions: JsonCompletion[];
   selectedIndex: number;
-  position: { top: number; left: number };
+  /** top이 있으면 아래로, bottom이 있으면 caret 위로 열린다 */
+  position: { top?: number; bottom?: number; left: number };
   onPick(completion: JsonCompletion): void;
 }
 
@@ -16,7 +17,7 @@ export function CompletionPopup({
   return (
     <ul
       class="absolute z-20 m-0 max-h-40 w-64 list-none overflow-y-auto rounded-lg border border-ui-frame bg-ui-panel p-0 py-1 shadow-xl"
-      style={{ top: position.top, left: position.left }}
+      style={{ top: position.top, bottom: position.bottom, left: position.left }}
     >
       {completions.map((completion, index) => {
         const isSelected = index === selectedIndex;

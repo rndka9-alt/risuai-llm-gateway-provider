@@ -31,11 +31,14 @@ const HIGHLIGHT_CLASSES = {
 } as const;
 
 const COMPLETION_POPUP_WIDTH = 260;
+/** 뒤집기 판정용 팝업 최대 높이 추정 — 목록 max-h-40(160px) + 테두리·패딩 여유 */
+const ESTIMATED_POPUP_HEIGHT = 176;
 
 interface CompletionState {
   completions: JsonCompletion[];
   selectedIndex: number;
-  anchor: { top: number; left: number };
+  /** top(아래로 열기) 또는 bottom(위로 열기) 중 하나만 갖는다 */
+  anchor: { top?: number; bottom?: number; left: number };
 }
 
 export function JsonEditorArea({
@@ -96,14 +99,29 @@ export function JsonEditorArea({
       return;
     }
     const caretRect = measureCaretRect(textarea, offset);
+    // 좁은 설정 패널에서 팝업이 오른쪽으로 삐져나가지 않게 잡아둔다
+    const left = Math.max(
+      0,
+      Math.min(caretRect.left, textarea.clientWidth - COMPLETION_POPUP_WIDTH),
+    );
+    // 아래 공간이 부족하면 caret 위쪽에 bottom-anchor로 뒤집어 연다.
+    // 판정 경계는 iframe 뷰포트가 아니라 팝업이 실제로 잘리는 컨테이너 — 팝업은
+    // 패널(main, overflow-auto) 안에 살므로 "패널 가시 영역 ∩ iframe 뷰포트"를 쓴다.
+    // bottom 기준이라 항목 수가 적어 팝업이 낮아져도 caret 바로 위에 붙는다
+    const textareaRect = textarea.getBoundingClientRect();
+    const panelRect = textarea.closest('main')?.getBoundingClientRect();
+    const boundaryTop = Math.max(0, panelRect?.top ?? 0);
+    const boundaryBottom = Math.min(window.innerHeight, panelRect?.bottom ?? window.innerHeight);
+    const caretTopInViewport = textareaRect.top + caretRect.top;
+    const spaceBelow = boundaryBottom - (caretTopInViewport + caretRect.height);
+    const spaceAbove = caretTopInViewport - boundaryTop;
+    const flipUp = spaceBelow < ESTIMATED_POPUP_HEIGHT && spaceAbove > spaceBelow;
     setCompletionState({
       completions: filtered,
       selectedIndex: 0,
-      anchor: {
-        top: caretRect.top + caretRect.height + 2,
-        // 좁은 설정 패널에서 팝업이 오른쪽으로 삐져나가지 않게 잡아둔다
-        left: Math.max(0, Math.min(caretRect.left, textarea.clientWidth - COMPLETION_POPUP_WIDTH)),
-      },
+      anchor: flipUp
+        ? { bottom: textarea.offsetHeight - caretRect.top + 2, left }
+        : { top: caretRect.top + caretRect.height + 2, left },
     });
   }
 
