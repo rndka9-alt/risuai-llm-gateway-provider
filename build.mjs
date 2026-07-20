@@ -11,6 +11,10 @@ const { version } = JSON.parse(await readFile('package.json', 'utf8'));
 const executeFile = promisify(execFile);
 const require = createRequire(import.meta.url);
 
+// 번들되는 서드파티 라이선스(ISC/MIT)는 모든 복사본에 고지 보존을 요구한다.
+// plugin.min.js가 단독으로 배포되므로 고지 전문을 배너에 내장한다 (의존성 변경 시 파일 갱신).
+const thirdPartyNotices = (await readFile('THIRD-PARTY-NOTICES.txt', 'utf8')).trim();
+
 // 설정은 pluginStorage를 원천으로 삼고 registerSetting 화면에서만 관리한다.
 const BANNER = `/*!
 //@name llm-gateway-provider
@@ -18,6 +22,9 @@ const BANNER = `/*!
 //@version ${version}
 //@api 3.0
 //@update-url https://raw.githubusercontent.com/rndka9-alt/risuai-llm-gateway-provider/main/plugin.min.js
+*/
+/*!
+${thirdPartyNotices}
 */`;
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'llm-gateway-provider-'));
@@ -88,4 +95,6 @@ await writeFile('plugin.min.js', BANNER + '\n' + result.code);
 const raw = Buffer.byteLength(code);
 const min = Buffer.byteLength(BANNER + '\n' + result.code);
 console.log(`plugin.js  → ${(raw / 1024).toFixed(1)} KB`);
-console.log(`plugin.min.js → ${(min / 1024).toFixed(1)} KB (${((1 - min / raw) * 100).toFixed(0)}% 절감)`);
+console.log(
+  `plugin.min.js → ${(min / 1024).toFixed(1)} KB (${((1 - min / raw) * 100).toFixed(0)}% 절감)`,
+);

@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { FIELD_CAPTION_CLASS } from '../../constants';
 
@@ -40,13 +41,12 @@ export function SettingsAccordion({
           )}
         </span>
         {/* 좌측 chevron은 줄머리를 들쭉이게 해서, 상태바 모델명처럼 우측 끝에 ∨/∧로 둔다 */}
-        <svg
-          viewBox="0 0 16 16"
+        <ChevronDown
+          size={14}
+          strokeWidth={1.7}
           aria-hidden="true"
-          class={`size-3.5 shrink-0 fill-none stroke-current stroke-[1.7] text-ui-muted transition-transform duration-150 motion-reduce:transition-none ${expanded ? 'rotate-180' : 'rotate-0'}`}
-        >
-          <path d="m3.5 6 4.5 4.5L12.5 6" />
-        </svg>
+          class={`shrink-0 text-ui-muted transition-transform duration-150 motion-reduce:transition-none ${expanded ? 'rotate-180' : 'rotate-0'}`}
+        />
       </button>
       {/* auto 높이를 직접 보간할 수 없어 0fr↔1fr로 실제 콘텐츠 높이를 150ms 동안 보간한다. */}
       <div

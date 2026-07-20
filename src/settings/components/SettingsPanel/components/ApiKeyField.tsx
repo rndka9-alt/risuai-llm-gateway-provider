@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS, INPUT_CLASS } from '../../constants';
 import { persistSetting } from '../../../utils/persistence';
@@ -64,15 +65,11 @@ export function ApiKeyField({ editing, onCommit }: ApiKeyFieldProps) {
           onClick={() => setApiKeyVisible((visible) => !visible)}
           class="absolute top-[7px] right-[7px] grid h-6 w-[30px] cursor-pointer place-items-center border-0 border-l border-ui-frame bg-transparent p-0 text-ui-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent"
         >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            class="size-4 fill-none stroke-current stroke-[1.6] [stroke-linecap:round] [stroke-linejoin:round]"
-          >
-            <path d="M2.5 12c2.1-3.8 5.2-6 9.5-6s7.4 2.2 9.5 6c-2.1 3.8-5.2 6-9.5 6S4.6 15.8 2.5 12Z" />
-            <circle cx="12" cy="12" r="2.75" />
-            {apiKeyVisible && <path d="m4 4 16 16" />}
-          </svg>
+          {apiKeyVisible ? (
+            <EyeOff size={16} strokeWidth={1.6} aria-hidden="true" />
+          ) : (
+            <Eye size={16} strokeWidth={1.6} aria-hidden="true" />
+          )}
         </button>
       </div>
     </div>

@@ -15,6 +15,7 @@
   "dependencies": {
     "jsonc-parser": "^3.3.1",
     "llm-io": "github:rndka9-alt/llm-io",
+    "lucide-preact": "^1.25.0",
     "preact": "^10.29.7",
     "vscode-json-languageservice": "^5.7.2",
     "zod": "^4.4.3"

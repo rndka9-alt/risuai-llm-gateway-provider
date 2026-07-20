@@ -1,3 +1,4 @@
+import { Info } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 
@@ -47,7 +48,7 @@ export function HelpTooltip({ children, id, label }: HelpTooltipProps) {
         aria-describedby={id}
         class="grid size-4 cursor-help place-items-center rounded-full border-0 bg-transparent p-0 text-[11px] leading-none text-ui-muted hover:text-ui-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent"
       >
-        <span aria-hidden="true">ⓘ</span>
+        <Info size={14} strokeWidth={1.7} aria-hidden="true" />
       </button>
       <span
         id={id}

@@ -1,3 +1,4 @@
+import { KeyRound } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import { resolveModelDisplayLabel } from '../../../../options';
 import { useSettingsSnapshot } from '../../../utils/settings-snapshot';
@@ -27,14 +28,7 @@ export function SettingsStatusBar() {
             onClick={() => setEditingApiKey(true)}
             class="grid size-[38px] shrink-0 cursor-pointer place-items-center rounded-lg border border-ui-frame bg-ui-control p-0 text-ui-muted hover:text-ui-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent disabled:cursor-default"
           >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              class="size-[18px] fill-none stroke-current stroke-[1.7] [stroke-linecap:round] [stroke-linejoin:round]"
-            >
-              <circle cx="8" cy="15" r="3.5" />
-              <path d="m10.5 12.5 8-8 2 2-1.5 1.5 1.5 1.5-2 2-1.5-1.5-4 4" />
-            </svg>
+            <KeyRound size={18} strokeWidth={1.7} aria-hidden="true" />
           </button>
           <div
             id="settings-status-summary"

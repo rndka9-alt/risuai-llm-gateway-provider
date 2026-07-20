@@ -12,16 +12,16 @@
 
 설정은 값을 변경할 때마다 자동으로 저장된다. LLM flags를 변경한 경우에만 RisuAI를 새로고침해야 한다.
 
-| 설정 | 값과 동작 | 기본값 |
-| --- | --- | --- |
-| API 키 | LLM Gateway API 키 (`llmgtwy_...`) | 필수 |
-| 캐시 모드 | `명시적 캐시 사용` 또는 `캐시 끄기` | 명시적 캐시 사용 |
-| Reasoning effort | 지정 안 함, `none`, `low`, `medium`, `high`, `xhigh`, `max` | 지정 안 함 |
-| Verbosity | 지정 안 함, `low`, `medium`, `high` | 지정 안 함 |
-| 응답 방식 | 일반 요청 또는 스트리밍 연결을 끝까지 소비한 뒤 완성 응답 표시 | 일반 요청 |
-| 모델 | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | `gpt-5.6-sol` |
-| 서비스 티어 | Gateway 기본 또는 `flex` | Gateway 기본 |
-| LLM flags | `Full System Prompt`, `First System Prompt`, `Alternate Role`, `Must Start With User`, `Pool Supported` | Full System Prompt |
+| 설정             | 값과 동작                                                                                               | 기본값             |
+| ---------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| API 키           | LLM Gateway API 키 (`llmgtwy_...`)                                                                      | 필수               |
+| 캐시 모드        | `명시적 캐시 사용` 또는 `캐시 끄기`                                                                     | 명시적 캐시 사용   |
+| Reasoning effort | 지정 안 함, `none`, `low`, `medium`, `high`, `xhigh`, `max`                                             | 지정 안 함         |
+| Verbosity        | 지정 안 함, `low`, `medium`, `high`                                                                     | 지정 안 함         |
+| 응답 방식        | 일반 요청 또는 스트리밍 연결을 끝까지 소비한 뒤 완성 응답 표시                                          | 일반 요청          |
+| 모델             | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`                                                          | `gpt-5.6-sol`      |
+| 서비스 티어      | Gateway 기본 또는 `flex`                                                                                | Gateway 기본       |
+| LLM flags        | `Full System Prompt`, `First System Prompt`, `Alternate Role`, `Must Start With User`, `Pool Supported` | Full System Prompt |
 
 `Gateway 기본`은 `service_tier`를 요청에서 생략하여 Gateway 또는 조직 설정을 따른다. `flex`를 켜면 `service_tier: "flex"`를 명시한다.
 
@@ -94,3 +94,9 @@ npm run test:watch
 ```
 
 릴리즈 스크립트는 버전 변경과 빌드 후 커밋·태그·push를 수행하고, `plugin.min.js`가 첨부된 GitHub Release를 생성한다.
+
+## 라이선스
+
+이 저장소의 고유 코드는 [CC0-1.0](LICENSE)으로 공개된다. 배포 산출물에 번들되는
+서드파티 구성요소(Preact, Zod, Lucide 등)는 각자의 라이선스를 유지하며, 고지 전문은
+[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)와 `plugin.min.js` 상단 배너에 수록된다.
