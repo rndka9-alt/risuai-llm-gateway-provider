@@ -215,10 +215,18 @@ interface OpenAIChat {
     role: 'system' | 'user' | 'assistant' | 'function';
     content: string;
     name?: string;
+    multimodals?: MultiModal[];
     function_call?: {
         name: string;
         arguments: string;
     };
+}
+
+interface MultiModal {
+    type: 'image' | 'video' | 'audio' | 'signature';
+    base64: string;
+    height?: number;
+    width?: number;
 }
 
 /**

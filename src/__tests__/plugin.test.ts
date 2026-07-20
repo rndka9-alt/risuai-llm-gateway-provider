@@ -233,6 +233,7 @@ describe('provider registration metadata', () => {
     );
 
     expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasImageInput,
       RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
       RISUAI_LLM_FLAGS.poolSupported,
     ]);
@@ -246,7 +247,10 @@ describe('provider registration metadata', () => {
 
     const harness = await loadProvider([], {}, true);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
+    expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasImageInput,
+      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
+    ]);
     expect(harness.startupEvents).toContain('addProvider');
     expect(consoleError).toHaveBeenCalledWith(
       '[llm-gateway-provider] config startup initialization failed; continuing with defaults',
@@ -264,7 +268,11 @@ describe('provider registration metadata', () => {
       tokenizer: 'o200k_base',
       model: {
         name: 'LLM Gateway',
-        flags: [RISUAI_LLM_FLAGS.hasFirstSystemPrompt, RISUAI_LLM_FLAGS.poolSupported],
+        flags: [
+          RISUAI_LLM_FLAGS.hasImageInput,
+          RISUAI_LLM_FLAGS.hasFirstSystemPrompt,
+          RISUAI_LLM_FLAGS.poolSupported,
+        ],
         parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'],
         tokenizer: RISUAI_TIKTOKEN_O200_BASE_TOKENIZER,
       },
@@ -274,13 +282,16 @@ describe('provider registration metadata', () => {
   it('미지정 기본값은 Full System Prompt 하나이고 streaming flag를 넣지 않는다', async () => {
     const harness = await loadProvider([]);
 
-    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasFullSystemPrompt]);
+    expect(harness.providerOptions?.model?.flags).toEqual([
+      RISUAI_LLM_FLAGS.hasImageInput,
+      RISUAI_LLM_FLAGS.hasFullSystemPrompt,
+    ]);
   });
 
-  it('none sentinel이면 빈 flags 메타를 등록한다', async () => {
+  it('none sentinel이어도 고정 이미지 입력 flag는 등록한다', async () => {
     const harness = await loadProvider([], { flags: 'none' });
 
-    expect(harness.providerOptions?.model?.flags).toEqual([]);
+    expect(harness.providerOptions?.model?.flags).toEqual([RISUAI_LLM_FLAGS.hasImageInput]);
   });
 });
 
@@ -291,6 +302,46 @@ describe('request body options', () => {
     await harness.provider(createProviderArguments());
 
     expect(parseRequestBody(harness.nativeFetch, 0).model).toBe('gpt-5.6-sol');
+  });
+
+  it('image-only 안정 prefix를 cache breakpoint가 있는 image_url로 전달한다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()]);
+    const providerArguments = createProviderArguments();
+
+    await harness.provider({
+      ...providerArguments,
+      prompt_chat: [
+        {
+          role: 'user',
+          content: '',
+          multimodals: [
+            {
+              type: 'image',
+              base64: 'data:image/png;base64,abc',
+              width: 1024,
+              height: 1024,
+            },
+          ],
+        },
+        { role: 'assistant', content: 'reply' },
+        { role: 'user', content: 'next' },
+      ],
+    });
+
+    expect(parseRequestBody(harness.nativeFetch, 0).messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: 'data:image/png;base64,abc' },
+            prompt_cache_breakpoint: { mode: 'explicit' },
+          },
+        ],
+      },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: 'next' },
+    ]);
   });
 
   it('플러그인 선택값과 RisuAI penalty를 Chat Completions extra body로 전달한다', async () => {

@@ -27,4 +27,77 @@ describe('toLlmMessages', () => {
 
     expect(messages).toEqual([{ role: 'user', content: [{ type: 'text', text: '' }] }]);
   });
+
+  it('user 이미지를 RisuAI와 같은 image-first 순서로 변환한다', () => {
+    const messages = toLlmMessages([
+      {
+        role: 'user',
+        content: '이미지를 설명해줘',
+        multimodals: [
+          {
+            type: 'image',
+            base64: 'data:image/png;base64,abc',
+            width: 1024,
+            height: 768,
+          },
+        ],
+      },
+    ]);
+
+    expect(messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'url', url: 'data:image/png;base64,abc' },
+            width: 1024,
+            height: 768,
+          },
+          { type: 'text', text: '이미지를 설명해줘' },
+        ],
+      },
+    ]);
+  });
+
+  it('image-only 메시지는 빈 text part를 만들지 않는다', () => {
+    const messages = toLlmMessages([
+      {
+        role: 'user',
+        content: '',
+        multimodals: [{ type: 'image', base64: 'data:image/png;base64,abc' }],
+      },
+    ]);
+
+    expect(messages).toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'image', source: { type: 'url', url: 'data:image/png;base64,abc' } }],
+      },
+    ]);
+  });
+
+  it('user가 아닌 role의 이미지는 명시적으로 거절한다', () => {
+    expect(() =>
+      toLlmMessages([
+        {
+          role: 'assistant',
+          content: 'image',
+          multimodals: [{ type: 'image', base64: 'data:image/png;base64,abc' }],
+        },
+      ]),
+    ).toThrow('image inputs require a user message');
+  });
+
+  it('지원하지 않는 multimodal 타입을 명시적으로 거절한다', () => {
+    expect(() =>
+      toLlmMessages([
+        {
+          role: 'user',
+          content: 'audio',
+          multimodals: [{ type: 'audio', base64: 'data:audio/wav;base64,abc' }],
+        },
+      ]),
+    ).toThrow('unsupported multimodal input type: audio');
+  });
 });

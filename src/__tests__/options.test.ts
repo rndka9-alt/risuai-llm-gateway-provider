@@ -84,7 +84,7 @@ describe('RisuAI LLM flags', () => {
     expect(resolveConfigurableLlmFlagNames('none')).toEqual([]);
   });
 
-  it('지원 flag만 중복 없이 파싱하고 미디어 및 알 수 없는 이름은 제외한다', () => {
+  it('지원 flag만 중복 없이 파싱하고 고정·미지원 미디어 및 알 수 없는 이름은 제외한다', () => {
     expect(
       resolveConfigurableLlmFlagNames(
         'hasFirstSystemPrompt, hasImageInput, poolSupported, poolSupported, unknown',
@@ -96,6 +96,7 @@ describe('RisuAI LLM flags', () => {
     const flagNames = resolveConfigurableLlmFlagNames('hasFullSystemPrompt,requiresAlternateRole');
 
     expect(resolveProviderLlmFlags(flagNames)).toEqual([
+      RISUAI_LLM_FLAGS.hasImageInput,
       RISUAI_LLM_FLAGS.hasFullSystemPrompt,
       RISUAI_LLM_FLAGS.requiresAlternateRole,
     ]);

@@ -9,7 +9,7 @@ import { commonSuffixLength } from './utils/common-suffix-length';
 import { createFirstTurnPlan } from './utils/create-first-turn-plan';
 import { isShiftedPrefixChange } from './utils/is-shifted-prefix-change';
 import { normalizeAnchorIndexes } from './utils/normalize-anchor-indexes';
-import { sumTokenEstimatesBetween } from './utils/sum-token-estimates-between';
+import { sumTextTokenEstimatesBetween } from './utils/sum-token-estimates-between';
 
 // ===== breakpoint 자동 배치 =====
 // 조립된 messages만으로는 로어북/채팅 경계를 구조적으로 알 수 없으므로,
@@ -167,7 +167,11 @@ function resolveRequiresValidationIndexes(
     const estimatedNewWriteTokens =
       anchorIndex <= deepestEligiblePreviousIndex
         ? 0
-        : sumTokenEstimatesBetween(currentFingerprints, deepestEligiblePreviousIndex, anchorIndex);
+        : sumTextTokenEstimatesBetween(
+            currentFingerprints,
+            deepestEligiblePreviousIndex,
+            anchorIndex,
+          );
     if (structuralFrontierDeath || estimatedNewWriteTokens > MAX_NEW_CACHE_WRITE_TOKENS) {
       requiresValidationIndexes.add(anchorIndex);
     }

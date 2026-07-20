@@ -5,6 +5,9 @@ const messageFingerprintSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   hash: z.string(),
   tokenEstimate: z.number(),
+  // v0.9 이하 state에는 이 필드가 없다. 16K 쓰기 가드에서 기존 tokenEstimate로
+  // 호환 읽기하고, 다음 성공 요청 저장부터 텍스트 전용 추정치로 교체한다.
+  textTokenEstimate: z.number().optional(),
 });
 
 const anchorAdmissionSchema = z.object({

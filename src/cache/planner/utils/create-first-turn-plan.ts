@@ -2,7 +2,7 @@ import type { MessageFingerprint } from '../../state/schema';
 import type { CachePlan } from '../../types';
 import { MAX_NEW_CACHE_WRITE_TOKENS } from '../../constants';
 import { resolveFirstTurnFrontier } from './resolve-first-turn-frontier';
-import { sumTokenEstimatesBetween } from './sum-token-estimates-between';
+import { sumTextTokenEstimatesBetween } from './sum-token-estimates-between';
 
 export function createFirstTurnPlan(
   fingerprints: MessageFingerprint[],
@@ -15,7 +15,7 @@ export function createFirstTurnPlan(
     anchorIndex,
     consecutiveSurvivals: 0,
     requiresValidation:
-      sumTokenEstimatesBetween(fingerprints, -1, anchorIndex) > MAX_NEW_CACHE_WRITE_TOKENS,
+      sumTextTokenEstimatesBetween(fingerprints, -1, anchorIndex) > MAX_NEW_CACHE_WRITE_TOKENS,
   }));
   return {
     anchorIndexes,

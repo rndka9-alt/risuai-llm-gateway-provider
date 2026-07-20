@@ -28,14 +28,14 @@
 ## 지원 범위
 
 - 공식 LLM Gateway endpoint의 OpenAI Chat Completions 경로(`/v1/chat/completions`)
-- 텍스트 입력과 텍스트 출력
+- 텍스트 입력, user 메시지의 이미지 입력, 텍스트 출력
 - RisuAI 샘플러: `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`
 - `max_tokens`를 `max_completion_tokens`로 변환
 - 플러그인 설정의 `reasoning_effort`, `verbosity`, `service_tier`
 - `o200k` tokenizer 메타데이터
 - RisuAI 요청 취소 신호 전달
 
-Responses API, 커스텀 endpoint, 이미지·오디오·비디오 변환은 지원하지 않는다. API 키가 임의 주소로 전송되지 않도록 endpoint는 llm-io의 공식 LLM Gateway 주소로 고정되어 있다.
+Responses API, 커스텀 endpoint, 오디오·비디오 변환은 지원하지 않는다. API 키가 임의 주소로 전송되지 않도록 endpoint는 llm-io의 공식 LLM Gateway 주소로 고정되어 있다.
 
 ### 응답 방식
 

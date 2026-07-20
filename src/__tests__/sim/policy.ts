@@ -3,7 +3,7 @@ import {
   FRONTIER_DEATH_MONITOR_THRESHOLD,
   MAX_NEW_CACHE_WRITE_TOKENS,
 } from '../../cache/constants';
-import { sumTokenEstimatesBetween } from '../../cache/planner/utils/sum-token-estimates-between';
+import { sumTextTokenEstimatesBetween } from '../../cache/planner/utils/sum-token-estimates-between';
 import type { AnchorAdmission } from '../../cache/state/schema';
 import {
   fingerprintMessage,
@@ -131,7 +131,7 @@ function resolveHistoricalHardCappedAdmissions(
     const estimatedNewWriteTokens =
       admission.anchorIndex <= deepestExistingAdmissionIndex
         ? 0
-        : sumTokenEstimatesBetween(
+        : sumTextTokenEstimatesBetween(
             plan.nextState.fingerprints,
             deepestExistingAdmissionIndex,
             admission.anchorIndex,

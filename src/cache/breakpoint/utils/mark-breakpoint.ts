@@ -1,17 +1,18 @@
 import type { LlmMessage } from 'llm-io';
+import { isImagePart } from '../../utils/is-image-part';
 import { isTextPart } from '../../utils/is-text-part';
 
 export function markBreakpoint(message: LlmMessage): LlmMessage {
-  let lastTextPartIndex = -1;
+  let lastCacheablePartIndex = -1;
   message.content.forEach((part, index) => {
-    if (isTextPart(part)) lastTextPartIndex = index;
+    if (isTextPart(part) || isImagePart(part)) lastCacheablePartIndex = index;
   });
-  if (lastTextPartIndex === -1) return message;
+  if (lastCacheablePartIndex === -1) return message;
 
   return {
     ...message,
     content: message.content.map((part, index) =>
-      index === lastTextPartIndex && isTextPart(part)
+      index === lastCacheablePartIndex && (isTextPart(part) || isImagePart(part))
         ? { ...part, cacheBreakpoint: { mode: 'explicit' } }
         : part,
     ),

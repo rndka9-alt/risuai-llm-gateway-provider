@@ -77,7 +77,8 @@ function breakpointIndexes(messages: readonly LlmMessage[]): number[] {
   const indexes: number[] = [];
   messages.forEach((message, index) => {
     const marked = message.content.some(
-      (part) => part.type === 'text' && part.cacheBreakpoint !== undefined,
+      (part) =>
+        (part.type === 'text' || part.type === 'image') && part.cacheBreakpoint !== undefined,
     );
     if (marked) indexes.push(index);
   });
@@ -139,6 +140,89 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const messages = [makeMessage('system', '한'.repeat(2100)), makeMessage('user', '질문')];
 
     expect(markedIndexesOfLastTurn([messages, messages, messages])).toEqual([0]);
+  });
+
+  it('이미지 patch 토큰을 최소 cacheable prefix 판정에 포함한다', () => {
+    const imageMessage: LlmMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'url', url: 'data:image/png;base64,abc' },
+          width: 1024,
+          height: 1024,
+        },
+      ],
+    };
+
+    const fingerprint = fingerprintMessage(imageMessage);
+    expect(fingerprint.tokenEstimate).toBe(1028);
+    expect(fingerprint.textTokenEstimate).toBe(4);
+    expect(
+      markedIndexesOfLastTurn([
+        [imageMessage, makeMessage('assistant', 'reply'), makeMessage('user', 'next')],
+      ]),
+    ).toEqual([0]);
+  });
+
+  it('크기를 모르는 이미지는 Base64 길이로 토큰을 추측하지 않는다', () => {
+    const fingerprint = fingerprintMessage({
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'url', url: `data:image/png;base64,${'A'.repeat(20_000)}` },
+        },
+      ],
+    });
+
+    expect(fingerprint.tokenEstimate).toBe(4);
+    expect(fingerprint.textTokenEstimate).toBe(4);
+  });
+
+  it('이미지와 텍스트가 섞이면 마지막 텍스트에 breakpoint를 붙인다', () => {
+    const mixedMessage: LlmMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'url', url: 'data:image/png;base64,abc' },
+          width: 1024,
+          height: 1024,
+        },
+        { type: 'text', text: 'describe' },
+      ],
+    };
+    const messages = [mixedMessage, makeMessage('assistant', 'reply'), makeMessage('user', 'next')];
+    const plan = planTurns([messages]);
+    const [markedMessage] = markCacheBreakpoints(messages, plan);
+    const [imagePart, textPart] = markedMessage.content;
+    if (imagePart.type !== 'image' || textPart.type !== 'text') {
+      throw new Error('Expected image-first mixed content');
+    }
+
+    expect(imagePart.cacheBreakpoint).toBeUndefined();
+    expect(textPart.cacheBreakpoint).toEqual({ mode: 'explicit' });
+  });
+
+  it('16K 신규 쓰기 제한은 이미지 patch 토큰을 제외한다', () => {
+    const imageMessage: LlmMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'url', url: 'data:image/png;base64,abc' },
+          width: 32_768,
+          height: 32_768,
+        },
+      ],
+    };
+
+    const messages = [imageMessage, makeMessage('assistant', 'reply'), makeMessage('user', 'next')];
+    const plan = planTurns([messages]);
+    expect(plan.nextState.fingerprints[0].tokenEstimate).toBeGreaterThan(16_384);
+    expect(plan.nextState.fingerprints[0].textTokenEstimate).toBe(4);
+    expect(plan.nextState.anchorAdmissions[0].requiresValidation).toBe(false);
   });
 
   it('16k 이하 append-only 성장은 새 frontier를 즉시 마킹한다', () => {
