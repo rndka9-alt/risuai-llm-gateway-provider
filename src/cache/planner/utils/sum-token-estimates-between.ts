@@ -12,6 +12,10 @@ export function sumTokenEstimatesBetween(
   return total;
 }
 
+/** 16K 신규-write admission guard용 합산. 이미지 토큰은 의도적으로 제외한다 —
+ *  이미지 추정은 크기 미상 시 0으로 떨어지는 등 불확실성이 커서(fingerprint-message 참고),
+ *  guard 판정은 텍스트 하한 기준으로만 동작시킨다. 이미지가 큰 프리픽스는 실제 write가
+ *  16K를 넘어도 즉시 admission될 수 있음을 감수한 트레이드오프다. */
 export function sumTextTokenEstimatesBetween(
   fingerprints: readonly MessageFingerprint[],
   leftAnchorIndex: number,

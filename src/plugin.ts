@@ -169,51 +169,53 @@ async function requestLLMGateway(
   const serviceTier = resolveServiceTier(config[SERVICE_TIER_ARGUMENT]);
   const reasoningEffort = resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
   const verbosity = resolveVerbosity(config[VERBOSITY_ARGUMENT]);
-  const messages = toLlmMessages(providerArguments.prompt_chat);
-  const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
-
-  const extraBody: OpenAIChatCompletionsExtraBody = {
-    ...cacheRequest.cacheExtraBody,
-    ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
-    // RisuAI 본체는 custom provider 인자를 고정 목록으로 만들어 이 두 값을 전달하지 않는다.
-    // 따라서 플러그인 인자가 Chat Completions body로 보낼 수 있는 유일한 경로다.
-    ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
-    ...(verbosity === undefined ? {} : { verbosity }),
-    // RisuAI가 이미 /100 스케일링한 값이므로 변환 없이 전달한다.
-    ...(providerArguments.frequency_penalty === undefined
-      ? {}
-      : { frequency_penalty: providerArguments.frequency_penalty }),
-    ...(providerArguments.presence_penalty === undefined
-      ? {}
-      : { presence_penalty: providerArguments.presence_penalty }),
-    ...(streamingMode === 'off' ? {} : { stream_options: { include_usage: true } }),
-  };
-  // 설정 편집기의 커스텀 body(JSON)를 요청 직전에 deep merge한다 — 겹치는 필드는 커스텀이
-  // 우선하고, invalid JSON이면 이번 요청에서는 통째로 무시된다 (extra-body.ts 계약)
-  const requestExtraBody = applyCustomExtraBody(extraBody, config[EXTRA_BODY_ARGUMENT]);
-  const gatewayClient: GatewayClient = new Llm({
-    format: new OpenAIChatCompletionsFormat({ model, extraBody: requestExtraBody }),
-    // 엔드포인트는 llm-io 기본값(공식 llmgateway.io)으로 고정한다. 인자로 열어두면
-    // 타 플러그인이 v2 setArg로 바꿔칠 수 있어 api_key가 임의 주소로 전송될 수 있다.
-    provider: new LLMGatewayProvider({ apiKey }),
-    // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
-    // RisuAI 브릿지를 경유한다. transferable streams 미지원 브라우저(Safari 26 이하)는
-    // nativeFetch의 Response 전달이 실패하므로 risuFetch 폴백 경로를 쓴다.
-    fetch: createBridgeFetch(),
-  });
-  const requestOptions: LlmRequestOptions = {
-    maxTokens: providerArguments.max_tokens,
-    temperature: providerArguments.temperature,
-    topP: providerArguments.top_p,
-  };
-  const context: GatewayRequestContext = {
-    abortSignal,
-    gatewayClient,
-    messages: cacheRequest.requestMessages,
-    requestOptions,
-  };
-
+  // 메시지 변환·커스텀 body 병합 예외(미지원 미디어, 초심층 JSON 등)도 promise reject가
+  // 아니라 provider 실패 응답({success:false})으로 수렴해야 RisuAI가 처리할 수 있다
   try {
+    const messages = toLlmMessages(providerArguments.prompt_chat);
+    const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
+
+    const extraBody: OpenAIChatCompletionsExtraBody = {
+      ...cacheRequest.cacheExtraBody,
+      ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
+      // RisuAI 본체는 custom provider 인자를 고정 목록으로 만들어 이 두 값을 전달하지 않는다.
+      // 따라서 플러그인 인자가 Chat Completions body로 보낼 수 있는 유일한 경로다.
+      ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+      ...(verbosity === undefined ? {} : { verbosity }),
+      // RisuAI가 이미 /100 스케일링한 값이므로 변환 없이 전달한다.
+      ...(providerArguments.frequency_penalty === undefined
+        ? {}
+        : { frequency_penalty: providerArguments.frequency_penalty }),
+      ...(providerArguments.presence_penalty === undefined
+        ? {}
+        : { presence_penalty: providerArguments.presence_penalty }),
+      ...(streamingMode === 'off' ? {} : { stream_options: { include_usage: true } }),
+    };
+    // 설정 편집기의 커스텀 body(JSON)를 요청 직전에 deep merge한다 — 겹치는 필드는 커스텀이
+    // 우선하고, invalid JSON이면 이번 요청에서는 통째로 무시된다 (extra-body.ts 계약)
+    const requestExtraBody = applyCustomExtraBody(extraBody, config[EXTRA_BODY_ARGUMENT]);
+    const gatewayClient: GatewayClient = new Llm({
+      format: new OpenAIChatCompletionsFormat({ model, extraBody: requestExtraBody }),
+      // 엔드포인트는 llm-io 기본값(공식 llmgateway.io)으로 고정한다. 인자로 열어두면
+      // 타 플러그인이 v2 setArg로 바꿔칠 수 있어 api_key가 임의 주소로 전송될 수 있다.
+      provider: new LLMGatewayProvider({ apiKey }),
+      // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
+      // RisuAI 브릿지를 경유한다. transferable streams 미지원 브라우저(Safari 26 이하)는
+      // nativeFetch의 Response 전달이 실패하므로 risuFetch 폴백 경로를 쓴다.
+      fetch: createBridgeFetch(),
+    });
+    const requestOptions: LlmRequestOptions = {
+      maxTokens: providerArguments.max_tokens,
+      temperature: providerArguments.temperature,
+      topP: providerArguments.top_p,
+    };
+    const context: GatewayRequestContext = {
+      abortSignal,
+      gatewayClient,
+      messages: cacheRequest.requestMessages,
+      requestOptions,
+    };
+
     if (streamingMode === 'decoupled') {
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
       const result = await consumeGatewayStream(context);
