@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'preact/hooks';
 import {
   createJsonEditorCore,
   gpt56ChatCompletionsRequestSchema,
+  gpt56ExcludedKeyMessages,
 } from '../../../../../json-editor';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS } from '../../../constants';
 import { persistSetting } from '../../../../utils/persistence';
@@ -22,7 +23,11 @@ export function RequestBodyField() {
   const persistTimerRef = useRef<number | undefined>(undefined);
 
   const core = useMemo(
-    () => createJsonEditorCore({ schema: gpt56ChatCompletionsRequestSchema }),
+    () =>
+      createJsonEditorCore({
+        schema: gpt56ChatCompletionsRequestSchema,
+        unrecognizedKeyMessages: gpt56ExcludedKeyMessages,
+      }),
     [],
   );
   // 빈 초안은 기능이 꺼진 상태이므로 진단하지 않는다

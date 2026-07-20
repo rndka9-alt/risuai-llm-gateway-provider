@@ -7,6 +7,11 @@ import * as z from 'zod';
 // 있는 요청만 허용한다 — 조용히 유실되는 필드(max_completion_tokens, stream_options 등)와
 // no-op(n:1, routing 등)은 의도적으로 제외. 근거: llmgateway 공개 계약·모델 카탈로그와
 // gpt-5.6-sol 실측(reasoning_effort minimal→400, max→200). 조사 2026-07-20.
+//
+// 플러그인이 소유·자동 부여하는 필드(stream, prompt_cache_key, prompt_cache_options)도
+// 세트에서 제외한다 — stream은 응답 파서 모드와, prompt_cache_*는 캐시 planner 상태와
+// 결합되어 있어 커스텀 body로 덮으면 탈동기된다. 에디터가 '정의되지 않은 키' 워닝으로
+// 귀띔하되 병합 자체는 막지 않는다 (messages는 breakpoint 실험을 위해 세트에 남긴다).
 
 const JsonObjectSchema = z.record(z.string(), z.json());
 
@@ -154,11 +159,6 @@ const ResponseFormatSchema = z.union([
 // "minimal"은 GPT-5.6 upstream에서 400으로 거절된다 (gpt-5.6-sol 실측) — 의도적으로 제외
 const ReasoningEffortSchema = z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
 
-const PromptCacheOptionsSchema = z.strictObject({
-  mode: z.enum(['implicit', 'explicit']).optional(),
-  ttl: z.enum(['30m']).optional(),
-});
-
 const GatewayPluginSchema = z.strictObject({
   id: z.enum(['response-healing']),
 });
@@ -230,12 +230,6 @@ export const gpt56ChatCompletionsRequestSchema = z
       '출력 형식. json_schema는 Structured Outputs (schema 필수)',
     ).optional(),
 
-    // stream:true면 Gateway가 usage 포함 stream option을 자체 생성한다 (stream_options 불필요)
-    stream: z
-      .boolean()
-      .describe('SSE 스트리밍 여부. usage 옵션은 Gateway가 자체 생성해요')
-      .optional(),
-
     tools: z
       .array(ToolSchema)
       .min(1)
@@ -244,15 +238,6 @@ export const gpt56ChatCompletionsRequestSchema = z
       .optional(),
     tool_choice: ToolChoiceSchema.describe('도구 선택 전략 (기본: tools 있으면 auto)').optional(),
     web_search: z.boolean().describe('true면 Gateway가 web-search 도구로 변환해요').optional(),
-
-    prompt_cache_key: z
-      .string()
-      .min(1)
-      .describe('프롬프트 캐시 키. Gateway가 해시해 전달하고 sticky routing에도 써요')
-      .optional(),
-    prompt_cache_options: PromptCacheOptionsSchema.describe(
-      '캐시 모드/TTL. breakpoint를 쓰려면 mode: explicit이 필요해요',
-    ).optional(),
 
     // OpenAI의 "scale"은 Gateway 계약에 없다
     service_tier: z
@@ -339,3 +324,12 @@ export const gpt56ChatCompletionsRequestSchema = z
   });
 
 export type Gpt56ChatCompletionsRequest = z.infer<typeof gpt56ChatCompletionsRequestSchema>;
+
+/** 의도적으로 세트에서 뺀 키의 에디터 안내 문구 — "정의되지 않은 키" 대신 대체 수단을 알려준다 */
+export const gpt56ExcludedKeyMessages: Record<string, string> = {
+  stream: '스트리밍 여부는 플러그인의 응답 방식 설정으로 조절해주세요',
+  stream_options: '스트리밍 usage 옵션은 플러그인이 자동으로 부여해요',
+  prompt_cache_key: '캐시 키는 플러그인의 프롬프트 캐시 설정이 자동 관리해요',
+  prompt_cache_options: '캐시 모드·TTL은 플러그인의 프롬프트 캐시 설정이 자동 관리해요',
+  max_completion_tokens: 'Gateway가 받지 않는 이름이에요 — max_tokens를 사용해주세요',
+};

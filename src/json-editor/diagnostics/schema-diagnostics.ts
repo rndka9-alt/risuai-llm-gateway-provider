@@ -36,6 +36,7 @@ export function schemaDiagnostics(
   schema: ZodType,
   root: Node,
   textIndex: TextIndex,
+  unrecognizedKeyMessages?: Record<string, string>,
 ): JsonDiagnostic[] {
   const result = schema.safeParse(getNodeValue(root));
   if (result.success) return [];
@@ -52,7 +53,10 @@ export function schemaDiagnostics(
         const keyNode = propertyKeyNode(objectNode, key) ?? objectNode;
         return {
           range: textIndex.rangeAt(keyNode.offset, keyNode.length),
-          message: `${formatPath([...path, key])}: 스키마에 정의되지 않은 키예요`,
+          // 의도적으로 세트에서 뺀 키는 "정의 안 됨"이 아니라 대체 수단을 안내한다
+          message: `${formatPath([...path, key])}: ${
+            unrecognizedKeyMessages?.[key] ?? '스키마에 정의되지 않은 키예요'
+          }`,
           // 스키마는 강제 규칙이 아닌 '권장 세트'이므로, 구문 오류와 달리 warning으로 낮춘다
           severity: 'warning',
           source: 'schema',

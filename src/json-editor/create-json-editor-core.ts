@@ -12,6 +12,9 @@ export interface JsonEditorCoreOptions {
   /** 필드명·enum 자동완성과 값 검증의 단일 소스.
    *  zod 스키마 하나에서 JSON Schema(자동완성용)와 safeParse(검증용)를 모두 파생한다 */
   schema: z.ZodType;
+  /** 의도적으로 세트에서 뺀 키의 안내 문구 (키 이름 → 문구).
+   *  해당 키의 진단이 "정의되지 않은 키" 대신 이 문구로 표시된다 */
+  unrecognizedKeyMessages?: Record<string, string>;
 }
 
 export function createJsonEditorCore(options: JsonEditorCoreOptions): JsonEditorCore {
@@ -30,7 +33,14 @@ export function createJsonEditorCore(options: JsonEditorCoreOptions): JsonEditor
       if (errors.length > 0 || !root) {
         return { diagnostics: syntaxDiagnostics(errors, textIndex) };
       }
-      return { diagnostics: schemaDiagnostics(options.schema, root, textIndex) };
+      return {
+        diagnostics: schemaDiagnostics(
+          options.schema,
+          root,
+          textIndex,
+          options.unrecognizedKeyMessages,
+        ),
+      };
     },
     breadcrumbAt,
     completionsAt: completionProvider.completionsAt,

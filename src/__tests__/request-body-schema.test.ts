@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createJsonEditorCore, gpt56ChatCompletionsRequestSchema } from '../json-editor';
+import {
+  createJsonEditorCore,
+  gpt56ChatCompletionsRequestSchema,
+  gpt56ExcludedKeyMessages,
+} from '../json-editor';
 
 const validBody = {
   model: 'gpt-5.6-sol',
@@ -56,9 +60,23 @@ describe('gpt56ChatCompletionsRequestSchema', () => {
     const result = gpt56ChatCompletionsRequestSchema.safeParse({
       model: 'gpt-5.6-sol',
       messages: [{ role: 'user', content: [1, 2, 3, 4, 5].map((n) => breakpointPart(`m${n}`)) }],
-      prompt_cache_options: { mode: 'explicit' },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('플러그인 소유 필드(stream, prompt_cache_*)는 세트에서 빠져 정의되지 않은 키 워닝이 된다', () => {
+    const pluginOwnedBodies = [
+      { ...validBody, stream: true },
+      { ...validBody, prompt_cache_key: 'key' },
+      { ...validBody, prompt_cache_options: { mode: 'explicit' } },
+    ];
+    for (const body of pluginOwnedBodies) {
+      const result = gpt56ChatCompletionsRequestSchema.safeParse(body);
+      expect(result.success).toBe(false);
+      expect(
+        !result.success && result.error.issues.some((issue) => issue.code === 'unrecognized_keys'),
+      ).toBe(true);
+    }
   });
 
   it('breakpoint만 있는 부분 body는 통과한다 — explicit 모드는 플러그인 캐시 설정이 채운다', () => {
@@ -75,7 +93,17 @@ describe('gpt56ChatCompletionsRequestSchema', () => {
 });
 
 describe('json-editor 통합', () => {
-  const core = createJsonEditorCore({ schema: gpt56ChatCompletionsRequestSchema });
+  const core = createJsonEditorCore({
+    schema: gpt56ChatCompletionsRequestSchema,
+    unrecognizedKeyMessages: gpt56ExcludedKeyMessages,
+  });
+
+  it('플러그인 소유 키에는 정의되지 않은 키 대신 대체 수단 안내가 뜬다', () => {
+    const { diagnostics } = core.analyze(JSON.stringify({ ...validBody, stream: true }, null, 2));
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].message).toContain('응답 방식 설정');
+    expect(diagnostics[0].severity).toBe('warning');
+  });
 
   it('빈 body에서 최상위 필드 자동완성을 제안한다', async () => {
     const completions = await core.completionsAt('{\n  \n}', 4);
