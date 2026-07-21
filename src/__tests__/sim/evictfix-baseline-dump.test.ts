@@ -31,7 +31,7 @@ describe('evictfix baseline dump', () => {
     });
 
     const suites = [
-      ['golden-25', createGoldenTrajectories()],
+      ['golden-27', createGoldenTrajectories()],
       ['neutral-authored', createAuthoredTrajectories().map((entry) => entry.trajectory)],
       ['neutral-procedural', createProceduralTrajectories()],
       ['append-sweep', createAppendSweepTrajectories(SWEEP_TURN_COUNTS)],

@@ -27,7 +27,13 @@ export function planCacheAnchors(
   messages: readonly LlmMessage[],
 ): CachePlan {
   const fingerprints = messages.map(fingerprintMessage);
+  return planCacheAnchorsFromFingerprints(previousState, fingerprints);
+}
 
+export function planCacheAnchorsFromFingerprints(
+  previousState: CacheAnchorState | null,
+  fingerprints: MessageFingerprint[],
+): CachePlan {
   if (previousState === null || previousState.fingerprints.length === 0) {
     return createFirstTurnPlan(fingerprints);
   }
@@ -38,9 +44,7 @@ export function planCacheAnchors(
   // 공통 프리픽스가 전혀 없으면 다른 채팅방/캐릭터로의 전면 교체다 — 이전
   // 상태를 승계하면 무의미한 폴백 앵커가 남으므로 새 epoch(첫 턴)으로 처리한다.
   if (prefixLength === 0) {
-    // fingerprints를 새 epoch 값으로 갈아끼워도 연속 실패 횟수는 이어가야
-    // 매턴 변하는 선두 프리셋을 감지할 수 있다.
-    return createFirstTurnPlan(fingerprints, previousState.consecutiveEpochResets + 1);
+    return createFirstTurnPlan(fingerprints);
   }
 
   const suffixLength = commonSuffixLength(previous, fingerprints, prefixLength);

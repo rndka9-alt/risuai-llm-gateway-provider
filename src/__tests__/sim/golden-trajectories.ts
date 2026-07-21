@@ -507,10 +507,9 @@ function createTrimSaturationTrajectory(): GoldenTrajectory {
 }
 
 // 블라인드 사용 일지(모듈 수집가·모바일 라이트) 번역: 방 3개를 한 프리셋으로
-// 순환하는 실사용 타임라인. 플러그인의 anchor state는 전역 단일 슬롯이라 방
-// 전환마다 직전 방 fingerprint와 diff되어, 서버에 이전 방문의 entry가 살아
-// 있어도(30m 내 복귀) 그 경계에 marker를 다시 찍지 못해 exact 매칭 히트를
-// 놓친다 — per-chat anchor state 분리의 손익 근거를 측정한다.
+// 순환하는 실사용 타임라인. 공유 헤더 때문에 최장 프리픽스만으로는 다른 방을
+// 우연 채택하지만, frontier보다 얕은 이질 전이는 새 그룹으로 fork되어 원본
+// fingerprint를 보존한다. TTL 내 왕복에서 양쪽 marker가 살아나는지 측정한다.
 function createMultiRoomRoundRobinTrajectory(): GoldenTrajectory {
   const sharedMain = makeMessage('system', makeBlock('mrr-shared-main', 2_480));
   const sharedPersona = makeMessage('user', makeBlock('mrr-shared-persona', 360));
@@ -583,10 +582,119 @@ function createMultiRoomRoundRobinTrajectory(): GoldenTrajectory {
   };
 }
 
+// 첫 fingerprint가 서로 다른 세 방을 TTL 안에서 A→B→C로 반복 방문한다.
+// 단일 슬롯은 매 요청 cold epoch가 되지만 content-addressed bank는 두 번째
+// 방문부터 각 방의 frontier·admission을 이어받고 세 번째 방문부터 read한다.
+function createContentAddressedRoundRobinTrajectory(): GoldenTrajectory {
+  const rooms: Array<{
+    head: LlmMessage;
+    lorebook: LlmMessage;
+    persona: LlmMessage;
+    room: string;
+    turns: LlmMessage[];
+  }> = ['A', 'B', 'C'].map((room) => ({
+    head: makeMessage('system', makeBlock(`car-${room}-head`, 6_000)),
+    persona: makeMessage('user', makeBlock(`car-${room}-persona`, 1_000)),
+    lorebook: makeMessage('system', makeBlock(`car-${room}-lorebook`, 2_500)),
+    room,
+    turns: [],
+  }));
+  const requests: TrajectoryRequest[] = [];
+  let requestNumber = 0;
+
+  for (let cycle = 1; cycle <= 4; cycle += 1) {
+    for (const room of rooms) {
+      requestNumber += 1;
+      const input = makeMessage('user', makeBlock(`car-${room.room}-input-${cycle}`, 180));
+      requests.push(
+        request(
+          [room.head, room.persona, room.lorebook, ...room.turns, input],
+          requestNumber === 1 ? 0 : 2,
+        ),
+      );
+      room.turns.push(
+        input,
+        makeMessage('assistant', makeBlock(`car-${room.room}-reply-${cycle}`, 1_500)),
+      );
+    }
+  }
+
+  return {
+    id: '21-content-addressed-roundrobin',
+    label: 'distinct-prefix rooms in strict A-B-C rotation within TTL',
+    requests,
+  };
+}
+
+// 큰 프롬프트지만 첫 관찰이라 admission되지 않는 churn 그룹과, 이미 4BP로
+// 성숙한 정상 방을 교차한다. 두 번의 churn miss마다 정상 방 매치가 전역 miss
+// 카운터를 지워 백오프는 발동하지 않는다. 16칸 포화 뒤에는 얕은 churn 그룹이
+// 먼저 축출돼 정상 방 상태가 남아야 한다. 복귀는 매번 append하며, 활성 방은
+// 30분 안팎을 섞고 장기 미접근 방은 TTL 만료 뒤 돌아와 state 보존과 gateway
+// entry 생존을 구분한다.
+function createCrossChurnEvictionTrajectory(): GoldenTrajectory {
+  interface NormalRoom {
+    head: LlmMessage;
+    id: 'B' | 'C';
+    turns: LlmMessage[];
+  }
+
+  const normalRooms: NormalRoom[] = (['B', 'C'] as const).map((roomId) => ({
+    head: makeMessage('system', makeBlock(`cross-${roomId}-head`, 6_000)),
+    id: roomId,
+    turns: [],
+  }));
+  const requests: TrajectoryRequest[] = [];
+  const appendRoomRequest = (room: NormalRoom, turn: number, elapsedMinutes: number): void => {
+    const input = makeMessage('user', makeBlock(`cross-${room.id}-input-${turn}`, 180));
+    requests.push(request([room.head, ...room.turns, input], elapsedMinutes));
+    room.turns.push(
+      input,
+      makeMessage('assistant', makeBlock(`cross-${room.id}-reply-${turn}`, 1_500)),
+    );
+  };
+
+  for (const room of normalRooms) {
+    for (let turn = 1; turn <= 5; turn += 1) appendRoomRequest(room, turn, turn === 1 ? 0 : 2);
+  }
+
+  const activeRoom = normalRooms[0];
+  const longIdleRoom = normalRooms[1];
+  if (activeRoom === undefined || longIdleRoom === undefined) {
+    throw new Error('Cross-churn trajectory requires two normal rooms.');
+  }
+  let activeTurn = 6;
+  for (let churn = 1; churn <= 15; churn += 1) {
+    requests.push(
+      request(
+        [
+          makeMessage('system', makeBlock(`cross-A-churn-${churn}`, 400)),
+          makeMessage('user', `Cross churn input ${churn}.`),
+        ],
+        churn === 9 ? 31 : 2,
+      ),
+    );
+    if (churn % 2 === 0 || churn === 15) {
+      appendRoomRequest(activeRoom, activeTurn, 1);
+      activeTurn += 1;
+    }
+  }
+
+  appendRoomRequest(longIdleRoom, 6, 31);
+
+  return {
+    id: '22-cross-churn-eviction',
+    label: 'interleaved churn evicts shallow groups while TTL governs room returns',
+    requests,
+  };
+}
+
 // 블라인드 사용 일지(그룹챗 유저) 번역: 응답 캐릭터마다 description·캐릭터
 // 로어북 블록(#1·#3)이 교체되는 그룹챗. 한 유저 턴에 캐릭터 2명이 순차
 // 응답하며 각 응답이 별도 요청이다. 프리픽스 초입이 요청마다 바뀌어 공통
 // 프리픽스가 main(185tok, sub-1024)뿐인 요청이 대부분 — 13번보다 얕은 변동.
+// 그룹챗은 실사용 빈도가 매우 낮으므로 중요도·우선순위·임팩트를 낮게 취급하고,
+// 멀티룸 지표를 해석할 때도 이 시나리오의 가중치를 낮춰 본다.
 function createGroupSpeakerRotationTrajectory(): GoldenTrajectory {
   const main = makeMessage('system', makeBlock('gsr-main', 742));
   const persona = makeMessage('user', makeBlock('gsr-persona', 486));
@@ -826,6 +934,8 @@ const REALISTIC_SCALE_PROFILES = new Map<string, RealisticScaleProfile>([
   ['18-suppressed-frontier-branch-boundary', profile(50_000, 'penultimate')],
   ['19-large-stable-prefix-admission', profile(60_000)],
   ['20-large-prefix-invalidated-after-admission', profile(60_000)],
+  ['21-content-addressed-roundrobin', profile(50_000)],
+  ['22-cross-churn-eviction', profile(35_000)],
 ]);
 
 function profile(
@@ -963,6 +1073,8 @@ export function createGoldenTrajectories(): readonly GoldenTrajectory[] {
     createSuppressedFrontierBranchBoundaryTrajectory(),
     createLargeStablePrefixAdmissionTrajectory(),
     createLargeStablePrefixInvalidatedAfterAdmissionTrajectory(),
+    createContentAddressedRoundRobinTrajectory(),
+    createCrossChurnEvictionTrajectory(),
   ];
   return trajectories.map(scaleGoldenTrajectory);
 }

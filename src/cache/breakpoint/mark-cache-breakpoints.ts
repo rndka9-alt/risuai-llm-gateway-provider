@@ -5,10 +5,14 @@ import { markBreakpoint } from './utils/mark-breakpoint';
 import { passesMinimumPrefixTokens } from './utils/passes-minimum-prefix-tokens';
 import { toMarkableIndex } from './utils/to-markable-index';
 
-export function markCacheBreakpoints(messages: LlmMessage[], plan: CachePlan): LlmMessage[] {
-  if (isCacheBackoffActive(plan.nextState)) {
-    // 연속 epoch 리셋 중에는 쓰기 프리미엄 손실을 실시간 차단하되, plan의 diff
-    // 상태는 계속 저장해 안정 프리픽스가 돌아온 즉시 자동 복구한다.
+export function markCacheBreakpoints(
+  messages: LlmMessage[],
+  plan: CachePlan,
+  consecutiveBankMisses = 0,
+): LlmMessage[] {
+  if (isCacheBackoffActive(consecutiveBankMisses)) {
+    // 연속 bank miss 중에는 쓰기 프리미엄 손실을 실시간 차단하되, 새 상태는
+    // 계속 저장해 안정 프리픽스가 돌아온 즉시 자동 복구한다.
     return messages;
   }
 

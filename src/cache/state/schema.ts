@@ -30,7 +30,6 @@ export const cacheAnchorStateSchema = z
     // 기존 앵커를 곧바로 admitted로 간주하면 업데이트 직후 미검증 write가 다시
     // 발생할 수 있어, 두 번의 생존 확인을 새로 거친다.
     anchorAdmissions: z.array(anchorAdmissionSchema).max(4).default([]),
-    consecutiveEpochResets: z.number().int().nonnegative().default(0),
     // 위치 판별형 2-strike의 frontier 연속 사망 횟수. 구버전 상태는 필드가
     // 없으므로 0으로 마이그레이션하고, 구버전으로 롤백하면 소실 후 0에서
     // 재시작한다(안전 리셋). 성공 응답 후에만 commit되는 anchor state에 실려

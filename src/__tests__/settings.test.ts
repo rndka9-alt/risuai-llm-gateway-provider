@@ -2,7 +2,7 @@
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
+import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache/constants';
 import { PRESET_SCHEMES } from '../constants';
 import { CACHE_LEDGER_STORAGE_KEY, accumulateCacheUsage, createEmptyCacheLedger } from '../ledger';
 import {
@@ -698,15 +698,15 @@ describe('settings UI', () => {
       readTokens: 10_000,
       writeTokens: 4_000,
     };
-    const anchorState = {
-      anchorIndexes: [],
-      consecutiveEpochResets: 3,
-      fingerprints: [],
+    const anchorBankIndex = {
+      version: 1,
+      consecutiveBankMisses: 3,
+      lruSlots: [],
     };
     const harness = await renderSettingsUi(
       {},
       {
-        [CACHE_ANCHOR_STATE_STORAGE_KEY]: JSON.stringify(anchorState),
+        [CACHE_ANCHOR_STATE_STORAGE_KEY]: JSON.stringify(anchorBankIndex),
         [CACHE_LEDGER_STORAGE_KEY]: JSON.stringify(ledger),
       },
     );

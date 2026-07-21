@@ -5,17 +5,15 @@ import {
 } from '../../cache/constants';
 import { sumTextTokenEstimatesBetween } from '../../cache/planner/utils/sum-token-estimates-between';
 import type { AnchorAdmission } from '../../cache/state/schema';
-import {
-  fingerprintMessage,
-  getPromptCacheKey,
-  loadCacheAnchorState,
-  markCacheBreakpoints,
-  planCacheAnchors,
-  saveCacheAnchorState,
-  type CacheAnchorState,
-  type CachePlan,
-  type MessageFingerprint,
-} from '../../cache';
+import { commitPromptCacheState, preparePromptCacheRequest } from '../../cache';
+import { markCacheBreakpoints } from '../../cache/breakpoint/mark-cache-breakpoints';
+import { getPromptCacheKey } from '../../cache/mode/get-prompt-cache-key';
+import { fingerprintMessage } from '../../cache/planner/fingerprint-message';
+import { planCacheAnchors } from '../../cache/planner/plan-cache-anchors';
+import { loadCacheAnchorState } from '../../cache/state/load-cache-anchor-state';
+import { saveCacheAnchorState } from '../../cache/state/save-cache-anchor-state';
+import type { CacheAnchorState, MessageFingerprint } from '../../cache/state/schema';
+import type { CachePlan } from '../../cache/types';
 
 export interface CachePolicyDecision {
   anchorIndexes: readonly number[];
@@ -46,12 +44,39 @@ export function commonFingerprintPrefixLength(
   return length;
 }
 
-function createDecision(plan: CachePlan, messages: readonly LlmMessage[]): CachePolicyDecision {
+function createDecision(
+  plan: CachePlan,
+  messages: readonly LlmMessage[],
+  consecutiveEpochResets: number,
+): CachePolicyDecision {
   return {
     anchorIndexes: plan.anchorIndexes,
-    consecutiveEpochResets: plan.nextState.consecutiveEpochResets,
+    consecutiveEpochResets,
     messages,
     promptCacheKey: getPromptCacheKey('explicit'),
+  };
+}
+
+function createLegacyEpochResetTracker(): {
+  update(
+    previousState: CacheAnchorState | null,
+    currentFingerprints: readonly MessageFingerprint[],
+  ): number;
+} {
+  let consecutiveEpochResets = 0;
+  return {
+    update(previousState, currentFingerprints) {
+      if (previousState === null || previousState.fingerprints.length === 0) {
+        consecutiveEpochResets = 0;
+      } else {
+        const prefixLength = commonFingerprintPrefixLength(
+          previousState.fingerprints,
+          currentFingerprints,
+        );
+        consecutiveEpochResets = prefixLength === 0 ? consecutiveEpochResets + 1 : 0;
+      }
+      return consecutiveEpochResets;
+    },
   };
 }
 
@@ -171,19 +196,28 @@ function createHistoricalHardCappedPolicy(options: {
   name: 'selective-hard-cap' | 'validated-all';
   validateEveryCandidate: boolean;
 }): ReplayCachePolicy {
+  const epochResetTracker = createLegacyEpochResetTracker();
   return {
     name: options.name,
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
+      const consecutiveEpochResets = epochResetTracker.update(
+        previousState,
+        messages.map(fingerprintMessage),
+      );
       const plan = planCacheAnchors(previousState, messages);
       const historicalPlan = createHistoricalHardCappedPlan(
         previousState,
         plan,
         options.validateEveryCandidate,
       );
-      const markedMessages = markCacheBreakpoints([...messages], historicalPlan);
+      const markedMessages = markCacheBreakpoints(
+        [...messages],
+        historicalPlan,
+        consecutiveEpochResets,
+      );
       await saveCacheAnchorState(historicalPlan.nextState);
-      return createDecision(historicalPlan, markedMessages);
+      return createDecision(historicalPlan, markedMessages, consecutiveEpochResets);
     },
   };
 }
@@ -225,12 +259,14 @@ interface AdaptiveTwoStrikeOptions {
 function createAdaptiveTwoStrikePolicy(options: AdaptiveTwoStrikeOptions): ReplayCachePolicy {
   let consecutiveFrontierDeaths = 0;
   let monitorFrontier = false;
+  const epochResetTracker = createLegacyEpochResetTracker();
 
   return {
     name: options.name,
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
       const currentFingerprints = messages.map(fingerprintMessage);
+      const consecutiveEpochResets = epochResetTracker.update(previousState, currentFingerprints);
       let prefixLength = 0;
 
       if (previousState === null) {
@@ -267,9 +303,13 @@ function createAdaptiveTwoStrikePolicy(options: AdaptiveTwoStrikeOptions): Repla
         currentFingerprints,
         monitorFrontier,
       );
-      const markedMessages = markCacheBreakpoints([...messages], markingPlan);
+      const markedMessages = markCacheBreakpoints(
+        [...messages],
+        markingPlan,
+        consecutiveEpochResets,
+      );
       await saveCacheAnchorState(plan.nextState);
-      return createDecision(plan, markedMessages);
+      return createDecision(plan, markedMessages, consecutiveEpochResets);
     },
   };
 }
@@ -278,41 +318,61 @@ export function createProductionCachePolicy(): ReplayCachePolicy {
   return {
     name: 'production',
     async apply(messages) {
-      const previousState = await loadCacheAnchorState();
-      const plan = planCacheAnchors(previousState, messages);
-      const markedMessages = markCacheBreakpoints([...messages], plan);
-      await saveCacheAnchorState(plan.nextState);
-      return createDecision(plan, markedMessages);
+      const prepared = await preparePromptCacheRequest([...messages], 'explicit');
+      if (prepared.pendingCommit === null) {
+        throw new Error('Production cache policy must prepare a bank commit.');
+      }
+      await commitPromptCacheState(prepared.pendingCommit);
+      return {
+        anchorIndexes: [],
+        consecutiveEpochResets: 0,
+        messages: prepared.requestMessages,
+        promptCacheKey: getPromptCacheKey('explicit'),
+      };
     },
   };
 }
 
 export function createTwoSurvivalProductionCachePolicy(): ReplayCachePolicy {
+  const epochResetTracker = createLegacyEpochResetTracker();
   return {
     name: 'production-two-survival',
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
+      const consecutiveEpochResets = epochResetTracker.update(
+        previousState,
+        messages.map(fingerprintMessage),
+      );
       const plan = createTwoSurvivalProductionPlan(
         previousState,
         planCacheAnchors(previousState, messages),
       );
-      const markedMessages = markCacheBreakpoints([...messages], plan);
+      const markedMessages = markCacheBreakpoints([...messages], plan, consecutiveEpochResets);
       await saveCacheAnchorState(plan.nextState);
-      return createDecision(plan, markedMessages);
+      return createDecision(plan, markedMessages, consecutiveEpochResets);
     },
   };
 }
 
 export function createLegacyProductionCachePolicy(): ReplayCachePolicy {
+  const epochResetTracker = createLegacyEpochResetTracker();
   return {
     name: 'legacy-production',
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
+      const consecutiveEpochResets = epochResetTracker.update(
+        previousState,
+        messages.map(fingerprintMessage),
+      );
       const plan = planCacheAnchors(previousState, messages);
       const legacyPlan = createLegacyProductionPlan(plan);
-      const markedMessages = markCacheBreakpoints([...messages], legacyPlan);
+      const markedMessages = markCacheBreakpoints(
+        [...messages],
+        legacyPlan,
+        consecutiveEpochResets,
+      );
       await saveCacheAnchorState(plan.nextState);
-      return createDecision(plan, markedMessages);
+      return createDecision(plan, markedMessages, consecutiveEpochResets);
     },
   };
 }
@@ -346,11 +406,13 @@ export function createAdaptiveTwoStrikeRerollAwareCachePolicy(): ReplayCachePoli
 }
 
 export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
+  const epochResetTracker = createLegacyEpochResetTracker();
   return {
     name: 'first-turn-safe',
     async apply(messages) {
       const previousState = await loadCacheAnchorState();
       const currentFingerprints = messages.map(fingerprintMessage);
+      const consecutiveEpochResets = epochResetTracker.update(previousState, currentFingerprints);
       const prefixLength =
         previousState === null
           ? 0
@@ -360,9 +422,9 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
       const markedMessages =
         previousState === null || prefixLength === 0
           ? [...messages]
-          : markCacheBreakpoints([...messages], legacyPlan);
+          : markCacheBreakpoints([...messages], legacyPlan, consecutiveEpochResets);
       await saveCacheAnchorState(plan.nextState);
-      return createDecision(plan, markedMessages);
+      return createDecision(plan, markedMessages, consecutiveEpochResets);
     },
   };
 }

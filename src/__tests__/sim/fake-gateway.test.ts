@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OpenAIChatCompletionsFormat, type JsonObject, type LlmMessage } from 'llm-io';
-import { markCacheBreakpoints, planCacheAnchors } from '../../cache';
+import { markCacheBreakpoints } from '../../cache/breakpoint/mark-cache-breakpoints';
+import { planCacheAnchors } from '../../cache/planner/plan-cache-anchors';
 import { createFakeGatewayKernel } from './fake-gateway';
 
 function createMarkedSystemMessage(segments: readonly string[]): LlmMessage {

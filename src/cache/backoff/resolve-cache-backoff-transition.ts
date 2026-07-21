@@ -1,13 +1,12 @@
-import type { CacheAnchorState } from '../state/schema';
 import type { CacheBackoffTransition } from '../types';
 import { isCacheBackoffActive } from './is-cache-backoff-active';
 
 export function resolveCacheBackoffTransition(
-  previousState: CacheAnchorState | null,
-  nextState: CacheAnchorState,
+  previousConsecutiveBankMisses: number,
+  nextConsecutiveBankMisses: number,
 ): CacheBackoffTransition | null {
-  const wasActive = isCacheBackoffActive(previousState);
-  const isActive = isCacheBackoffActive(nextState);
+  const wasActive = isCacheBackoffActive(previousConsecutiveBankMisses);
+  const isActive = isCacheBackoffActive(nextConsecutiveBankMisses);
   if (wasActive === isActive) return null;
   return isActive ? 'activated' : 'released';
 }

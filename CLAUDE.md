@@ -64,12 +64,20 @@ npm test
 - `types/risuai-legacy.d.ts` — 본체 d.ts에 없는 deprecated `risuFetch` 선언 (Safari 폴백 전용,
   본체 제거 가능성 때문에 optional로 선언해 존재 확인을 강제)
 
-## breakpoint 자동 배치 (cache.ts)
+## breakpoint 자동 배치 (`src/cache/`)
 
 - 조립된 messages만으론 로어북/채팅 경계를 알 수 없어 **직전 요청과의 양끝 diff**
   (메시지 단위 공통 프리픽스+서픽스)로 삽입 구간을 찾고, 그 끝에 frontier BP를 찍는다.
   공통 서픽스(후행 블록)는 매턴 위치가 밀려 캐시 불가 — 캐시에 태우지 않는다.
-- 첫 턴/새 epoch: 마지막 user 롤 직전을 frontier로 잡는다. 공통 프리픽스 0(채팅방 전환)이면 epoch 리셋.
+- `src/cache/state/bank/select-cache-anchor-bank-state.ts`의 **content-addressed 그룹 뱅크**가
+  방 식별자 없이 메시지 fingerprint의 최장 공통 프리픽스로 상태를 고른다. 동률은 MRU 그룹이 이긴다.
+  캐시 가능한 요청은 공통 프리픽스가 1,024 추정 토큰 이상일 때만 채택한다. 다만 요청 전체가
+  1,024 토큰 미만이면 1개 메시지 이상 일치한 그룹을 채택하고, 불일치해도 bank miss를 늘리지 않는다.
+- 그룹을 찾지 못하면 새 그룹의 마지막 user 롤 직전을 frontier로 잡는다. 그룹의 fingerprint·앵커·
+  admission·frontier 사망 카운터만 저장하며 프롬프트 원문과 방 식별자는 저장하지 않는다.
+- 채택한 그룹의 공통 프리픽스가 직전 frontier보다 얕고 리롤이 아니면 새 그룹으로 fork한다.
+  공통 프리픽스 안에서 생존한 앵커와 admission은 그대로 승계하고 frontier 사망 카운터는 0으로
+  시작한다. 원본 그룹은 상태와 LRU 순서를 모두 보존한다. 동일 길이 리롤은 기존 그룹을 제자리 갱신한다.
 - 앵커는 메시지 인덱스 오름차순 배열로 최대 4개를 증분 관리한다. 해시 일치 프리픽스 안의 기존
   앵커만 생존시키고 새 frontier를 추가하며, 분기 이벤트면 일치 경계도 후보로 추가한다.
 - **선택적 admission**: 16,384 추정 토큰 이하의 일반 첫 턴·append·in-place 후보는 즉시 BP로
@@ -85,11 +93,18 @@ npm test
   breakpoint가 와이어에서 유실된다(to-openai-message.ts). 실측에서도 llmgateway는 assistant 지점
   마커를 200으로 수락하지만 1,531토큰 프리픽스의 cache write가 0이라 엔트리를 만들지 않았다.
   system/user로 물러나 마킹.
-- 직전 요청은 원문이 아닌 **메시지별 fingerprint(FNV-1a 해시 + 토큰 추정)**로
-  `pluginStorage`(`llm-gateway-provider:cache-anchor-state`)에 저장 — 평문 비노출,
-  용량 고정, database.bin 동기화를 타고 다른 기기에서도 이어진다.
-- 공통 프리픽스 0인 epoch 리셋이 3회 연속이면 explicit breakpoint 마킹을 중단한다.
-  diff와 상태 갱신은 계속하며, 프리픽스가 다시 일치하는 턴에 카운터를 0으로 되돌리고 자동 재개한다.
+- `src/cache/state/bank/cache-anchor-bank-store.ts`는 최대 16개 그룹을 LRU로 관리한다. 작은 index는
+  `llm-gateway-provider:cache-anchor-state`에, 그룹 상태는 같은 키의 `:<slot>` 샤드에 저장한다.
+  레거시 단일 상태가 index 키에 있으면 첫 그룹으로 읽어 들여 다음 성공 응답 commit에서 한 번 이식한다.
+  런타임 snapshot은 영속 쓰기가 모두 성공한 뒤에만 갱신한다.
+- 만석에서 새 그룹을 넣을 때는 앵커가 1개 이하인 그룹 중 가장 오래된 것을 먼저 축출하고, 없으면
+  순수 LRU 꼬리를 축출한다. fork 원본은 해당 요청의 축출 대상에서 제외한다.
+- 어느 그룹과도 매치되지 않는 bank miss가 3회 연속이면 explicit breakpoint 마킹을 중단한다.
+  백오프 중 추가 miss는 직전 miss 슬롯을 덮어써 오염을 한 그룹으로 제한한다. 그룹 매치 시 카운터를
+  0으로 되돌리고 마킹을 자동 재개한다. 전체가 1,024 토큰 미만인 요청은 miss 연속 횟수에 포함하지 않으며,
+  만석 bank에서는 실그룹을 축출하지 않고 해당 요청의 상태 저장을 생략한다.
+- `src/cache/prepare-prompt-cache-request.ts`는 선택과 계획만 pending commit에 담고,
+  `src/cache/commit-prompt-cache-state.ts`가 성공 응답 뒤 변경 그룹과 index만 영속화한다.
 - **후방 안전장치인 위치 판별형 2-strike frontier 모니터**: frontier가 구조적으로 죽는 턴(성장·수축, 또는
   같은 개수인데 분기점 메시지가 직전 요청의 더 뒤 인덱스에 있는 시프트=트림)이 2연속이면
   새 frontier 마킹만 보류한다. 얕은 안정 앵커는 계속 마킹해 read를 유지하고(실측 계약상
@@ -97,10 +112,10 @@ npm test
   프리미엄만 차단한다. 같은 개수의 제자리 교체(리롤·in-place 수정·churn)는 스트라이크를
   세지 않으며, frontier가 살아남는 턴에 리셋·자동 재개한다. 사망 카운터는 anchor state에
   실려 성공 응답 후에만 commit되므로 취소·실패 요청이 오염시키지 못한다
-  (구버전 상태는 0으로 마이그레이션, prefix 0 방 전환은 epoch 백오프 담당이라 제외).
+  (구버전 상태는 0으로 마이그레이션하며, 그룹을 못 찾는 요청은 bank miss 백오프가 담당하므로 제외).
 - 토큰 추정: ASCII/4 + 비ASCII/2 + 메시지당 framing 4토큰. 1024토큰 미만 프리픽스는 마킹 생략.
   (후속: 응답 usage.inputTokens 기반 런타임 보정)
-- 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상 상태는 새 epoch로 자가 회복.
+- 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상된 index·slot은 빈 뱅크로 자가 회복.
 
 ## 캐시 손익 원장 (ledger.ts)
 

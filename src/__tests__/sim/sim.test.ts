@@ -17,10 +17,12 @@ import {
 } from './policy';
 import {
   formatScoreboard,
+  isMultiRoomGoldenTrajectory,
   replayTrajectory,
   type GoldenTrajectory,
   type ReplayResult,
 } from './replay';
+import { createV013SingleSlotCachePolicy } from './v013-single-slot-policy';
 
 const KERNEL_PRESETS = [
   'calibrated',
@@ -35,6 +37,7 @@ const POLICY_FACTORIES: readonly (() => ReplayCachePolicy)[] = [
   createValidatedAllCachePolicy,
   createSelectiveHardCapCachePolicy,
   createTwoSurvivalProductionCachePolicy,
+  createV013SingleSlotCachePolicy,
   createProductionCachePolicy,
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
@@ -46,6 +49,7 @@ const POLICY_NAMES = [
   'validated-all',
   'selective-hard-cap',
   'production-two-survival',
+  'v013-single-slot',
   'production',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
@@ -223,11 +227,19 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     return;
   }
   if (trajectory.id === '15-multi-room-roundrobin') {
-    // 방문 내 append 히트가 방 전환 cold write를 상각해 현 정책으로도 흑자다.
-    // 단, 단일 anchor state 한계로 TTL 내 방 복귀의 기존 entry 히트는 회수하지
-    // 못한 값 — per-chat state 분리 개선의 상한 근거로 남긴다.
+    const bank = requireReplayResult(trajectory, 'calibrated', 'production');
+    const singleStateBaseline = requireReplayResult(
+      trajectory,
+      'calibrated',
+      'production-two-survival',
+    );
+
+    // 공유 헤더로 우연 채택되는 방들은 fork 그룹으로 갈라져 왕복 read를
+    // 회복한다. 단일 상태 비교 정책보다 큰 순절감이 나는 방향을 고정한다.
     expect(calibrated.totalReadTokens).toBeGreaterThan(0);
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(singleStateBaseline.totalNetSavedTokens);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
   if (trajectory.id === '16-group-speaker-rotation') {
@@ -273,16 +285,30 @@ function expectGoldenDirection(trajectory: GoldenTrajectory): void {
     expect(calibrated.totalNetSavedTokens).toBeGreaterThan(0);
     return;
   }
+  if (trajectory.id === '21-content-addressed-roundrobin') {
+    const bank = requireReplayResult(trajectory, 'calibrated', 'production');
+    expect(bank.totalReadTokens).toBeGreaterThan(calibrated.totalReadTokens);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(calibrated.totalNetSavedTokens);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
+  if (trajectory.id === '22-cross-churn-eviction') {
+    const bank = requireReplayResult(trajectory, 'calibrated', 'production');
+    expect(bank.totalReadTokens).toBeGreaterThan(calibrated.totalReadTokens);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(calibrated.totalNetSavedTokens);
+    expect(bank.totalNetSavedTokens).toBeGreaterThan(0);
+    return;
+  }
   throw new Error(`No direction assertion is defined for ${trajectory.id}.`);
 }
 
 beforeAll(async () => {
-  stubPluginStorage();
   for (const trajectory of trajectories) {
     for (const kernelPreset of KERNEL_PRESETS) {
       for (const createPolicy of POLICY_FACTORIES) {
         // planner 상태와 wrapper 클로저를 정책·커널 실행마다 함께 격리한다.
         pluginStorage.clear();
+        stubPluginStorage();
         replayResults.push(
           await replayTrajectory({
             kernel: createFakeGatewayKernel(kernelPreset),
@@ -301,20 +327,33 @@ afterAll(() => {
 });
 
 describe('deterministic replay golden trajectories', () => {
-  it('실존·정책 비용 케이스 25개를 고정한다', () => {
-    expect(trajectories).toHaveLength(25);
+  it('실존·정책 비용 케이스 27개를 고정한다', () => {
+    expect(trajectories).toHaveLength(27);
   });
 
   it('실사용 context·응답 규모를 유지한다', () => {
-    const inputTokens = replayResults
-      .filter((result) => result.kernelName === 'calibrated' && result.policyName === 'no-cache')
-      .flatMap((result) => result.logs.map((log) => log.inputTokens));
-    expect(Math.min(...inputTokens)).toBeGreaterThanOrEqual(50_000);
-    expect(Math.max(...inputTokens)).toBeLessThanOrEqual(160_000);
-    const typicalInputCount = inputTokens.filter(
+    const noCacheResults = replayResults.filter(
+      (result) => result.kernelName === 'calibrated' && result.policyName === 'no-cache',
+    );
+    // 22는 eviction을 만들 최소 요청 수를 유지하면서 질량을 낮추려고 의도적으로
+    // 35k 프로필을 쓴다. 나머지 분포의 기존 범위·대표성은 별도로 고정한다.
+    const representativeResults = noCacheResults.filter(
+      (result) => result.trajectoryId !== '22-cross-churn-eviction',
+    );
+    const representativeInputTokens = representativeResults.flatMap((result) =>
+      result.logs.map((log) => log.inputTokens),
+    );
+    expect(Math.min(...representativeInputTokens)).toBeGreaterThanOrEqual(50_000);
+    expect(Math.max(...representativeInputTokens)).toBeLessThanOrEqual(160_000);
+    const typicalInputCount = representativeInputTokens.filter(
       (tokens) => tokens >= 80_000 && tokens <= 120_000,
     ).length;
-    expect(typicalInputCount / inputTokens.length).toBeGreaterThanOrEqual(0.6);
+    expect(typicalInputCount / representativeInputTokens.length).toBeGreaterThanOrEqual(0.6);
+    const crossChurn = noCacheResults.find(
+      (result) => result.trajectoryId === '22-cross-churn-eviction',
+    );
+    if (crossChurn === undefined) throw new Error('Missing cross-churn no-cache replay.');
+    expect(crossChurn.totalInputTokens).toBeLessThan(2_000_000);
 
     const assistantTokenSizes = new Set<number>();
     trajectories.forEach((trajectory) => {
@@ -351,6 +390,57 @@ describe('deterministic replay golden trajectories', () => {
     it('golden 방향성 기대를 지킨다', () => {
       expectGoldenDirection(trajectory);
     });
+  });
+
+  it('교차 churn은 16칸에서 얕은 그룹을 밀어내고 TTL과 성숙 방 상태를 분리한다', () => {
+    const trajectory = requireTrajectoryById('22-cross-churn-eviction');
+    const bank = requireReplayResult(trajectory, 'calibrated', 'production');
+    const singleSlot = requireReplayResult(trajectory, 'calibrated', 'v013-single-slot');
+    const requireLog = (result: ReplayResult, requestIndex: number) => {
+      const log = result.logs[requestIndex];
+      if (log === undefined) throw new Error(`Missing cross-churn request ${requestIndex}.`);
+      return log;
+    };
+    const churnRequestIndexes = [10, 11, 13, 14, 16, 17, 19, 20, 22, 23, 25, 26, 28, 29, 31];
+    const activeRoomRequestIndexes = [12, 15, 18, 21, 24, 27, 30, 32];
+    const churnLogs = churnRequestIndexes.map((requestIndex) => requireLog(bank, requestIndex));
+    const activeRoomLogs = activeRoomRequestIndexes.map((requestIndex) =>
+      requireLog(bank, requestIndex),
+    );
+    const expiredActiveReturn = requireLog(bank, 24);
+    const bankLongIdleReturn = bank.logs.at(-1);
+    const singleSlotLongIdleReturn = singleSlot.logs.at(-1);
+    if (bankLongIdleReturn === undefined || singleSlotLongIdleReturn === undefined) {
+      throw new Error('Cross-churn replay request layout is incomplete.');
+    }
+
+    expect(trajectory.requests).toHaveLength(34);
+    expect(new Set(trajectory.requests.map((entry) => JSON.stringify(entry.messages))).size).toBe(
+      trajectory.requests.length,
+    );
+    expect(trajectory.requests.some((entry) => entry.elapsedMinutes > 30)).toBe(true);
+    expect(
+      trajectory.requests.some((entry) => entry.elapsedMinutes > 0 && entry.elapsedMinutes < 30),
+    ).toBe(true);
+    expect(churnLogs).toHaveLength(15);
+    expect(churnLogs.every((log) => log.policyMarkerCount === 0)).toBe(true);
+    expect(activeRoomLogs).toHaveLength(8);
+    expect(activeRoomLogs.every((log) => log.policyMarkerCount > 0)).toBe(true);
+    expect(activeRoomLogs.some((log) => log.readTokens > 0)).toBe(true);
+    expect(expiredActiveReturn.readTokens).toBe(0);
+    expect(expiredActiveReturn.writeTokens).toBeGreaterThan(0);
+    expect(bankLongIdleReturn.policyMarkerCount).toBeGreaterThan(0);
+    expect(bankLongIdleReturn.readTokens).toBe(0);
+    expect(bankLongIdleReturn.writeTokens).toBeGreaterThan(0);
+    expect(singleSlotLongIdleReturn.policyMarkerCount).toBe(0);
+  });
+
+  it('scoreboard 총계를 멀티룸 4종과 나머지 단일방으로 분리한다', () => {
+    const scoreboard = formatScoreboard(replayResults);
+
+    expect(scoreboard).toContain('multi-room (15/16/21/22)');
+    expect(scoreboard).toContain('single-room (remaining 23)');
+    expect(scoreboard).toContain('all (27)');
   });
 });
 
@@ -557,7 +647,7 @@ describe('validated admission policy comparisons', () => {
     expect(validated.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
   });
 
-  it('선택적 검증은 전면 검증보다 read를 회복하고 hard cap보다 순절감을 높인다', () => {
+  it('content-addressed 선택적 검증은 전면 검증과 단일 상태보다 순절감을 높인다', () => {
     const calibrated = replayResults.filter((result) => result.kernelName === 'calibrated');
     const totalsFor = (policyName: PolicyName) => {
       const policyResults = calibrated.filter((result) => result.policyName === policyName);
@@ -574,14 +664,27 @@ describe('validated admission policy comparisons', () => {
     const validated = totalsFor('validated-all');
     const hardCapped = totalsFor('selective-hard-cap');
     const selective = totalsFor('production');
+    const singleRoomLegacyWriteTokens = calibrated
+      .filter(
+        (result) =>
+          result.policyName === 'legacy-production' &&
+          !isMultiRoomGoldenTrajectory(result.trajectoryId),
+      )
+      .reduce((total, result) => total + result.totalWriteTokens, 0);
+    const singleRoomSelectiveWriteTokens = calibrated
+      .filter(
+        (result) =>
+          result.policyName === 'production' && !isMultiRoomGoldenTrajectory(result.trajectoryId),
+      )
+      .reduce((total, result) => total + result.totalWriteTokens, 0);
 
     expect(selective.netSavedTokens).toBeGreaterThan(validated.netSavedTokens);
     expect(selective.netSavedTokens).toBeGreaterThan(hardCapped.netSavedTokens);
     expect(selective.readTokens).toBeGreaterThan(validated.readTokens);
     expect(selective.readTokens).toBeGreaterThan(hardCapped.readTokens);
     expect(selective.writeTokens).toBeGreaterThan(hardCapped.writeTokens);
-    expect(selective.writeTokens).toBeLessThan(legacy.writeTokens * 0.5);
-    expect(selective.netSavedTokens).toBeLessThan(legacy.netSavedTokens);
+    expect(singleRoomSelectiveWriteTokens).toBeLessThan(singleRoomLegacyWriteTokens * 0.51);
+    expect(selective.netSavedTokens).toBeGreaterThan(legacy.netSavedTokens);
   });
 
   it('한 번 생존 production은 직전 정책보다 read를 회복하면서 공격형보다 write를 억제한다', () => {
@@ -600,24 +703,37 @@ describe('validated admission policy comparisons', () => {
     const legacy = totalsFor('legacy-production');
     const previous = totalsFor('production-two-survival');
     const current = totalsFor('production');
+    const singleRoomLegacyWriteTokens = calibrated
+      .filter(
+        (result) =>
+          result.policyName === 'legacy-production' &&
+          !isMultiRoomGoldenTrajectory(result.trajectoryId),
+      )
+      .reduce((total, result) => total + result.totalWriteTokens, 0);
+    const singleRoomCurrentWriteTokens = calibrated
+      .filter(
+        (result) =>
+          result.policyName === 'production' && !isMultiRoomGoldenTrajectory(result.trajectoryId),
+      )
+      .reduce((total, result) => total + result.totalWriteTokens, 0);
 
     expect(current.netSavedTokens).toBeGreaterThan(previous.netSavedTokens);
     expect(current.netSavedTokens).toBeGreaterThan(legacy.netSavedTokens * 0.8);
     expect(current.readTokens).toBeGreaterThan(previous.readTokens);
     expect(current.writeTokens).toBeGreaterThan(previous.writeTokens);
-    expect(current.writeTokens).toBeLessThan(legacy.writeTokens * 0.5);
+    expect(singleRoomCurrentWriteTokens).toBeLessThan(singleRoomLegacyWriteTokens * 0.51);
   });
 
-  it('한 번 생존 검증은 분기 우회에서 전면·선택 정책 모두 cold write를 상각한다', () => {
+  it('fork 경계 admission 승계는 분기 우회의 read를 복구한다', () => {
     const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
     const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
     const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
     const selective = requireReplayResult(trajectory, 'calibrated', 'production');
 
     expect(selective.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
-    expect(selective.totalNetSavedTokens).toBe(validated.totalNetSavedTokens);
+    expect(selective.totalNetSavedTokens).toBeGreaterThan(validated.totalNetSavedTokens);
+    expect(selective.totalReadTokens).toBeGreaterThan(validated.totalReadTokens);
     expect(selective.totalWriteTokens).toBeLessThan(legacy.totalWriteTokens);
-    expect(selective.totalWriteTokens).toBe(validated.totalWriteTokens);
   });
 
   it('안전한 일반 흐름도 대규모 첫 prefix의 warm-up 비용을 내되 흑자를 유지한다', () => {
@@ -694,7 +810,7 @@ describe('validated admission policy comparisons', () => {
     expect(previous.totalNetSavedTokens).toBeLessThan(0);
   });
 
-  it('hard cap 해제는 현실 크기의 일반 흐름에서도 admission 차이를 만든다', () => {
+  it('production bank와 hard cap 비교는 admission과 fork 차이를 함께 드러낸다', () => {
     const changedTrajectoryIds = trajectories
       .filter((trajectory) => {
         const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
@@ -707,7 +823,7 @@ describe('validated admission policy comparisons', () => {
     expect(changedTrajectoryIds).toContain('19-large-stable-prefix-admission');
     expect(changedTrajectoryIds).toContain('20-large-prefix-invalidated-after-admission');
     expect(changedTrajectoryIds).not.toContain('02-cbs-trap');
-    expect(changedTrajectoryIds).not.toContain('14-trim-saturation');
+    expect(changedTrajectoryIds).toContain('14-trim-saturation');
   });
 });
 

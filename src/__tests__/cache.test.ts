@@ -1,24 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenAIChatCompletionsFormat, type LlmMessage } from 'llm-io';
 import {
+  BANK_MAX_STATES,
+  CACHE_ANCHOR_BANK_SLOT_STORAGE_KEY_PREFIX,
   CACHE_ANCHOR_STATE_STORAGE_KEY,
-  CACHE_BACKOFF_EPOCH_RESET_THRESHOLD,
+  CACHE_BACKOFF_BANK_MISS_THRESHOLD,
   DISABLED_PROMPT_CACHE_KEY,
   EXPLICIT_PROMPT_CACHE_KEY,
+} from '../cache/constants';
+import {
   commitPromptCacheState,
-  fingerprintMessage,
-  getPromptCacheKey,
   isCacheBackoffActive,
-  loadCacheAnchorState,
-  markCacheBreakpoints,
-  planCacheAnchors,
+  loadCacheAnchorBankMissCount,
   preparePromptCacheRequest,
   resolvePromptCacheMode,
-  saveCacheAnchorState,
-  type CacheAnchorState,
   type CacheBackoffTransition,
-  type CachePlan,
 } from '../cache';
+import { markCacheBreakpoints } from '../cache/breakpoint/mark-cache-breakpoints';
+import { getPromptCacheKey } from '../cache/mode/get-prompt-cache-key';
+import { fingerprintMessage } from '../cache/planner/fingerprint-message';
+import { planCacheAnchors } from '../cache/planner/plan-cache-anchors';
+import { loadCacheAnchorState } from '../cache/state/load-cache-anchor-state';
+import { saveCacheAnchorState } from '../cache/state/save-cache-anchor-state';
+import type { CacheAnchorState } from '../cache/state/schema';
+import type { CachePlan } from '../cache/types';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -104,6 +109,35 @@ function markedIndexesOfLastTurn(turns: readonly (readonly LlmMessage[])[]): num
 }
 
 const LONG_SYSTEM_TEXT = 'S'.repeat(6000);
+
+function cacheAnchorBankSlotKey(slot: number): string {
+  return `${CACHE_ANCHOR_BANK_SLOT_STORAGE_KEY_PREFIX}${slot}`;
+}
+
+function createStoredAnchorState(messages: readonly LlmMessage[]): CacheAnchorState {
+  const state = planCacheAnchors(null, messages).nextState;
+  return {
+    anchorAdmissions: state.anchorAdmissions,
+    anchorIndexes: state.anchorIndexes,
+    consecutiveFrontierDeaths: state.consecutiveFrontierDeaths,
+    fingerprints: state.fingerprints,
+  };
+}
+
+function seedCacheAnchorBank(
+  stored: Map<string, string>,
+  statesBySlot: ReadonlyMap<number, CacheAnchorState>,
+  lruSlots: readonly number[],
+  consecutiveBankMisses = 0,
+): void {
+  stored.set(
+    CACHE_ANCHOR_STATE_STORAGE_KEY,
+    JSON.stringify({ version: 1, consecutiveBankMisses, lruSlots }),
+  );
+  statesBySlot.forEach((state, slot) => {
+    stored.set(cacheAnchorBankSlotKey(slot), JSON.stringify(state));
+  });
+}
 
 describe('planCacheAnchors / markCacheBreakpoints', () => {
   it('정속 append로 앵커가 포화돼도 직전 frontier 앵커를 유지한다', () => {
@@ -399,7 +433,6 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const previousState: CacheAnchorState = {
       anchorAdmissions: [],
       anchorIndexes: [0, 2, 4, 6],
-      consecutiveEpochResets: 0,
       consecutiveFrontierDeaths: 0,
       fingerprints: previousMessages.map(fingerprintMessage),
     };
@@ -450,39 +483,65 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     expect(breakpointIndexes(messages)).toEqual([]);
   });
 
-  it('공통 프리픽스 0 epoch가 3회 연속이면 백오프를 발동해 마킹을 멈춘다', () => {
+  it('bank miss가 3회 연속이면 백오프를 발동해 마킹을 멈춘다', async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
     const turns = ['A', 'B', 'C', 'D'].map((prefix) => [
       makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
       makeMessage('user', 'input'),
     ]);
-    let state: CacheAnchorState | null = null;
-    const resetCounts: number[] = [];
+    const missCounts: number[] = [];
+    const markedIndexes: number[][] = [];
+    const transitions: Array<CacheBackoffTransition | null> = [];
 
-    for (const turn of turns) {
-      const plan = planCacheAnchors(state, turn);
-      resetCounts.push(plan.nextState.consecutiveEpochResets);
-      state = plan.nextState;
+    for (const turn of turns.slice(0, CACHE_BACKOFF_BANK_MISS_THRESHOLD)) {
+      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      markedIndexes.push(breakpointIndexes(prepared.requestMessages));
+      if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
+      transitions.push(await commitPromptCacheState(prepared.pendingCommit));
+      missCounts.push(await loadCacheAnchorBankMissCount());
     }
 
-    expect(resetCounts).toEqual([0, 1, 2, CACHE_BACKOFF_EPOCH_RESET_THRESHOLD]);
-    expect(isCacheBackoffActive(state)).toBe(true);
-    const lastTurn = turns[turns.length - 1];
-    const backoffPlan = planCacheAnchors(planTurns(turns.slice(0, -1)).nextState, lastTurn);
-    expect(breakpointIndexes(markCacheBreakpoints(lastTurn, backoffPlan))).toEqual([]);
+    expect(missCounts).toEqual([1, 2, CACHE_BACKOFF_BANK_MISS_THRESHOLD]);
+    expect(markedIndexes).toEqual([[0], [0], []]);
+    expect(transitions).toEqual([null, null, 'activated']);
+    expect(isCacheBackoffActive(missCounts.at(-1) ?? 0)).toBe(true);
   });
 
-  it('백오프 중 공통 프리픽스가 돌아오면 카운터를 리셋하고 즉시 재개한다', () => {
-    const changingTurns = ['A', 'B', 'C', 'D'].map((prefix) => [
+  it('백오프 중 bank 매치가 돌아오면 카운터를 리셋하고 즉시 재개한다', async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
+    const changingTurns = ['A', 'B', 'C'].map((prefix) => [
       makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
       makeMessage('user', 'input'),
     ]);
-    const activeState = planTurns(changingTurns).nextState;
-    const stableTurn = [...changingTurns[changingTurns.length - 1]];
-    const recoveredPlan = planCacheAnchors(activeState, stableTurn);
+    for (const turn of changingTurns) {
+      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
+      await commitPromptCacheState(prepared.pendingCommit);
+    }
 
-    expect(recoveredPlan.nextState.consecutiveEpochResets).toBe(0);
-    expect(isCacheBackoffActive(recoveredPlan.nextState)).toBe(false);
-    expect(breakpointIndexes(markCacheBreakpoints(stableTurn, recoveredPlan))).toEqual([0]);
+    const stableTurn = [...changingTurns[changingTurns.length - 1]];
+    const recovered = await preparePromptCacheRequest(stableTurn, 'explicit');
+    if (recovered.pendingCommit === null) throw new Error('Expected a pending commit');
+
+    expect(breakpointIndexes(recovered.requestMessages)).toEqual([0]);
+    await expect(commitPromptCacheState(recovered.pendingCommit)).resolves.toBe('released');
+    await expect(loadCacheAnchorBankMissCount()).resolves.toBe(0);
   });
 });
 
@@ -640,7 +699,7 @@ describe('frontier death monitor', () => {
     const state = await loadCacheAnchorState();
 
     expect(state?.consecutiveFrontierDeaths).toBe(0);
-    expect(state?.consecutiveEpochResets).toBe(1);
+    expect(state).not.toHaveProperty('consecutiveEpochResets');
   });
 });
 
@@ -717,9 +776,7 @@ describe('prompt cache orchestration', () => {
     }
     await expect(commitPromptCacheState(prepared.pendingCommit)).resolves.toBeNull();
     expect(stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
-    await expect(loadCacheAnchorState()).resolves.toMatchObject({
-      consecutiveEpochResets: 0,
-    });
+    await expect(loadCacheAnchorBankMissCount()).resolves.toBe(1);
   });
 
   it.each([
@@ -757,7 +814,7 @@ describe('prompt cache orchestration', () => {
         },
       },
     });
-    const changingTurns = ['A', 'B', 'C', 'D'].map((prefix) => [
+    const changingTurns = ['A', 'B', 'C'].map((prefix) => [
       makeMessage('system', `${prefix}${LONG_SYSTEM_TEXT}`),
       makeMessage('user', 'input'),
     ]);
@@ -783,6 +840,715 @@ describe('prompt cache orchestration', () => {
   });
 });
 
+describe('content-addressed cache anchor state bank', () => {
+  it('bank 용량을 활성 방 실사용 상한 16개로 고정한다', () => {
+    expect(BANK_MAX_STATES).toBe(16);
+  });
+
+  function stubMapStorage(stored: Map<string, string>): void {
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
+  }
+
+  async function prepareAndCommit(messages: LlmMessage[]): Promise<void> {
+    const prepared = await preparePromptCacheRequest(messages, 'explicit');
+    if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
+    await commitPromptCacheState(prepared.pendingCommit);
+  }
+
+  function createMatureBankState(identity: string): CacheAnchorState {
+    const messages = [
+      makeMessage('system', `${identity} ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', `${identity} input 1`),
+      makeMessage('assistant', `${identity} reply 1`),
+      makeMessage('user', `${identity} input 2`),
+      makeMessage('assistant', `${identity} reply 2`),
+      makeMessage('user', `${identity} input 3`),
+      makeMessage('assistant', `${identity} reply 3`),
+      makeMessage('user', `${identity} input 4`),
+    ];
+    return {
+      ...createStoredAnchorState(messages),
+      anchorAdmissions: [],
+      anchorIndexes: [0, 2, 4, 6],
+    };
+  }
+
+  it('가장 긴 fingerprint 공통 프리픽스 상태를 선택한다', async () => {
+    const stored = new Map<string, string>();
+    const common = makeMessage('system', LONG_SYSTEM_TEXT);
+    const stateZeroMessages = [common, makeMessage('user', 'room zero stable')];
+    const stateOneMessages = [common, makeMessage('user', 'room one stable')];
+    seedCacheAnchorBank(
+      stored,
+      new Map([
+        [0, createStoredAnchorState(stateZeroMessages)],
+        [1, createStoredAnchorState(stateOneMessages)],
+      ]),
+      [1, 0],
+    );
+    stubMapStorage(stored);
+    const current = [...stateZeroMessages, makeMessage('user', 'room zero next')];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      lruSlots: [0, 1],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: stateOneMessages.map(fingerprintMessage),
+    });
+  });
+
+  it('공통 프리픽스 길이가 같으면 가장 최근 상태를 선택한다', async () => {
+    const stored = new Map<string, string>();
+    const common = makeMessage('system', LONG_SYSTEM_TEXT);
+    const oldMessages = [common, makeMessage('user', 'old room branch')];
+    const recentMessages = [common, makeMessage('user', 'recent room branch')];
+    seedCacheAnchorBank(
+      stored,
+      new Map([
+        [0, createStoredAnchorState(oldMessages)],
+        [1, createStoredAnchorState(recentMessages)],
+      ]),
+      [1, 0],
+    );
+    stubMapStorage(stored);
+    const current = [common, makeMessage('user', 'tie branch')];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: oldMessages.map(fingerprintMessage),
+    });
+  });
+
+  it('1개 메시지도 매치하지 못하면 새 상태를 만든다', async () => {
+    const stored = new Map<string, string>();
+    const existingMessages = [
+      makeMessage('system', `existing ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'existing input'),
+    ];
+    seedCacheAnchorBank(stored, new Map([[0, createStoredAnchorState(existingMessages)]]), [0]);
+    stubMapStorage(stored);
+    const current = [
+      makeMessage('system', `new ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'new input'),
+    ];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      consecutiveBankMisses: 1,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+  });
+
+  it('1024 추정 토큰 미만 공통 프리픽스는 채택하지 않는다', async () => {
+    const stored = new Map<string, string>();
+    const sharedHeader = makeMessage('system', 'short shared header');
+    const original = [sharedHeader, makeMessage('user', 'original room')];
+    seedCacheAnchorBank(stored, new Map([[0, createStoredAnchorState(original)]]), [0]);
+    stubMapStorage(stored);
+    const current = [sharedHeader, makeMessage('user', `different room ${'D'.repeat(5_000)}`)];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      consecutiveBankMisses: 1,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: original.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+  });
+
+  it('소형 방 연속 대화는 같은 슬롯을 갱신하고 miss 백오프를 누적하지 않는다', async () => {
+    const stored = new Map<string, string>();
+    const healthyRoom = [
+      makeMessage('system', `healthy ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'healthy input'),
+    ];
+    seedCacheAnchorBank(
+      stored,
+      new Map([[0, createStoredAnchorState(healthyRoom)]]),
+      [0],
+      CACHE_BACKOFF_BANK_MISS_THRESHOLD - 1,
+    );
+    stubMapStorage(stored);
+    const system = makeMessage('system', 'small room header');
+    const firstInput = makeMessage('user', 'small input one');
+    const firstReply = makeMessage('assistant', 'small reply one');
+    const secondInput = makeMessage('user', 'small input two');
+    const secondReply = makeMessage('assistant', 'small reply two');
+    const turns = [
+      [system, firstInput],
+      [system, firstInput, firstReply, secondInput],
+      [system, firstInput, firstReply, secondInput, secondReply, makeMessage('user', 'third')],
+    ];
+    const transitions: Array<CacheBackoffTransition | null> = [];
+
+    for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
+      const turn = turns[turnIndex];
+      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      expect(breakpointIndexes(prepared.requestMessages)).toEqual([]);
+      if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
+      transitions.push(await commitPromptCacheState(prepared.pendingCommit));
+      if (turnIndex === 0) {
+        expect(await loadCacheAnchorBankMissCount()).toBe(CACHE_BACKOFF_BANK_MISS_THRESHOLD - 1);
+        expect(isCacheBackoffActive(await loadCacheAnchorBankMissCount())).toBe(false);
+      }
+    }
+
+    expect(transitions).toEqual([null, null, null]);
+    expect(await loadCacheAnchorBankMissCount()).toBe(0);
+    expect(isCacheBackoffActive(await loadCacheAnchorBankMissCount())).toBe(false);
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 0,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: turns[turns.length - 1].map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: healthyRoom.map(fingerprintMessage),
+    });
+    expect(stored.has(cacheAnchorBankSlotKey(2))).toBe(false);
+  });
+
+  it('소형 방 miss는 만석 bank의 실그룹을 축출하거나 덮어쓰지 않는다', async () => {
+    const stored = new Map<string, string>();
+    const statesBySlot = new Map<number, CacheAnchorState>();
+    for (let slot = 0; slot < BANK_MAX_STATES; slot += 1) {
+      statesBySlot.set(slot, createMatureBankState(`full-room-${slot}`));
+    }
+    const initialLru = Array.from({ length: BANK_MAX_STATES }, (_, index) => index).reverse();
+    seedCacheAnchorBank(stored, statesBySlot, initialLru);
+    const storedBeforeRequest = new Map(stored);
+    const setItem = vi.fn(async (key: string, value: string) => {
+      stored.set(key, value);
+    });
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem,
+      },
+    });
+    const smallMiss = [
+      makeMessage('system', 'unique small room'),
+      makeMessage('user', 'small input'),
+    ];
+
+    const prepared = await preparePromptCacheRequest(smallMiss, 'explicit');
+
+    expect(breakpointIndexes(prepared.requestMessages)).toEqual([]);
+    if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
+    await expect(commitPromptCacheState(prepared.pendingCommit)).resolves.toBeNull();
+    expect(setItem).not.toHaveBeenCalled();
+    expect(stored).toEqual(storedBeforeRequest);
+    await expect(loadCacheAnchorBankMissCount()).resolves.toBe(0);
+  });
+
+  it('소형 방이 1024를 넘긴 뒤 다음 성장 턴부터 큰 그룹에 매치돼 마킹한다', async () => {
+    const stored = new Map<string, string>();
+    stubMapStorage(stored);
+    const system = makeMessage('system', 'S'.repeat(3_000));
+    const firstInput = makeMessage('user', 'first input');
+    const small = [system, firstInput];
+    const crossed = [
+      ...small,
+      makeMessage('assistant', 'A'.repeat(1_200)),
+      makeMessage('user', 'second input'),
+    ];
+    const grown = [
+      ...crossed,
+      makeMessage('assistant', 'B'.repeat(200)),
+      makeMessage('user', 'third input'),
+    ];
+
+    await prepareAndCommit(small);
+    const crossedPrepared = await preparePromptCacheRequest(crossed, 'explicit');
+    expect(breakpointIndexes(crossedPrepared.requestMessages)).toEqual([]);
+    if (crossedPrepared.pendingCommit === null) throw new Error('Expected a pending commit');
+    await commitPromptCacheState(crossedPrepared.pendingCommit);
+
+    const grownPrepared = await preparePromptCacheRequest(grown, 'explicit');
+    expect(breakpointIndexes(grownPrepared.requestMessages).length).toBeGreaterThan(0);
+    if (grownPrepared.pendingCommit === null) throw new Error('Expected a pending commit');
+    await commitPromptCacheState(grownPrepared.pendingCommit);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 0,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: grown.map(fingerprintMessage),
+    });
+    expect(stored.has(cacheAnchorBankSlotKey(2))).toBe(false);
+  });
+
+  it('bank miss 백오프 중에는 직전 miss 슬롯을 덮어써 슬롯 오염을 제한한다', async () => {
+    const stored = new Map<string, string>();
+    const healthyRoom = [
+      makeMessage('system', `healthy ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'healthy input'),
+    ];
+    seedCacheAnchorBank(stored, new Map([[0, createStoredAnchorState(healthyRoom)]]), [0]);
+    stubMapStorage(stored);
+    const churnTurns = ['one', 'two', 'three', 'four'].map((identity) => [
+      makeMessage('system', `${identity} ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', `${identity} input`),
+    ]);
+
+    for (const turn of churnTurns) await prepareAndCommit(turn);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 4,
+      lruSlots: [3, 2, 1, 0],
+    });
+    expect(stored.has(cacheAnchorBankSlotKey(4))).toBe(false);
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(3)) ?? '')).toMatchObject({
+      fingerprints: churnTurns[3].map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: healthyRoom.map(fingerprintMessage),
+    });
+
+    await prepareAndCommit(healthyRoom);
+    const afterRelease = [
+      makeMessage('system', `after release ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'after release input'),
+    ];
+    await prepareAndCommit(afterRelease);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      consecutiveBankMisses: 1,
+      lruSlots: [4, 0, 3, 2, 1],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(4)) ?? '')).toMatchObject({
+      fingerprints: afterRelease.map(fingerprintMessage),
+    });
+  });
+
+  it('얕은 그룹이 없으면 만석 bank의 순수 LRU 꼬리를 축출한다', async () => {
+    const stored = new Map<string, string>();
+    const statesBySlot = new Map<number, CacheAnchorState>();
+    for (let slot = 0; slot < BANK_MAX_STATES; slot += 1) {
+      statesBySlot.set(slot, createMatureBankState(`room-${slot}`));
+    }
+    const initialLru = Array.from({ length: BANK_MAX_STATES }, (_, index) => index).reverse();
+    seedCacheAnchorBank(stored, statesBySlot, initialLru);
+    stubMapStorage(stored);
+    const current = [
+      makeMessage('system', `overflow ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'overflow input'),
+    ];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      lruSlots: [0, ...initialLru.filter((slot) => slot !== 0)],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+  });
+
+  it('만석 bank는 가장 오래된 1BP 이하 그룹을 성숙 그룹보다 먼저 축출한다', async () => {
+    const stored = new Map<string, string>();
+    const statesBySlot = new Map<number, CacheAnchorState>();
+    for (let slot = 0; slot < BANK_MAX_STATES; slot += 1) {
+      statesBySlot.set(slot, createMatureBankState(`room-${slot}`));
+    }
+    const oldestShallowState = statesBySlot.get(7);
+    const recentShallowState = statesBySlot.get(8);
+    if (oldestShallowState === undefined || recentShallowState === undefined) {
+      throw new Error('Expected seeded shallow bank states.');
+    }
+    statesBySlot.set(7, {
+      ...oldestShallowState,
+      anchorAdmissions: [],
+      anchorIndexes: [0],
+    });
+    statesBySlot.set(8, {
+      ...recentShallowState,
+      anchorAdmissions: [],
+      anchorIndexes: [],
+    });
+    const initialLru = Array.from({ length: BANK_MAX_STATES }, (_, index) => index).reverse();
+    seedCacheAnchorBank(stored, statesBySlot, initialLru);
+    const oldestMatureRaw = stored.get(cacheAnchorBankSlotKey(0));
+    stubMapStorage(stored);
+    const current = [
+      makeMessage('system', `overflow ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'overflow input'),
+    ];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      lruSlots: [7, ...initialLru.filter((slot) => slot !== 7)],
+    });
+    expect(stored.get(cacheAnchorBankSlotKey(0))).toBe(oldestMatureRaw);
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(7)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(8)) ?? '')).toMatchObject({
+      anchorIndexes: [],
+    });
+  });
+
+  it('레거시 단일 키 상태를 첫 bank 엔트리로 성공 응답 뒤 이식한다', async () => {
+    const stored = new Map<string, string>();
+    const legacyMessages = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'legacy input'),
+    ];
+    stored.set(
+      CACHE_ANCHOR_STATE_STORAGE_KEY,
+      JSON.stringify(createStoredAnchorState(legacyMessages)),
+    );
+    stubMapStorage(stored);
+    const current = [
+      makeMessage('system', `different room ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'different room input'),
+    ];
+
+    await prepareAndCommit(current);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 1,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: legacyMessages.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: current.map(fingerprintMessage),
+    });
+    // 구버전 loader는 bank index를 state로 파싱하지 못해 무해하게 새 epoch로 간다.
+    await expect(loadCacheAnchorState()).resolves.toBeNull();
+  });
+
+  it('frontier보다 얕은 이질 채택은 새 그룹으로 fork하고 원본을 보존한다', async () => {
+    const stored = new Map<string, string>();
+    const sharedHeader = makeMessage('system', LONG_SYSTEM_TEXT);
+    const stableInput = makeMessage('user', 'stable input');
+    const original = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'original branch reply'),
+      makeMessage('user', 'original branch continuation'),
+    ];
+    const unrelated = [
+      makeMessage('system', `unrelated ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'unrelated room'),
+    ];
+    seedCacheAnchorBank(
+      stored,
+      new Map([
+        [0, createStoredAnchorState(original)],
+        [5, createStoredAnchorState(unrelated)],
+      ]),
+      [5, 0],
+    );
+    const originalRaw = stored.get(cacheAnchorBankSlotKey(0));
+    const unrelatedRaw = stored.get(cacheAnchorBankSlotKey(5));
+    stubMapStorage(stored);
+    const branch = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'forked branch reply'),
+      makeMessage('user', 'forked branch extra turn'),
+      makeMessage('user', 'forked branch continuation'),
+    ];
+
+    await prepareAndCommit(branch);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 0,
+      lruSlots: [1, 5, 0],
+    });
+    expect(stored.get(cacheAnchorBankSlotKey(0))).toBe(originalRaw);
+    expect(stored.get(cacheAnchorBankSlotKey(5))).toBe(unrelatedRaw);
+    const forkedState = JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '');
+    expect(forkedState).toMatchObject({
+      consecutiveFrontierDeaths: 0,
+      fingerprints: branch.map(fingerprintMessage),
+    });
+    expect(forkedState.anchorIndexes).toContain(1);
+    expect(forkedState.anchorIndexes).not.toContain(2);
+    expect(forkedState.anchorAdmissions).not.toContainEqual(
+      expect.objectContaining({ anchorIndex: 2 }),
+    );
+  });
+
+  it('fork는 생존한 admitted 앵커의 admission 증거를 그대로 승계한다', async () => {
+    const stored = new Map<string, string>();
+    const sharedHeader = makeMessage('system', LONG_SYSTEM_TEXT);
+    const stableInput = makeMessage('user', 'stable input');
+    const original = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'original reply'),
+      makeMessage('user', 'original continuation'),
+    ];
+    const sourceState: CacheAnchorState = {
+      ...createStoredAnchorState(original),
+      anchorAdmissions: [
+        {
+          admitted: true,
+          anchorIndex: 0,
+          consecutiveSurvivals: 2,
+          requiresValidation: true,
+        },
+      ],
+      anchorIndexes: [0, 2],
+    };
+    seedCacheAnchorBank(stored, new Map([[0, sourceState]]), [0]);
+    stubMapStorage(stored);
+    const branch = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'forked reply'),
+      makeMessage('user', 'forked extra turn'),
+      makeMessage('user', 'forked continuation'),
+    ];
+
+    await prepareAndCommit(branch);
+
+    const forkedState = JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '');
+    expect(forkedState).toMatchObject({
+      consecutiveFrontierDeaths: 0,
+    });
+    expect(forkedState.anchorAdmissions).toContainEqual({
+      admitted: true,
+      anchorIndex: 0,
+      consecutiveSurvivals: 2,
+      requiresValidation: true,
+    });
+  });
+
+  it('fork는 진행 중 admission 후보를 이어받아 다음 생존에서 승격한다', async () => {
+    const stored = new Map<string, string>();
+    const sharedHeader = makeMessage('system', LONG_SYSTEM_TEXT);
+    const stableInput = makeMessage('user', 'stable input');
+    const original = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'original reply'),
+      makeMessage('user', 'original continuation'),
+    ];
+    const sourceState: CacheAnchorState = {
+      ...createStoredAnchorState(original),
+      anchorAdmissions: [
+        {
+          admitted: false,
+          anchorIndex: 0,
+          consecutiveSurvivals: 1,
+          requiresValidation: true,
+        },
+      ],
+      anchorIndexes: [0, 2],
+    };
+    seedCacheAnchorBank(stored, new Map([[0, sourceState]]), [0]);
+    stubMapStorage(stored);
+    const branch = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'forked reply'),
+      makeMessage('user', 'forked extra turn'),
+      makeMessage('user', 'forked continuation'),
+    ];
+
+    await prepareAndCommit(branch);
+
+    const forkedState = JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '');
+    expect(forkedState).toMatchObject({
+      consecutiveFrontierDeaths: 0,
+    });
+    expect(forkedState.anchorAdmissions).toContainEqual({
+      admitted: true,
+      anchorIndex: 0,
+      consecutiveSurvivals: 2,
+      requiresValidation: true,
+    });
+  });
+
+  it('같은 길이 비시프트 리롤은 fork 없이 기존 그룹을 제자리 갱신한다', async () => {
+    const stored = new Map<string, string>();
+    const original = [
+      makeMessage('system', LONG_SYSTEM_TEXT),
+      makeMessage('user', 'stable input'),
+      makeMessage('assistant', 'original generated reply'),
+      makeMessage('user', 'continue'),
+    ];
+    seedCacheAnchorBank(stored, new Map([[0, createStoredAnchorState(original)]]), [0]);
+    stubMapStorage(stored);
+    const reroll = [...original];
+    reroll[2] = makeMessage('assistant', 'rerolled generated reply');
+
+    await prepareAndCommit(reroll);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toEqual({
+      version: 1,
+      consecutiveBankMisses: 0,
+      lruSlots: [0],
+    });
+    expect(stored.has(cacheAnchorBankSlotKey(1))).toBe(false);
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: reroll.map(fingerprintMessage),
+    });
+  });
+
+  it('fork된 두 브랜치를 왕복하면 양쪽 그룹에서 캐시 히트 마커를 유지한다', async () => {
+    const stored = new Map<string, string>();
+    stubMapStorage(stored);
+    const sharedHeader = makeMessage('system', LONG_SYSTEM_TEXT);
+    const stableInput = makeMessage('user', 'stable input');
+    const branchA = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'branch A reply'),
+      makeMessage('user', 'branch A continuation'),
+    ];
+    const branchB = [
+      sharedHeader,
+      stableInput,
+      makeMessage('assistant', 'branch B reply'),
+      makeMessage('user', 'branch B extra turn'),
+      makeMessage('user', 'branch B continuation'),
+    ];
+
+    await prepareAndCommit(branchA);
+    await prepareAndCommit(branchB);
+
+    const returnedA = await preparePromptCacheRequest([...branchA], 'explicit');
+    expect(breakpointIndexes(returnedA.requestMessages).length).toBeGreaterThan(0);
+    if (returnedA.pendingCommit === null) throw new Error('Expected a pending commit');
+    await commitPromptCacheState(returnedA.pendingCommit);
+
+    const returnedB = await preparePromptCacheRequest([...branchB], 'explicit');
+    expect(breakpointIndexes(returnedB.requestMessages).length).toBeGreaterThan(0);
+    if (returnedB.pendingCommit === null) throw new Error('Expected a pending commit');
+    await commitPromptCacheState(returnedB.pendingCommit);
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      consecutiveBankMisses: 0,
+      lruSlots: [1, 0],
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      fingerprints: branchA.map(fingerprintMessage),
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      fingerprints: branchB.map(fingerprintMessage),
+    });
+  });
+
+  it.each([
+    '{broken json',
+    JSON.stringify({ version: 1, consecutiveBankMisses: 2, lruSlots: [3] }),
+  ])('손상되거나 슬롯이 사라진 bank(%s)는 빈 bank로 자가 회복한다', async (rawIndex) => {
+    const stored = new Map([[CACHE_ANCHOR_STATE_STORAGE_KEY, rawIndex]]);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    stubMapStorage(stored);
+    const current = [
+      makeMessage('system', `recovered ${LONG_SYSTEM_TEXT}`),
+      makeMessage('user', 'recovered input'),
+    ];
+
+    await expect(prepareAndCommit(current)).resolves.toBeUndefined();
+
+    expect(JSON.parse(stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY) ?? '')).toMatchObject({
+      consecutiveBankMisses: 1,
+      lruSlots: [0],
+    });
+  });
+
+  it('fork 전이에서도 방별 frontier 사망 카운터를 독립 보존한다', async () => {
+    const stored = new Map<string, string>();
+    const roomWindow = (room: string, startTurn: number): LlmMessage[] => [
+      makeMessage('system', `${room} ${LONG_SYSTEM_TEXT}`),
+      ...[startTurn, startTurn + 1, startTurn + 2].flatMap((turn) => [
+        makeMessage('user', `${room} input ${turn}`),
+        makeMessage('assistant', `${room} reply ${turn}`),
+      ]),
+      makeMessage('user', `${room} current ${startTurn}`),
+    ];
+    const roomA = createStoredAnchorState(roomWindow('A', 1));
+    const roomB = createStoredAnchorState(roomWindow('B', 1));
+    seedCacheAnchorBank(
+      stored,
+      new Map([
+        [0, { ...roomA, consecutiveFrontierDeaths: 1 }],
+        [1, roomB],
+      ]),
+      [1, 0],
+    );
+    stubMapStorage(stored);
+
+    await prepareAndCommit(roomWindow('A', 2));
+
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(0)) ?? '')).toMatchObject({
+      consecutiveFrontierDeaths: 1,
+      fingerprints: roomA.fingerprints,
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(1)) ?? '')).toMatchObject({
+      consecutiveFrontierDeaths: 0,
+      fingerprints: roomB.fingerprints,
+    });
+    expect(JSON.parse(stored.get(cacheAnchorBankSlotKey(2)) ?? '')).toMatchObject({
+      consecutiveFrontierDeaths: 0,
+    });
+  });
+
+  it('첫 load 뒤에는 runtime snapshot으로 슬롯 read를 반복하지 않는다', async () => {
+    const stored = new Map<string, string>();
+    const getItem = vi.fn(async (key: string) => stored.get(key) ?? null);
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
+        },
+      },
+    });
+    const first = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'first')];
+    await prepareAndCommit(first);
+    const readCountAfterFirstCommit = getItem.mock.calls.length;
+
+    await prepareAndCommit([...first, makeMessage('user', 'second')]);
+
+    expect(getItem).toHaveBeenCalledTimes(readCountAfterFirstCommit);
+  });
+});
+
 describe('cache anchor state storage', () => {
   it('저장한 상태를 다시 불러온다', async () => {
     const stored = new Map<string, string>();
@@ -802,7 +1568,12 @@ describe('cache anchor state storage', () => {
     await saveCacheAnchorState(plan.nextState);
 
     expect(stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
-    await expect(loadCacheAnchorState()).resolves.toEqual(plan.nextState);
+    await expect(loadCacheAnchorState()).resolves.toMatchObject({
+      anchorAdmissions: plan.nextState.anchorAdmissions,
+      anchorIndexes: plan.nextState.anchorIndexes,
+      consecutiveFrontierDeaths: plan.nextState.consecutiveFrontierDeaths,
+      fingerprints: plan.nextState.fingerprints,
+    });
   });
 
   it('카운터가 없는 구버전 앵커 상태를 0으로 마이그레이션한다', async () => {
@@ -819,7 +1590,7 @@ describe('cache anchor state storage', () => {
     await expect(loadCacheAnchorState()).resolves.toMatchObject({
       anchorAdmissions: [],
       anchorIndexes: [0],
-      consecutiveEpochResets: 0,
+      consecutiveFrontierDeaths: 0,
     });
   });
 

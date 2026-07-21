@@ -42,11 +42,22 @@ export interface ReplayResult {
 }
 
 const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
+const MULTI_ROOM_TRAJECTORY_IDS: ReadonlySet<string> = new Set([
+  '15-multi-room-roundrobin',
+  '16-group-speaker-rotation',
+  '21-content-addressed-roundrobin',
+  '22-cross-churn-eviction',
+]);
+
+export function isMultiRoomGoldenTrajectory(trajectoryId: string): boolean {
+  return MULTI_ROOM_TRAJECTORY_IDS.has(trajectoryId);
+}
 const SCOREBOARD_POLICIES = [
   'legacy-production',
   'validated-all',
   'selective-hard-cap',
   'production-two-survival',
+  'v013-single-slot',
   'production',
   'adaptive-2strike',
   'adaptive-2strike-reroll-aware',
@@ -173,35 +184,55 @@ function formatScore(score: number | undefined): string {
 
 function formatPolicyTotals(results: readonly ReplayResult[]): string {
   const calibratedResults = results.filter((result) => result.kernelName === 'calibrated');
-  const totals = SCOREBOARD_POLICIES.map((policyName) => {
-    const policyResults = calibratedResults.filter((result) => result.policyName === policyName);
-    return {
-      netSavedTokens: policyResults.reduce(
-        (total, result) => total + result.totalNetSavedTokens,
-        0,
-      ),
-      policyName,
-      readTokens: policyResults.reduce((total, result) => total + result.totalReadTokens, 0),
-      writeTokens: policyResults.reduce((total, result) => total + result.totalWriteTokens, 0),
-    };
-  });
-  const legacyNetSavedTokens = totals.find(
-    (total) => total.policyName === 'legacy-production',
-  )?.netSavedTokens;
-  if (legacyNetSavedTokens === undefined) {
-    throw new Error('Missing legacy-production aggregate score.');
-  }
+  const scopes = [
+    {
+      label: 'multi-room (15/16/21/22)',
+      matches: (result: ReplayResult) => isMultiRoomGoldenTrajectory(result.trajectoryId),
+    },
+    {
+      label: 'single-room (remaining 23)',
+      matches: (result: ReplayResult) => !isMultiRoomGoldenTrajectory(result.trajectoryId),
+    },
+    { label: 'all (27)', matches: () => true },
+  ];
+  const totals = SCOREBOARD_POLICIES.flatMap((policyName) =>
+    scopes.map((scope) => {
+      const scopedResults = calibratedResults.filter(
+        (result) => result.policyName === policyName && scope.matches(result),
+      );
+      return {
+        netSavedTokens: scopedResults.reduce(
+          (total, result) => total + result.totalNetSavedTokens,
+          0,
+        ),
+        policyName,
+        readTokens: scopedResults.reduce((total, result) => total + result.totalReadTokens, 0),
+        scopeLabel: scope.label,
+        writeTokens: scopedResults.reduce((total, result) => total + result.totalWriteTokens, 0),
+      };
+    }),
+  );
 
   return formatTable(
-    'Calibrated policy totals (all trajectories)',
-    ['policy', 'net', 'vs legacy', 'read', 'write'],
-    totals.map((total) => [
-      total.policyName,
-      total.netSavedTokens.toFixed(1),
-      (total.netSavedTokens - legacyNetSavedTokens).toFixed(1),
-      total.readTokens.toFixed(0),
-      total.writeTokens.toFixed(0),
-    ]),
+    'Calibrated policy totals by workload scope',
+    ['policy', 'scope', 'net', 'vs v0.13', 'read', 'write'],
+    totals.map((total) => {
+      const v013Total = totals.find(
+        (candidate) =>
+          candidate.policyName === 'v013-single-slot' && candidate.scopeLabel === total.scopeLabel,
+      );
+      if (v013Total === undefined) {
+        throw new Error(`Missing v013-single-slot score for ${total.scopeLabel}.`);
+      }
+      return [
+        total.policyName,
+        total.scopeLabel,
+        total.netSavedTokens.toFixed(1),
+        (total.netSavedTokens - v013Total.netSavedTokens).toFixed(1),
+        total.readTokens.toFixed(0),
+        total.writeTokens.toFixed(0),
+      ];
+    }),
   );
 }
 

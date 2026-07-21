@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { isCacheBackoffActive, loadCacheAnchorState } from '../cache';
+import { isCacheBackoffActive, loadCacheAnchorBankMissCount } from '../cache';
 import { refreshCacheLedgerSnapshot } from '../ledger';
 import { applyTheme, resolveScheme } from '../theme';
 import { SettingsPanel } from './components/SettingsPanel/SettingsPanel';
@@ -55,7 +55,7 @@ export async function openSettings(
     streamingMode,
     flagNames,
     extraBody,
-    cacheAnchorState,
+    cacheAnchorBankMissCount,
   ] = await Promise.all([
     loadApiKey(),
     loadModel(),
@@ -66,7 +66,7 @@ export async function openSettings(
     loadStreamingMode(),
     loadConfigurableLlmFlagNames(),
     loadExtraBody(),
-    loadCacheAnchorState(),
+    loadCacheAnchorBankMissCount(),
     refreshCacheLedgerSnapshot(),
   ]);
 
@@ -89,6 +89,6 @@ export async function openSettings(
   initializeSettingsSignals({
     reloadNeeded: createProviderRegistrationSignature({ flagNames }) !== registrationSignature,
   });
-  renderSettings(isCacheBackoffActive(cacheAnchorState));
+  renderSettings(isCacheBackoffActive(cacheAnchorBankMissCount));
   applyTheme(await resolveScheme());
 }

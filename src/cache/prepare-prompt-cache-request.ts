@@ -3,8 +3,13 @@ import { resolveCacheBackoffTransition } from './backoff/resolve-cache-backoff-t
 import { markCacheBreakpoints } from './breakpoint/mark-cache-breakpoints';
 import { createPromptCacheExtraBody } from './mode/create-prompt-cache-extra-body';
 import { isExplicitPromptCacheMode } from './mode/is-explicit-prompt-cache-mode';
-import { planCacheAnchors } from './planner/plan-cache-anchors';
-import { loadCacheAnchorState } from './state/load-cache-anchor-state';
+import { fingerprintMessage } from './planner/fingerprint-message';
+import { planCacheAnchorsFromFingerprints } from './planner/plan-cache-anchors';
+import { loadCacheAnchorBankSnapshot } from './state/bank/cache-anchor-bank-store';
+import {
+  createNextCacheAnchorBankSnapshot,
+  selectCacheAnchorBankState,
+} from './state/bank/select-cache-anchor-bank-state';
 import {
   pendingPromptCacheCommitData,
   type PendingPromptCacheCommit,
@@ -27,20 +32,31 @@ export async function preparePromptCacheRequest(
   try {
     // disabled 모드에서도 diff 기준은 계속 갱신한다 — explicit로 되돌렸을 때
     // 스테일 diff로 잘못된 앵커가 잡히는 것을 막는다.
-    const previousState = await loadCacheAnchorState();
-    const plan = planCacheAnchors(previousState, messages);
+    const previousSnapshot = await loadCacheAnchorBankSnapshot();
+    const fingerprints = messages.map(fingerprintMessage);
+    const selection = selectCacheAnchorBankState(previousSnapshot, fingerprints);
+    const plan = planCacheAnchorsFromFingerprints(selection.previousState, fingerprints);
+    const nextSnapshot = createNextCacheAnchorBankSnapshot(
+      previousSnapshot,
+      selection,
+      plan.nextState,
+    );
     const requestMessages = isExplicitPromptCacheMode(mode)
-      ? markCacheBreakpoints(messages, plan)
+      ? markCacheBreakpoints(messages, plan, nextSnapshot.consecutiveBankMisses)
       : messages;
-    const transition = resolveCacheBackoffTransition(previousState, plan.nextState);
+    const transition = resolveCacheBackoffTransition(
+      previousSnapshot.consecutiveBankMisses,
+      nextSnapshot.consecutiveBankMisses,
+    );
 
     return {
       requestMessages,
       cacheExtraBody,
       pendingCommit: {
         [pendingPromptCacheCommitData]: {
-          nextState: plan.nextState,
+          nextSnapshot,
           transition,
+          updatedSlot: selection.slot,
         },
       },
     };

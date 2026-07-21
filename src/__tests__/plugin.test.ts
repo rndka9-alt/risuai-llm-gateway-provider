@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache';
+import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache/constants';
 import { CACHE_LEDGER_STORAGE_KEY } from '../ledger';
 import { RISUAI_LLM_FLAGS, RISUAI_TIKTOKEN_O200_BASE_TOKENIZER } from '../options';
 
@@ -116,6 +116,7 @@ async function loadProvider(
   argumentOverrides: Readonly<Record<string, string>> = {},
   failConfigStorage = false,
   initialConfigFlags: string | undefined = undefined,
+  cacheAnchorBankLoadFailures = 0,
 ): Promise<ProviderHarness> {
   const stored = new Map<string, string>();
   const argumentsByKey = new Map<string, string>([
@@ -132,6 +133,7 @@ async function loadProvider(
     resolveStartup = resolve;
   });
   const toastMessages: string[] = [];
+  let remainingCacheAnchorBankLoadFailures = cacheAnchorBankLoadFailures;
   const nativeFetch = vi.fn(async (url: string, requestInit?: RequestInit) => {
     void url;
     void requestInit;
@@ -148,6 +150,10 @@ async function loadProvider(
         startupEvents.push(`getItem:${key}`);
         if (failConfigStorage) {
           throw new Error('config storage unavailable');
+        }
+        if (key === CACHE_ANCHOR_STATE_STORAGE_KEY && remainingCacheAnchorBankLoadFailures > 0) {
+          remainingCacheAnchorBankLoadFailures -= 1;
+          throw new Error('cache anchor bank storage unavailable');
         }
         return stored.get(key) ?? null;
       },
@@ -224,6 +230,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe('provider registration metadata', () => {
+  it('provider 등록 전에 cache anchor bank snapshot eager load를 시작한다', async () => {
+    const harness = await loadProvider([]);
+
+    expect(harness.startupEvents.indexOf(`getItem:${CACHE_ANCHOR_STATE_STORAGE_KEY}`)).toBeLessThan(
+      harness.startupEvents.indexOf('addProvider'),
+    );
+  });
+
+  it('cache anchor bank eager load 실패를 무시하고 요청 시 lazy load로 재시도한다', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await loadProvider([createSuccessfulResponse()], {}, false, undefined, 1);
+
+    const response = await harness.provider(createProviderArguments());
+
+    expect(response.success).toBe(true);
+    expect(
+      harness.startupEvents.filter(
+        (event) => event === `getItem:${CACHE_ANCHOR_STATE_STORAGE_KEY}`,
+      ),
+    ).toHaveLength(2);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[llm-gateway-provider] cache anchor bank eager load failed; continuing',
+      expect.any(Error),
+    );
+  });
+
   it('저장 config flags를 realArg보다 우선해 provider 등록에 반영한다', async () => {
     const harness = await loadProvider(
       [],
@@ -462,7 +494,7 @@ describe('streaming modes', () => {
 });
 
 describe('cache health backoff', () => {
-  it('세 번째 연속 epoch 리셋에서 마킹을 멈추고 안정 턴에 자동 재개한다', async () => {
+  it('세 번째 연속 bank miss에서 마킹을 멈추고 안정 턴에 자동 재개한다', async () => {
     vi.useFakeTimers();
     const harness = await loadProvider([
       createSuccessfulResponse(),
@@ -482,7 +514,7 @@ describe('cache health backoff', () => {
 
     expect(getRequestBody(harness.nativeFetch, 0)).toContain('prompt_cache_breakpoint');
     expect(getRequestBody(harness.nativeFetch, 1)).toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 2)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.nativeFetch, 2)).not.toContain('prompt_cache_breakpoint');
     expect(getRequestBody(harness.nativeFetch, 3)).not.toContain('prompt_cache_breakpoint');
     expect(getRequestBody(harness.nativeFetch, 4)).toContain('prompt_cache_breakpoint');
     expect(harness.toastMessages).toEqual([
@@ -492,6 +524,6 @@ describe('cache health backoff', () => {
 
     const storedState = harness.stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY);
     if (storedState === undefined) throw new Error('Expected cache anchor state');
-    expect(JSON.parse(storedState)).toMatchObject({ consecutiveEpochResets: 0 });
+    expect(JSON.parse(storedState)).toMatchObject({ consecutiveBankMisses: 0 });
   });
 });

@@ -13,6 +13,7 @@ import { createBridgeFetch } from './bridge-fetch';
 import {
   type PendingPromptCacheCommit,
   commitPromptCacheState,
+  loadCacheAnchorBankSnapshot,
   preparePromptCacheRequest,
   resolvePromptCacheMode,
 } from './cache';
@@ -248,6 +249,11 @@ async function requestLLMGateway(
 }
 
 async function main(): Promise<void> {
+  // 상주 iframe의 부팅 구간에서 샤드 snapshot을 미리 채워 첫 메시지의 cold-load를 피한다.
+  // 실패 시 snapshot이 발행되지 않아 요청 경로의 기존 lazy load가 다시 시도한다.
+  void loadCacheAnchorBankSnapshot().catch((error) => {
+    console.error('[llm-gateway-provider] cache anchor bank eager load failed; continuing', error);
+  });
   const config = await initializeConfigOnStartup();
   const registrationSettings: ProviderRegistrationSettings = {
     flagNames: resolveConfigurableLlmFlagNames(config[FLAGS_ARGUMENT]),
