@@ -23,6 +23,28 @@ npm test
 - 모든 테스트는 중앙 `src/__tests__/`에 둔다. mock은 실제 런타임 semantics를
   따른다 (예: pluginStorage는 동기 read-through — setItem 직후 getItem은 최신값).
 
+### 기능 테스트와 캐싱 효율 측정(sim)의 분리
+
+테스트는 검증 대상이 "동작이 계약대로인가"(기능)와 "캐시 정책이 얼마나 절감하는가"(효율)로
+나뉘며, 실행 경로도 분리한다.
+
+```bash
+npm test          # 기능·계약 테스트 (sim 제외) — 기본 실행 경로
+npm run test:sim  # 캐싱 효율 측정 (src/__tests__/sim/) — 캐시 정책 변경 시에만
+npm run test:all  # 둘 다
+```
+
+- `src/__tests__/sim/`은 fake gateway 커널 위에서 golden trajectory를 replay해 정책별 절감
+  토큰을 집계하는 벤치마크 하네스다. 정책 × 시나리오 × 커널 조합이라 실행 시간이 기능 테스트의
+  10배를 넘으므로(실측 21초 vs 2초) 기본 `npm test`에서 제외한다.
+- **캐싱 효율을 측정·비교할 때만** `npm run test:sim`을 쓴다. 대상은 `src/cache/`의 breakpoint
+  배치·앵커 선택·축출 규칙, `ledger.ts`의 손익 산식처럼 절감량 자체를 바꾸는 변경이다.
+  이 경로를 건드리지 않는 변경은 `npm test`로 충분하다.
+- sim은 실험 기록인 동시에 회귀망이다. `v013-single-slot.test.ts`는 기대 점수를 고정해 두므로
+  정책을 의도적으로 바꿨다면 점수 갱신이 함께 필요하다.
+- `src/__tests__/sim/`의 일부 파일은 타 플러그인 이식 코드라 `.git/info/exclude`(로컬 전용)로
+  커밋에서 제외돼 있다. git이 추적하지 않으므로 삭제하면 복구할 수 없다.
+
 ## 모듈 구조 원칙
 
 - 디렉터리 모듈의 루트에는 모듈의 목적을 표현하는 "주인공"(공개 오케스트레이션)만
