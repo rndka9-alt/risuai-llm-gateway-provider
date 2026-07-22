@@ -24,7 +24,7 @@ export async function showCacheBackoffToast(transition: CacheBackoffTransition):
         'max-width:min(360px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;' +
         'background:rgba(24,24,27,.96);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.3);' +
         'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
-        'font-size:13px;line-height:1.45;pointer-events:none;',
+        'font-size:14px;line-height:1.45;pointer-events:none;',
     );
     await body.appendChild(toast);
 

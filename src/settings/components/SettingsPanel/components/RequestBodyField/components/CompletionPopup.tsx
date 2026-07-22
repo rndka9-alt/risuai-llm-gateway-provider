@@ -30,7 +30,7 @@ export function CompletionPopup({
           >
             <button
               type="button"
-              class={`flex w-full cursor-pointer items-center gap-1.5 border-0 px-2 py-0.5 text-left text-[11px] ${
+              class={`flex w-full cursor-pointer items-center gap-1.5 border-0 px-2 py-0.5 text-left text-xs ${
                 isSelected
                   ? 'bg-ui-accent-soft text-ui-content'
                   : 'bg-transparent text-ui-content/85'

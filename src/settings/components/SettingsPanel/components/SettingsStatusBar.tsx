@@ -6,7 +6,7 @@ import { ApiKeyField } from './ApiKeyField';
 
 // 테마에 따라 muted가 너무 옅어지고, 테두리 있는 칩은 경계가 늘어 소음이 된다 —
 // 담백한 텍스트 + 본문색 반투명으로 대비를 확보한다 (볼드는 모델명 하나만)
-const STATUS_CHIP_CLASS = 'shrink-0 text-[11px] leading-none text-ui-content/70';
+const STATUS_CHIP_CLASS = 'shrink-0 text-xs leading-none text-ui-content/70';
 
 export function SettingsStatusBar() {
   const { apiKey, model, serviceTier, streamingMode } = useSettingsSnapshot();
@@ -48,7 +48,7 @@ export function SettingsStatusBar() {
             <span
               id="status-model"
               title={model}
-              class="ml-auto min-w-0 truncate text-right text-[13px] font-semibold text-ui-content"
+              class="ml-auto min-w-0 truncate text-right text-sm font-semibold text-ui-content"
             >
               {resolveModelDisplayLabel(model)}
             </span>

@@ -19,7 +19,7 @@ export function EditorDiagnostics({ diagnostics, onSelect }: EditorDiagnosticsPr
     <button
       type="button"
       onClick={() => onSelect(firstDiagnostic)}
-      class="flex w-full cursor-pointer items-baseline gap-1.5 border-0 bg-transparent px-0.5 py-0.5 text-left text-[11px]"
+      class="flex w-full cursor-pointer items-baseline gap-1.5 border-0 bg-transparent px-0.5 py-0.5 text-left text-xs"
     >
       <span
         class={`shrink-0 font-medium ${

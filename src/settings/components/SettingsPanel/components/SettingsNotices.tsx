@@ -21,7 +21,7 @@ export function SettingsNotices({ cacheBackoffActive }: SettingsNoticesProps) {
         </p>
       )}
       {cacheBackoffActive && (
-        <p id="cache-backoff-diagnostic" class="m-0 text-[0.8em] leading-[1.45] text-ui-muted">
+        <p id="cache-backoff-diagnostic" class="m-0 text-xs leading-[1.45] text-ui-muted">
           ⚠️ 프롬프트 앞부분이 매턴 바뀌어 캐시를 일시 중단했어요. 프리셋의
           {' {{time}}/{{random}}/확률 로어북을 확인해보세요'}
         </p>

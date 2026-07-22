@@ -7,7 +7,7 @@ interface EditorBreadcrumbProps {
 
 export function EditorBreadcrumb({ segments }: EditorBreadcrumbProps) {
   return (
-    <nav class="flex h-6 shrink-0 items-center gap-1 overflow-x-auto border-b border-ui-frame/60 px-2.5 font-mono text-[10px] whitespace-nowrap text-ui-muted">
+    <nav class="flex h-6 shrink-0 items-center gap-1 overflow-x-auto border-b border-ui-frame/60 px-2.5 font-mono text-xs whitespace-nowrap text-ui-muted">
       <span>$</span>
       {segments.map((segment, index) => (
         <Fragment key={`${index}-${segment.label}`}>
