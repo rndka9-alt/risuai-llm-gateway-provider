@@ -2,11 +2,15 @@ import { z } from 'zod';
 import {
   CONFIG_FIELD_NAMES,
   LEGACY_ARGUMENT_BACKUP_STORAGE_KEY,
+  SERVICE_TIER_ARGUMENT,
   type ConfigFieldName,
 } from '../constants';
 import { configSchema, type Config, type ConfigUpdate } from '../storage/schema';
 
 const legacyArgumentBackupSchema = z.record(z.string(), z.string());
+
+type LegacyArgumentBackupResult =
+  { status: 'missing' } | { status: 'invalid' } | { status: 'valid'; values: ConfigUpdate };
 
 function selectNonEmptyConfigValues(
   values: Readonly<Record<string, string | undefined>>,
@@ -21,9 +25,9 @@ function selectNonEmptyConfigValues(
   return selectedValues;
 }
 
-async function loadLegacyArgumentBackup(): Promise<ConfigUpdate | null> {
+async function loadLegacyArgumentBackup(): Promise<LegacyArgumentBackupResult> {
   const raw = await risuai.pluginStorage.getItem(LEGACY_ARGUMENT_BACKUP_STORAGE_KEY);
-  if (typeof raw !== 'string' || raw === '') return null;
+  if (typeof raw !== 'string' || raw === '') return { status: 'missing' };
 
   let parsed: unknown;
   try {
@@ -33,7 +37,7 @@ async function loadLegacyArgumentBackup(): Promise<ConfigUpdate | null> {
       '[llm-gateway-provider] corrupted legacy argument backup; falling back to realArg',
       error,
     );
-    return null;
+    return { status: 'invalid' };
   }
 
   const result = legacyArgumentBackupSchema.safeParse(parsed);
@@ -42,9 +46,9 @@ async function loadLegacyArgumentBackup(): Promise<ConfigUpdate | null> {
       '[llm-gateway-provider] invalid legacy argument backup; falling back to realArg',
       result.error,
     );
-    return null;
+    return { status: 'invalid' };
   }
-  return selectNonEmptyConfigValues(result.data);
+  return { status: 'valid', values: selectNonEmptyConfigValues(result.data) };
 }
 
 async function loadLegacyRealArguments(): Promise<ConfigUpdate> {
@@ -63,6 +67,18 @@ async function loadLegacyRealArguments(): Promise<ConfigUpdate> {
 
 export async function loadLegacyConfig(): Promise<Config> {
   const legacyArgumentBackup = await loadLegacyArgumentBackup();
-  const legacyValues = legacyArgumentBackup ?? (await loadLegacyRealArguments());
+  if (legacyArgumentBackup.status === 'valid') {
+    return configSchema.parse(legacyArgumentBackup.values);
+  }
+
+  const legacyValues = await loadLegacyRealArguments();
+  // 빈 backup도 구버전이 만들어 둔 설치 이력이다. 저장 이력과 realArg가 모두 없는
+  // 진짜 첫 설치에만 새 기본값을 심어 기존의 Gateway 기본 선택을 뒤집지 않는다.
+  const isFirstInstallation =
+    legacyArgumentBackup.status === 'missing' && Object.keys(legacyValues).length === 0;
+  if (isFirstInstallation) {
+    return configSchema.parse({ [SERVICE_TIER_ARGUMENT]: 'flex' });
+  }
+
   return configSchema.parse(legacyValues);
 }

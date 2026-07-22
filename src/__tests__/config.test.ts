@@ -129,6 +129,50 @@ describe('config storage', () => {
 });
 
 describe('legacy config migration', () => {
+  it('설정 이력이 전혀 없는 첫 설치에는 Flex를 시드한다', async () => {
+    const harness = stubConfig();
+
+    await expect(initializeConfigOnStartup()).resolves.toEqual({
+      ...DEFAULT_CONFIG,
+      service_tier: 'flex',
+    });
+    expect(requireStoredConfig(harness)).toEqual({
+      ...DEFAULT_CONFIG,
+      service_tier: 'flex',
+    });
+  });
+
+  it.each([
+    ['Gateway 기본', ''],
+    ['구버전 Gateway 기본', 'default'],
+    ['Flex', 'flex'],
+  ])('저장 config의 기존 %s 선택을 유지한다', async (_label, serviceTier) => {
+    const harness = stubConfig({
+      configValue: JSON.stringify({ service_tier: serviceTier }),
+    });
+
+    await expect(initializeConfigOnStartup()).resolves.toMatchObject({
+      service_tier: serviceTier,
+    });
+    expect(harness.getArgument).not.toHaveBeenCalled();
+  });
+
+  it('빈 구 argument backup도 기존 설치 이력으로 보고 Gateway 기본을 유지한다', async () => {
+    const harness = stubConfig({ legacyBackupValue: JSON.stringify({}) });
+
+    await expect(initializeConfigOnStartup()).resolves.toEqual(DEFAULT_CONFIG);
+    expect(harness.getArgument).not.toHaveBeenCalled();
+  });
+
+  it('손상된 구 argument backup도 첫 설치로 오인하지 않는다', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = stubConfig({ legacyBackupValue: '{broken json' });
+
+    await expect(initializeConfigOnStartup()).resolves.toEqual(DEFAULT_CONFIG);
+    expect(requireStoredConfig(harness)).toEqual(DEFAULT_CONFIG);
+    expect(consoleError).toHaveBeenCalled();
+  });
+
   it('config가 없으면 구 argument backup을 우선 승격한다', async () => {
     const harness = stubConfig({
       argumentValues: { api_key: 'real-arg-secret' },
@@ -136,6 +180,7 @@ describe('legacy config migration', () => {
         api_key: 'backup-secret',
         flags: 'poolSupported',
         model: 'gpt-5.6-terra',
+        service_tier: 'flex',
       }),
     });
 
@@ -143,6 +188,7 @@ describe('legacy config migration', () => {
       api_key: 'backup-secret',
       flags: 'poolSupported',
       model: 'gpt-5.6-terra',
+      service_tier: 'flex',
     });
     expect(harness.getArgument).not.toHaveBeenCalled();
     expect(requireStoredConfig(harness)).toMatchObject({ api_key: 'backup-secret' });
@@ -154,6 +200,7 @@ describe('legacy config migration', () => {
         api_key: 'real-arg-secret',
         model: 'gpt-5.6-luna',
         reasoning_effort: 'high',
+        service_tier: 'flex',
       },
     });
 
@@ -161,6 +208,7 @@ describe('legacy config migration', () => {
       api_key: 'real-arg-secret',
       model: 'gpt-5.6-luna',
       reasoning_effort: 'high',
+      service_tier: 'flex',
     });
     expect(requireStoredConfig(harness)).toMatchObject({
       api_key: 'real-arg-secret',
