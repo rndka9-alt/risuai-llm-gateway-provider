@@ -12,18 +12,26 @@ interface LegacyFetchResult {
   status: number;
 }
 
-/** RisuAI 브릿지가 실제 HTTP 응답 대신 합성한 실패 결과입니다. */
+/** RisuAI 요청 전달 과정이 실제 HTTP 응답을 만들지 못한 오류입니다. */
 export class BridgeFetchError extends Error {
-  constructor(message: string) {
-    super(message);
+  readonly detail: unknown;
+
+  constructor(detail: unknown) {
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : detail instanceof Error && detail.message !== ''
+          ? detail.message
+          : 'RisuAI 요청 처리 과정에서 오류가 발생했어요.';
+    super(message, { cause: detail });
     this.name = 'BridgeFetchError';
+    this.detail = detail;
   }
 }
 
 const LEGACY_FALLBACK_UNAVAILABLE_MESSAGE =
-  '이 브라우저는 transferable streams를 지원하지 않아 risuFetch 폴백이 필요하지만, ' +
-  '현재 RisuAI에서 deprecated risuFetch API가 제거되어 요청을 보낼 수 없습니다. ' +
-  'Safari 27 이상 또는 Chrome/Firefox에서 사용해주세요.';
+  '현재 브라우저에서는 RisuAI가 플러그인의 요청을 전달할 수 없어요. ' +
+  '기기 소프트웨어를 최신 버전으로 업데이트하거나 컴퓨터의 Chrome 또는 Firefox에서 다시 시도해 주세요.';
 
 let cachedTransferableStreamsSupport: boolean | undefined;
 
@@ -96,7 +104,7 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
   init?.signal?.throwIfAborted();
   const risuFetch = risuai.risuFetch;
   if (risuFetch === undefined) {
-    throw new Error(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
+    throw new BridgeFetchError(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
   }
   const method = init?.method;
   if (method !== undefined && method !== 'POST' && method !== 'GET') {
@@ -119,13 +127,14 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
       ...(init?.signal === undefined ? {} : { abortSignal: init.signal }),
     });
   } catch (error) {
+    init?.signal?.throwIfAborted();
     // 게스트의 risuai는 모든 프로퍼티에 함수를 돌려주는 Proxy라 위 존재 확인은
     // 실전에서 걸리지 않는다. 본체에서 risuFetch가 제거되면 브릿지가
     // 'API method risuFetch not found'로 거절하므로 여기서 안내 메시지로 바꾼다.
     if (error instanceof Error && error.message.includes('risuFetch not found')) {
-      throw new Error(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
+      throw new BridgeFetchError(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
     }
-    throw error;
+    throw new BridgeFetchError(error);
   }
   // globalFetch는 abort를 throw 없이 {ok:false, status:400}으로 반환하므로,
   // HTTP 실패로 오인되기 전에 표준 abort 예외로 되돌린다.
@@ -155,7 +164,14 @@ export function createBridgeFetch(options?: BridgeFetchOptions): FetchLike {
   const transferableStreamsSupported =
     options?.transferableStreamsSupported ?? supportsTransferableStreams();
   if (transferableStreamsSupported) {
-    return (url, init) => risuai.nativeFetch(url, init);
+    return async (url, init) => {
+      try {
+        return await risuai.nativeFetch(url, init);
+      } catch (error) {
+        init?.signal?.throwIfAborted();
+        throw new BridgeFetchError(error);
+      }
+    };
   }
   return legacyRisuFetch;
 }

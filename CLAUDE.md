@@ -140,7 +140,8 @@ npm test
   `plainFetchForce`인 이유: fetchNative가 NodeOnly에서 직접 fetch로 동작하므로 폴백도 같은 직접
   경로로 통일한다. llmgateway.io는 `Access-Control-Allow-Origin: *`라 공식 웹·Tauri에서도 통과한다.
   `globalFetch` 내부 실패의 문자열·빈 헤더·합성 400은 실제 HTTP 400으로 재구성하지 않고
-  `BridgeFetchError`로 올려 사용자 문구에서 구분한다. 실제 응답은 성공 여부와 무관하게 `Uint8Array`다.
+  `BridgeFetchError`로 올려 사용자 문구에서 구분한다. `nativeFetch`가 Response를 만들기 전에 던진 오류도
+  같은 타입으로 감싸되 abort는 보존한다. 실제 응답은 성공 여부와 무관하게 `Uint8Array`다.
   headers의 content-type은 반드시 `Content-Type` 표기 하나로 정규화한다 — globalFetch가 대문자
   기본값을 별도 키로 추가해 중복되면 게이트웨이가 body를 빈 객체로 취급한다 (실측 HTTP 400 ZodError).
 - **프로바이더 인자 실체**: `ProviderArguments`의 샘플러 값들은 d.ts와 달리 런타임에 누락될 수 있다

@@ -326,6 +326,19 @@ describe('provider registration metadata', () => {
 });
 
 describe('request body options', () => {
+  it('API 키가 없으면 사용자가 바로 해결할 수 있는 안내를 반환한다', async () => {
+    const harness = await loadProvider([], { api_key: '' });
+
+    const response = await harness.provider(createProviderArguments());
+
+    expect(response).toEqual({
+      success: false,
+      content:
+        'LLM Gateway API 키가 설정되어 있지 않아요.\n플러그인 설정에서 API 키를 입력해 주세요.',
+    });
+    expect(harness.nativeFetch).not.toHaveBeenCalled();
+  });
+
   it('model 인자가 비어 있으면 UI 표시값과 같은 기본 모델로 요청한다', async () => {
     const harness = await loadProvider([createSuccessfulResponse()], { model: '' });
 

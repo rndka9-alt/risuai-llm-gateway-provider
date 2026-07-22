@@ -43,6 +43,20 @@ describe('createBridgeFetch', () => {
     expect(response).toBe(nativeResponse);
   });
 
+  it('nativeFetch가 응답을 만들지 못하면 RisuAI 전달 오류로 보존한다', async () => {
+    const nativeError = new TypeError('Load failed');
+    const nativeFetch = vi.fn().mockRejectedValue(nativeError);
+    vi.stubGlobal('risuai', { nativeFetch });
+
+    const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: true });
+
+    await expect(bridgeFetch(REQUEST_URL)).rejects.toMatchObject({
+      name: BridgeFetchError.name,
+      detail: nativeError,
+      cause: nativeError,
+    });
+  });
+
   it('감지 오버라이드 없이 호출해도 FetchLike를 반환한다', () => {
     vi.stubGlobal('risuai', {});
     expect(createBridgeFetch()).toBeTypeOf('function');
@@ -206,7 +220,7 @@ describe('createBridgeFetch', () => {
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
-      ).rejects.toThrow(/risuFetch API가 제거되어/);
+      ).rejects.toThrow(/RisuAI가 플러그인의 요청을 전달할 수 없어요/);
     });
 
     it('브릿지가 risuFetch not found로 거절해도 같은 안내 메시지로 바꾼다', async () => {
@@ -219,7 +233,7 @@ describe('createBridgeFetch', () => {
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
-      ).rejects.toThrow(/risuFetch API가 제거되어/);
+      ).rejects.toThrow(/RisuAI가 플러그인의 요청을 전달할 수 없어요/);
     });
 
     it('abort된 요청은 HTTP 실패 대신 abort 예외로 끝난다', async () => {
