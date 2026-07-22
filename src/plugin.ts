@@ -1,6 +1,5 @@
 import {
   Llm,
-  LlmHttpError,
   LLMGatewayProvider,
   OpenAIChatCompletionsFormat,
   type LlmMessage,
@@ -32,6 +31,7 @@ import {
 } from './config';
 import { toLlmMessages } from './convert';
 import { applyCustomExtraBody } from './extra-body';
+import { toFailureContent } from './failure-content';
 import { accumulateCacheUsage } from './ledger';
 import {
   DEFAULT_MODEL,
@@ -68,16 +68,6 @@ interface StreamConsumptionResult {
 
 interface ProviderRegistrationSettings {
   flagNames: readonly ConfigurableLlmFlagName[];
-}
-
-function toFailureContent(error: unknown): string {
-  if (error instanceof LlmHttpError) {
-    return `LLM Gateway 요청 실패 (HTTP ${error.status})\n${error.body}`;
-  }
-  if (error instanceof Error) {
-    return `LLM Gateway 요청 실패: ${error.message}`;
-  }
-  return `LLM Gateway 요청 실패: ${String(error)}`;
 }
 
 async function consumeGatewayStream(

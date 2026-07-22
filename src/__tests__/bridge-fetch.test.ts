@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createBridgeFetch } from '../bridge-fetch';
+import { BridgeFetchError, createBridgeFetch } from '../bridge-fetch';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -158,20 +158,45 @@ describe('createBridgeFetch', () => {
       expect(new TextDecoder().decode(chunk.value)).toBe('{"choices":[]}');
     });
 
-    it('문자열 data(globalFetch 내부 오류 경로)도 본문으로 전달한다', async () => {
-      const risuFetch = vi
-        .fn()
-        .mockResolvedValue(
-          createLegacyResult({ ok: false, data: 'blocked by security policy', status: 400 }),
-        );
+    it('globalFetch의 합성 400은 실제 HTTP 응답과 구분해 실패시킨다', async () => {
+      const risuFetch = vi.fn().mockResolvedValue(
+        createLegacyResult({
+          ok: false,
+          data: 'blocked by security policy',
+          headers: {},
+          status: 400,
+        }),
+      );
       vi.stubGlobal('risuai', { risuFetch });
 
       const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
-      const response = await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' });
+      await expect(
+        bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
+      ).rejects.toMatchObject({
+        name: BridgeFetchError.name,
+        message: 'blocked by security policy',
+      });
+    });
+
+    it('실제 HTTP 400의 Uint8Array body는 원문 그대로 Response로 재구성한다', async () => {
+      const responseBody = '{"error":{"message":"bad request"}}';
+      const risuFetch = vi.fn().mockResolvedValue(
+        createLegacyResult({
+          ok: false,
+          data: new TextEncoder().encode(responseBody),
+          status: 400,
+        }),
+      );
+      vi.stubGlobal('risuai', { risuFetch });
+
+      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const response = asResponse(
+        await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
+      );
 
       expect(response.ok).toBe(false);
       expect(response.status).toBe(400);
-      await expect(response.text()).resolves.toBe('blocked by security policy');
+      await expect(response.text()).resolves.toBe(responseBody);
     });
 
     it('risuFetch가 제거된 환경이면 안내 메시지와 함께 실패한다', async () => {

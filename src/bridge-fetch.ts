@@ -5,6 +5,21 @@ interface BridgeFetchOptions {
   transferableStreamsSupported?: boolean;
 }
 
+interface LegacyFetchResult {
+  ok: boolean;
+  data: unknown;
+  headers: Record<string, string>;
+  status: number;
+}
+
+/** RisuAI 브릿지가 실제 HTTP 응답 대신 합성한 실패 결과입니다. */
+export class BridgeFetchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BridgeFetchError';
+  }
+}
+
 const LEGACY_FALLBACK_UNAVAILABLE_MESSAGE =
   '이 브라우저는 transferable streams를 지원하지 않아 risuFetch 폴백이 필요하지만, ' +
   '현재 RisuAI에서 deprecated risuFetch API가 제거되어 요청을 보낼 수 없습니다. ' +
@@ -50,9 +65,9 @@ function normalizeLegacyHeaders(headers: Record<string, string>): Record<string,
   return normalized;
 }
 
-function toLegacyResponseBody(data: unknown): Uint8Array<ArrayBuffer> | string {
-  // rawResponse:true 성공 경로는 본문 전체 Uint8Array, globalFetch 내부 오류 경로는
-  // 메시지 문자열을 준다. 그 외 형태는 계약 밖이므로 감추지 않고 실패시킨다.
+function toLegacyResponseBody(data: unknown): Uint8Array<ArrayBuffer> {
+  // rawResponse:true의 실제 HTTP 응답은 성공 여부와 무관하게 본문 전체 Uint8Array다.
+  // 문자열인 브릿지 내부 실패는 Response로 재구성하기 전에 별도로 걷어낸다.
   if (data instanceof Uint8Array) {
     // 타입상 SharedArrayBuffer 기반일 수 있어 BodyInit에 바로 못 넣는다 —
     // ArrayBuffer 기반 사본으로 옮긴다.
@@ -60,10 +75,20 @@ function toLegacyResponseBody(data: unknown): Uint8Array<ArrayBuffer> | string {
     copied.set(data);
     return copied;
   }
-  if (typeof data === 'string') {
-    return data;
-  }
   throw new Error(`risuFetch 폴백이 해석할 수 없는 응답 본문 형태입니다: ${typeof data}`);
+}
+
+function isSyntheticBridgeFailure(result: LegacyFetchResult): result is LegacyFetchResult & {
+  data: string;
+} {
+  // globalFetch는 fetch/CORS/TLS/보안 정책 등의 내부 실패를 실제 응답과 달리
+  // 문자열 본문·빈 헤더·합성 400으로 반환한다. 양쪽 RisuAI 런타임이 공유하는 계약이다.
+  return (
+    !result.ok &&
+    result.status === 400 &&
+    typeof result.data === 'string' &&
+    Object.keys(result.headers).length === 0
+  );
 }
 
 const legacyRisuFetch: FetchLike = async (url, init) => {
@@ -77,7 +102,7 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
   if (method !== undefined && method !== 'POST' && method !== 'GET') {
     throw new Error(`risuFetch 폴백은 ${method} 요청을 지원하지 않습니다.`);
   }
-  let result;
+  let result: LegacyFetchResult;
   try {
     result = await risuFetch(url, {
       // globalFetch가 body를 다시 JSON.stringify하므로, llm-io가 직렬화한 JSON 문자열을
@@ -105,6 +130,9 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
   // globalFetch는 abort를 throw 없이 {ok:false, status:400}으로 반환하므로,
   // HTTP 실패로 오인되기 전에 표준 abort 예외로 되돌린다.
   init?.signal?.throwIfAborted();
+  if (isSyntheticBridgeFailure(result)) {
+    throw new BridgeFetchError(result.data);
+  }
   return new Response(
     NULL_BODY_STATUSES.has(result.status) ? null : toLegacyResponseBody(result.data),
     {

@@ -45,6 +45,7 @@ npm test
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
 - `src/bridge-fetch.ts` — 브릿지 경유 FetchLike 생성. transferable streams 미지원 브라우저
   (Safari 26 이하)는 legacy `risuFetch` 폴백으로 자동 전환 (아래 런타임 제약 참고)
+- `src/failure-content.ts` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
@@ -138,6 +139,8 @@ npm test
   buffered-decoupled로 동작한다 (연결은 스트리밍, 소비는 완료 후 일괄).
   `plainFetchForce`인 이유: fetchNative가 NodeOnly에서 직접 fetch로 동작하므로 폴백도 같은 직접
   경로로 통일한다. llmgateway.io는 `Access-Control-Allow-Origin: *`라 공식 웹·Tauri에서도 통과한다.
+  `globalFetch` 내부 실패의 문자열·빈 헤더·합성 400은 실제 HTTP 400으로 재구성하지 않고
+  `BridgeFetchError`로 올려 사용자 문구에서 구분한다. 실제 응답은 성공 여부와 무관하게 `Uint8Array`다.
   headers의 content-type은 반드시 `Content-Type` 표기 하나로 정규화한다 — globalFetch가 대문자
   기본값을 별도 키로 추가해 중복되면 게이트웨이가 body를 빈 객체로 취급한다 (실측 HTTP 400 ZodError).
 - **프로바이더 인자 실체**: `ProviderArguments`의 샘플러 값들은 d.ts와 달리 런타임에 누락될 수 있다
