@@ -23,7 +23,7 @@ describe('showCacheBackoffToast', () => {
       };
       const body = { appendChild: vi.fn().mockResolvedValue(undefined) };
       const rootDocument = {
-        createElement: vi.fn().mockReturnValue(toast),
+        createElement: vi.fn().mockResolvedValue(toast),
         querySelector: vi.fn().mockResolvedValue(body),
       };
       vi.stubGlobal('risuai', {

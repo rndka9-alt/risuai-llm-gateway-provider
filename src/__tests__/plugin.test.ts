@@ -164,7 +164,7 @@ async function loadProvider(
     },
     nativeFetch,
     getRootDocument: async () => ({
-      createElement: () => ({
+      createElement: async () => ({
         remove: async () => undefined,
         setStyleAttribute: async () => undefined,
         setTextContent: async (value: string) => {

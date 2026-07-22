@@ -17,7 +17,8 @@ export async function showCacheBackoffToast(transition: CacheBackoffTransition):
     const body = await rootDocument.querySelector('body');
     if (body === null) throw new Error('Main document body is unavailable');
 
-    const toast = rootDocument.createElement('div');
+    // v3 iframe RPC는 동기 반환으로 선언된 SafeDocument 메서드도 Promise로 전달한다.
+    const toast = await rootDocument.createElement('div');
     await toast.setTextContent(CACHE_BACKOFF_TOAST_MESSAGES[transition]);
     await toast.setStyleAttribute(
       'position:fixed;right:16px;bottom:16px;z-index:2147483647;' +
