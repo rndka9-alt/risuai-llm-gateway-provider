@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import {
   getCacheLedgerSnapshot,
@@ -73,9 +74,9 @@ export function SettingsFooter() {
           aria-label="캐시 손익 초기화"
           title="캐시 손익 초기화"
           onClick={() => void resetLedger()}
-          class="grid size-[22px] cursor-pointer place-items-center rounded-[5px] border-0 bg-transparent p-0 text-[15px] leading-none text-ui-muted hover:bg-ui-content/10 hover:text-ui-content focus-visible:outline-2 focus-visible:outline-ui-accent disabled:cursor-wait disabled:opacity-70"
+          class="grid size-[22px] cursor-pointer place-items-center rounded-[5px] border-0 bg-transparent p-0 text-ui-muted hover:bg-ui-content/10 hover:text-ui-content focus-visible:outline-2 focus-visible:outline-ui-accent disabled:cursor-wait disabled:opacity-70"
         >
-          ×
+          <Trash2 size={14} strokeWidth={1.7} aria-hidden="true" />
         </button>
         <div
           id="ledger-popover"
