@@ -45,7 +45,7 @@ export function ApiKeyField({ editing, onCommit }: ApiKeyFieldProps) {
           id="api-key"
           ref={inputRef}
           type={apiKeyVisible ? 'text' : 'password'}
-          aria-label="API key"
+          aria-label="API 키"
           autocomplete="off"
           disabled={!editing}
           spellcheck={false}

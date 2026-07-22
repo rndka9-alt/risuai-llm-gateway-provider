@@ -15,8 +15,8 @@ export function PromptCacheModeField() {
           캐시 모드
         </label>
         <HelpTooltip id="prompt-cache-mode-tooltip" label="캐시 모드 도움말">
-          캐시 끄기 시에도 explicit 모드는 유지하고 breakpoint만 생략합니다. implicit 캐시로
-          전환되지 않으며, 추가 캐시 쓰기 비용이 발생하지 않습니다.
+          캐시를 끄면 implicit으로 바뀌지 않고 explicit 모드를 유지해요. 캐시 지점은 보내지 않아
+          추가 캐시 저장 비용도 발생하지 않아요.
         </HelpTooltip>
       </span>
       <select

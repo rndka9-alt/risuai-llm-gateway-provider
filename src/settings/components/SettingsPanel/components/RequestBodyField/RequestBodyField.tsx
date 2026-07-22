@@ -55,7 +55,7 @@ export function RequestBodyField({ core, diagnostics }: RequestBodyFieldProps) {
       <span id="request-body-label" class={`${FIELD_CAPTION_CLASS} flex items-center gap-1`}>
         JSON
         <HelpTooltip id="request-body-help" label="커스텀 요청 body 도움말">
-          요청 body에 덮어씌워 전송합니다. 에러가 있으면 전체가 무시됩니다.
+          입력한 JSON은 LLM Gateway 요청 body에 포함돼요. 오류가 있으면 적용하지 않아요.
         </HelpTooltip>
       </span>
       {/* 완성 팝업이 에디터 상자 밖으로 나갈 수 있어야 하므로 overflow를 자르지 않는다 */}

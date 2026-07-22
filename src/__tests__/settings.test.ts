@@ -464,6 +464,7 @@ describe('settings UI', () => {
     const input = requireInput('api-key');
     const button = requireButton('api-key-visibility');
 
+    expect(input.getAttribute('aria-label')).toBe('API 키');
     await act(async () => requireButton('api-key-edit').click());
     await act(async () => button.click());
     expect(input.disabled).toBe(false);
@@ -661,7 +662,7 @@ describe('settings UI', () => {
       verbosity: 'low',
     });
     expect(document.getElementById('reload-notice')?.textContent).toContain(
-      '적용하려면 새로고침이 필요합니다.',
+      '변경 사항을 적용하려면 새로고침해 주세요.',
     );
 
     poolSupported.checked = false;
@@ -679,7 +680,7 @@ describe('settings UI', () => {
     poolSupported.checked = true;
     await dispatchChange(poolSupported);
     expect(document.getElementById('reload-notice')?.textContent).toContain(
-      '적용하려면 새로고침이 필요합니다.',
+      '변경 사항을 적용하려면 새로고침해 주세요.',
     );
 
     await act(async () => requireButton('close').click());
@@ -688,7 +689,7 @@ describe('settings UI', () => {
     });
 
     expect(document.getElementById('reload-notice')?.textContent).toContain(
-      '적용하려면 새로고침이 필요합니다.',
+      '변경 사항을 적용하려면 새로고침해 주세요.',
     );
   });
 
@@ -714,9 +715,11 @@ describe('settings UI', () => {
     expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
     expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
     expect(document.getElementById('ledger-write-detail')?.textContent).toBe('4.0k');
-    expect(document.getElementById('cache-backoff-diagnostic')?.textContent).toContain(
-      '{{time}}/{{random}}/확률 로어북',
+    const cacheBackoffDiagnostic = document.getElementById('cache-backoff-diagnostic');
+    expect(cacheBackoffDiagnostic?.textContent).toBe(
+      '프롬프트 앞부분이 계속 바뀌어 캐싱을 잠시 멈췄어요.',
     );
+    expect(cacheBackoffDiagnostic?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
 
     await act(async () => {
       requireButton('ledger-reset').click();
@@ -796,13 +799,19 @@ describe('settings UI', () => {
     const harness = await renderSettingsUi();
     await expandSettingsAccordion('advanced-settings');
     expect(document.getElementById('prompt-cache-mode-tooltip')?.textContent).toContain(
-      '추가 캐시 쓰기 비용이 발생하지 않습니다.',
+      'implicit으로 바뀌지 않고 explicit 모드를 유지해요.',
+    );
+    expect(document.getElementById('prompt-cache-mode-tooltip')?.textContent).toContain(
+      '캐시 지점은 보내지 않아 추가 캐시 저장 비용도 발생하지 않아요.',
     );
     expect(document.getElementById('streaming-mode-tooltip')?.textContent).toContain(
-      '플러그인이 모두 조립한 뒤 RisuAI에 한 번에 전달합니다.',
+      '플러그인이 응답을 모두 모은 뒤 RisuAI에 한 번에 전달해요.',
     );
     expect(document.getElementById('service-tier-tooltip')?.textContent).toContain(
-      '입력·출력 비용이 절반으로 줄어듭니다.',
+      '입력·출력 비용이 절반으로 줄어요.',
+    );
+    expect(document.getElementById('request-body-help')?.textContent).toContain(
+      '입력한 JSON은 LLM Gateway 요청 body에 포함돼요.',
     );
 
     await act(async () => requireButton('close').click());
@@ -815,7 +824,9 @@ describe('settings UI', () => {
     await dispatchInput(apiKey);
     await dispatchBlur(apiKey);
     await act(async () => Promise.resolve());
-    expect(document.getElementById('save-error')?.textContent).toContain('저장에 실패');
+    expect(document.getElementById('save-error')?.textContent).toContain(
+      '같은 문제가 계속되면 플러그인 개발자에게 알려 주세요.',
+    );
 
     await act(async () => requireButton('api-key-edit').click());
     apiKey.value = 'will-succeed';

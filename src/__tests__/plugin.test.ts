@@ -531,8 +531,8 @@ describe('cache health backoff', () => {
     expect(getRequestBody(harness.nativeFetch, 3)).not.toContain('prompt_cache_breakpoint');
     expect(getRequestBody(harness.nativeFetch, 4)).toContain('prompt_cache_breakpoint');
     expect(harness.toastMessages).toEqual([
-      'LLM Gateway: 캐시 히트 연속 3회 실패 — 캐시 마킹을 일시 중단했어요',
-      'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시 마킹을 다시 시작했어요',
+      'LLM Gateway: 프롬프트 앞부분이 계속 바뀌어 캐시를 잠시 멈췄어요',
+      'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시를 다시 시작했어요',
     ]);
 
     const storedState = harness.stored.get(CACHE_ANCHOR_STATE_STORAGE_KEY);

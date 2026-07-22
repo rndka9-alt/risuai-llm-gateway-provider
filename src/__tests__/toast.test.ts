@@ -9,8 +9,8 @@ afterEach(() => {
 
 describe('showCacheBackoffToast', () => {
   it.each([
-    ['activated', 'LLM Gateway: 캐시 히트 연속 3회 실패 — 캐시 마킹을 일시 중단했어요'],
-    ['released', 'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시 마킹을 다시 시작했어요'],
+    ['activated', 'LLM Gateway: 프롬프트 앞부분이 계속 바뀌어 캐시를 잠시 멈췄어요'],
+    ['released', 'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시를 다시 시작했어요'],
   ] satisfies ReadonlyArray<readonly ['activated' | 'released', string]>)(
     '%s 전환 토스트를 메인 DOM에 넣고 수 초 뒤 제거한다',
     async (transition, message) => {

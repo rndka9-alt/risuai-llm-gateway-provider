@@ -13,8 +13,7 @@ export function StreamingModeField() {
       <span class="flex min-h-4 items-center gap-1">
         <span class={FIELD_CAPTION_CLASS}>응답 방식</span>
         <HelpTooltip id="streaming-mode-tooltip" label="응답 방식 도움말">
-          응답 데이터를 조각 단위로 실시간 수신합니다. 플러그인이 모두 조립한 뒤 RisuAI에 한 번에
-          전달합니다.
+          응답을 실시간으로 받아요. 플러그인이 응답을 모두 모은 뒤 RisuAI에 한 번에 전달해요.
         </HelpTooltip>
       </span>
       <ToggleControl

@@ -327,9 +327,9 @@ export type Gpt56ChatCompletionsRequest = z.infer<typeof gpt56ChatCompletionsReq
 
 /** 의도적으로 세트에서 뺀 키의 에디터 안내 문구 — "정의되지 않은 키" 대신 대체 수단을 알려준다 */
 export const gpt56ExcludedKeyMessages: Record<string, string> = {
-  stream: '스트리밍 여부는 플러그인의 응답 방식 설정으로 조절해주세요',
+  stream: '스트리밍 여부는 플러그인의 응답 방식 설정에서 조절해 주세요',
   stream_options: '스트리밍 usage 옵션은 플러그인이 자동으로 부여해요',
   prompt_cache_key: '캐시 키는 플러그인의 프롬프트 캐시 설정이 자동 관리해요',
   prompt_cache_options: '캐시 모드·TTL은 플러그인의 프롬프트 캐시 설정이 자동 관리해요',
-  max_completion_tokens: 'Gateway가 받지 않는 이름이에요 — max_tokens를 사용해주세요',
+  max_completion_tokens: 'Gateway에서 사용할 수 없는 이름이에요. max_tokens를 사용해 주세요',
 };

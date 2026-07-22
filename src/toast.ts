@@ -3,8 +3,8 @@ import type { CacheBackoffTransition } from './cache';
 const TOAST_DURATION_MILLISECONDS = 4_500;
 
 const CACHE_BACKOFF_TOAST_MESSAGES: Record<CacheBackoffTransition, string> = {
-  activated: 'LLM Gateway: 캐시 히트 연속 3회 실패 — 캐시 마킹을 일시 중단했어요',
-  released: 'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시 마킹을 다시 시작했어요',
+  activated: 'LLM Gateway: 프롬프트 앞부분이 계속 바뀌어 캐시를 잠시 멈췄어요',
+  released: 'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시를 다시 시작했어요',
 };
 
 export async function showCacheBackoffToast(transition: CacheBackoffTransition): Promise<void> {
