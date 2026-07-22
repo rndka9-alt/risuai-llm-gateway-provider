@@ -19,6 +19,7 @@ export function AdvancedSettingsAccordion() {
       <StreamingModeField />
       <ServiceTierField />
       <LlmFlagsField />
+      <span class="text-[11px] leading-none text-ui-content/70">버전: {__VERSION__}</span>
     </SettingsAccordion>
   );
 }
