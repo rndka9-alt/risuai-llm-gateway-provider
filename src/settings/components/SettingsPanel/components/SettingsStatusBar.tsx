@@ -1,12 +1,8 @@
-import { KeyRound } from 'lucide-preact';
+import { ArrowBigDownDash, KeyRound, RadioTower } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import { resolveModelDisplayLabel } from '../../../../options';
 import { useSettingsSnapshot } from '../../../utils/settings-snapshot';
 import { ApiKeyField } from './ApiKeyField';
-
-// 테마에 따라 muted가 너무 옅어지고, 테두리 있는 칩은 경계가 늘어 소음이 된다 —
-// 담백한 텍스트 + 본문색 반투명으로 대비를 확보한다 (볼드는 모델명 하나만)
-const STATUS_CHIP_CLASS = 'shrink-0 text-xs leading-none text-ui-content/70';
 
 export function SettingsStatusBar() {
   const { apiKey, model, serviceTier, streamingMode } = useSettingsSnapshot();
@@ -18,7 +14,7 @@ export function SettingsStatusBar() {
     // 그라데이션(0~70% 패널색, 70~100% 투명)으로 덮어 부드럽게 사라지게 한다
     <div id="settings-status-bar" class="sticky top-0 z-10 shrink-0 bg-ui-panel pt-5">
       <div class="relative h-[38px]">
-        <div class="flex h-full min-w-0 items-center gap-1.5">
+        <div class="flex h-full min-w-0 items-center gap-4">
           <button
             id="api-key-edit"
             type="button"
@@ -33,16 +29,44 @@ export function SettingsStatusBar() {
           <div
             id="settings-status-summary"
             aria-hidden={editingApiKey}
-            class={`flex min-w-0 flex-1 items-center gap-1.5 transition-opacity duration-200 ease-out motion-reduce:transition-none motion-reduce:delay-0 ${editingApiKey ? 'pointer-events-none opacity-0 delay-0' : 'opacity-100 delay-100'}`}
+            class={`flex min-w-0 flex-1 items-center gap-4 transition-opacity duration-200 ease-out motion-reduce:transition-none motion-reduce:delay-0 ${editingApiKey ? 'pointer-events-none opacity-0 delay-0' : 'opacity-100 delay-100'}`}
           >
             {streamingMode === 'decoupled' && (
-              <span id="status-streaming-chip" class={STATUS_CHIP_CLASS}>
-                실시간
+              <span
+                id="status-streaming-chip"
+                role="img"
+                tabIndex={0}
+                aria-label="스트리밍"
+                aria-describedby="status-streaming-tooltip"
+                class="group relative grid size-[18px] shrink-0 cursor-help place-items-center text-ui-content/70 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
+              >
+                <RadioTower size={18} strokeWidth={1.7} aria-hidden="true" />
+                <span
+                  id="status-streaming-tooltip"
+                  role="tooltip"
+                  class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-0 z-30 w-max -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-xs leading-[1.45] font-normal tracking-normal whitespace-nowrap text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
+                >
+                  스트리밍 연결 · 완료 후 표시
+                </span>
               </span>
             )}
             {serviceTier === 'flex' && (
-              <span id="status-flex-chip" class={STATUS_CHIP_CLASS}>
-                flex
+              <span
+                id="status-flex-chip"
+                role="img"
+                tabIndex={0}
+                aria-label="Flex"
+                aria-describedby="status-flex-tooltip"
+                class="group relative grid size-[18px] shrink-0 cursor-help place-items-center text-ui-content/70 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
+              >
+                <ArrowBigDownDash size={18} strokeWidth={1.7} aria-hidden="true" />
+                <span
+                  id="status-flex-tooltip"
+                  role="tooltip"
+                  class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-0 z-30 w-max -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-xs leading-[1.45] font-normal tracking-normal whitespace-nowrap text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
+                >
+                  Flex · 반값, 느릴 수 있음
+                </span>
               </span>
             )}
             <span
