@@ -54,6 +54,12 @@ const PROVIDER_NAME = 'LLM Gateway';
 
 type GatewayClient = Llm<OpenAIChatCompletionsRaw>;
 
+/** llmgateway.io는 출력 제한을 max_tokens로 받지만 llm-io의 maxTokens는
+ * max_completion_tokens로 직렬화하므로 Gateway 전용 필드를 extraBody로 전달한다. */
+interface GatewayChatCompletionsExtraBody extends OpenAIChatCompletionsExtraBody {
+  max_tokens: number;
+}
+
 interface GatewayRequestContext {
   abortSignal: AbortSignal | undefined;
   gatewayClient: GatewayClient;
@@ -167,7 +173,8 @@ async function requestLLMGateway(
     const messages = toLlmMessages(providerArguments.prompt_chat);
     const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
 
-    const extraBody: OpenAIChatCompletionsExtraBody = {
+    const extraBody: GatewayChatCompletionsExtraBody = {
+      max_tokens: providerArguments.max_tokens,
       ...cacheRequest.cacheExtraBody,
       ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
       // RisuAI 본체는 custom provider 인자를 고정 목록으로 만들어 이 두 값을 전달하지 않는다.
@@ -197,7 +204,6 @@ async function requestLLMGateway(
       fetch: createBridgeFetch(),
     });
     const requestOptions: LlmRequestOptions = {
-      maxTokens: providerArguments.max_tokens,
       temperature: providerArguments.temperature,
       topP: providerArguments.top_p,
     };

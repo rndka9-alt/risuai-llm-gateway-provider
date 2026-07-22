@@ -148,7 +148,9 @@ npm test
   (RisuAI `applyParameters`가 -1000 "off" 값을 skip). llm-io가 undefined를 omit하므로 그대로 통과시킨다.
 - **temperature 스케일**: RisuAI가 이미 /100 해서 API 스케일(0~2)로 넘겨준다. 추가 변환 금지.
 - **penalty 스케일**: frequency/presence penalty도 RisuAI가 이미 /100 해서 넘겨준다. `extraBody`에 그대로 전달한다.
-- **max_tokens**: llm-io ChatCompletions 포맷이 `max_completion_tokens`로 직렬화한다 (GPT-5.6 대응).
+- **max_tokens**: RisuAI 값을 Gateway 전용 extra body의 `max_tokens`로 전달한다. llm-io의
+  `maxTokens`는 `max_completion_tokens`로 직렬화되어 Gateway ingress에서 제거되므로 사용하지 않는다.
+  Hosted GPT-5.6는 2026-07-23 실측에서도 범위만 검증하고 출력 제한에는 반영하지 않았다.
 - **reasoning/verbosity 경로**: RisuAI는 플러그인 provider 인자를 하드코딩해 두 값을 전달하지 않는다.
   플러그인 인자에서 읽어 llm-io `OpenAIChatCompletionsExtraBody`로 보내는 경로가 유일하다.
 - **flags 등록 스냅샷**: flags는 플러그인 로드 때 읽어 provider model metadata에 고정한다.

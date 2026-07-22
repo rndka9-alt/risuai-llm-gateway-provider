@@ -387,6 +387,29 @@ describe('request body options', () => {
     ]);
   });
 
+  it('RisuAI max_tokens를 Gateway 필드명으로만 전달한다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()]);
+    const providerArguments = { ...createProviderArguments(), max_tokens: 321 };
+
+    await harness.provider(providerArguments);
+
+    const body = parseRequestBody(harness.nativeFetch, 0);
+    expect(body.max_tokens).toBe(321);
+    expect(body).not.toHaveProperty('max_completion_tokens');
+  });
+
+  it('커스텀 body의 max_tokens가 RisuAI 값을 덮어쓴다', async () => {
+    const harness = await loadProvider([createSuccessfulResponse()], {
+      extra_body: '{ "max_tokens": 654 }',
+    });
+
+    await harness.provider(createProviderArguments());
+
+    const body = parseRequestBody(harness.nativeFetch, 0);
+    expect(body.max_tokens).toBe(654);
+    expect(body).not.toHaveProperty('max_completion_tokens');
+  });
+
   it('플러그인 선택값과 RisuAI penalty를 Chat Completions extra body로 전달한다', async () => {
     const harness = await loadProvider([createSuccessfulResponse()], {
       reasoning_effort: 'xhigh',

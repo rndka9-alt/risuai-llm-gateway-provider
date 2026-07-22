@@ -179,7 +179,7 @@ export const gpt56ChatCompletionsRequestSchema = z
       .describe('대화 메시지. GPT-5.6 입력은 text/image만 지원해요'),
 
     // Gateway가 받는 이름은 max_tokens (max_completion_tokens는 ingress에서 조용히 제거).
-    // 단 실측(2026-07-20, probe-request-fields)상 hosted는 범위(1~128000)만 검증하고
+    // 단 실측(2026-07-23, probe-request-fields)상 hosted는 범위(1~128000)만 검증하고
     // upstream 출력 제한으로 전달하지 않는 validate-only no-op 상태였다
     max_tokens: z
       .number()
@@ -187,7 +187,7 @@ export const gpt56ChatCompletionsRequestSchema = z
       .min(1)
       .max(128_000)
       .describe(
-        '최대 출력 토큰 (1~128000). 주의: 실측상 hosted Gateway가 범위만 검증하고 실제 출력 제한으로는 전달하지 않았어요 (2026-07-20)',
+        '최대 출력 토큰 (1~128000). 주의: 실측상 hosted Gateway가 범위만 검증하고 실제 출력 제한으로는 전달하지 않았어요 (2026-07-23)',
       )
       .optional(),
 

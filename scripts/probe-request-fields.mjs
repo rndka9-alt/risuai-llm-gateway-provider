@@ -310,8 +310,8 @@ function createProbeCases(model, runNamespace) {
     {
       name: 'active-max-tokens',
       kind: 'active',
-      // 예상 비용: Luna ~$0.0001 / Sol ~$0.0007.
-      estimatedTokens: { input: 40, output: 16 },
+      // max_tokens가 no-op일 때 100개 항목이 완주하는 비용까지 포함: Luna ~$0.0027 / Sol ~$0.0137.
+      estimatedTokens: { input: 40, output: 450 },
       requests: [
         {
           label: 'max_tokens=16',
