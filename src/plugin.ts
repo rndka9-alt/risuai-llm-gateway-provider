@@ -176,7 +176,8 @@ async function requestLLMGateway(
     const extraBody: GatewayChatCompletionsExtraBody = {
       max_tokens: providerArguments.max_tokens,
       ...cacheRequest.cacheExtraBody,
-      ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
+      // 생략 시 조직 대시보드 기본 티어가 끼어들 수 있어 항상 명시한다 (resolveServiceTier 참고).
+      service_tier: serviceTier,
       // RisuAI 본체는 custom provider 인자를 고정 목록으로 만들어 이 두 값을 전달하지 않는다.
       // 따라서 플러그인 인자가 Chat Completions body로 보낼 수 있는 유일한 경로다.
       ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),

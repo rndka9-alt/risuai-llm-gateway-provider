@@ -73,7 +73,7 @@ export async function loadLegacyConfig(): Promise<Config> {
 
   const legacyValues = await loadLegacyRealArguments();
   // 빈 backup도 구버전이 만들어 둔 설치 이력이다. 저장 이력과 realArg가 모두 없는
-  // 진짜 첫 설치에만 새 기본값을 심어 기존의 Gateway 기본 선택을 뒤집지 않는다.
+  // 진짜 첫 설치에만 새 기본값을 심어 기존의 Standard(구 Gateway 기본) 선택을 Flex로 뒤집지 않는다.
   const isFirstInstallation =
     legacyArgumentBackup.status === 'missing' && Object.keys(legacyValues).length === 0;
   if (isFirstInstallation) {

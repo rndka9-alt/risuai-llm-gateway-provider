@@ -23,9 +23,9 @@ describe('resolveServiceTier', () => {
   });
 
   it.each([undefined, '', 'auto', 'default', 'priority'])(
-    '지원하지 않는 값(%s)은 undefined를 반환해 body에서 생략되게 한다',
+    'flex 외 값(%s)은 Standard(default)로 정규화해 항상 명시 전송되게 한다',
     (value) => {
-      expect(resolveServiceTier(value)).toBeUndefined();
+      expect(resolveServiceTier(value)).toBe('default');
     },
   );
 });

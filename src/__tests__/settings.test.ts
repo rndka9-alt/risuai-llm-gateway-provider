@@ -223,23 +223,23 @@ describe('service tier settings', () => {
   });
 
   it.each([undefined, '', 'default', 'unknown'])(
-    '값이 %s이면 Gateway 기본값을 따르도록 미지정으로 불러온다',
+    '값이 %s이면 Standard(default)로 불러온다',
     async (value) => {
       vi.stubGlobal('risuai', {
         pluginStorage: createPluginStorageStub(value === undefined ? {} : { service_tier: value }),
       });
 
-      await expect(loadServiceTier()).resolves.toBeUndefined();
+      await expect(loadServiceTier()).resolves.toBe('default');
     },
   );
 
-  it('Flex 비활성화는 저장값을 비워 요청에서 생략되게 한다', async () => {
+  it('Flex 비활성화는 명시 Standard(default)를 저장한다', async () => {
     const pluginStorage = createPluginStorageStub({ service_tier: 'flex' });
     vi.stubGlobal('risuai', { pluginStorage });
 
-    await saveServiceTier(undefined);
+    await saveServiceTier('default');
 
-    expect(requireConfigStorage(pluginStorage)).toMatchObject({ service_tier: '' });
+    expect(requireConfigStorage(pluginStorage)).toMatchObject({ service_tier: 'default' });
   });
 
   it('Flex 활성화는 flex를 저장한다', async () => {
@@ -882,6 +882,9 @@ describe('settings UI', () => {
     );
     expect(document.getElementById('service-tier-tooltip')?.textContent).toContain(
       '입력·출력 비용이 절반으로 줄어요.',
+    );
+    expect(document.getElementById('service-tier-tooltip')?.textContent).toContain(
+      '끄면 Standard 티어로 요청해요.',
     );
     expect(document.getElementById('request-body-help')?.textContent).toContain(
       '입력한 JSON은 LLM Gateway 요청 body에 포함돼요.',

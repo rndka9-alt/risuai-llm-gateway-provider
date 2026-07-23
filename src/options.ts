@@ -165,16 +165,16 @@ export function resolveProviderLlmFlags(flagNames: readonly ConfigurableLlmFlagN
   return flagNames.map((flagName) => RISUAI_LLM_FLAGS[flagName]);
 }
 
-// 플러그인은 Flex 요청만 명시하고, 비활성 상태에서는 provider 기본값을 따른다.
-export type ServiceTier = 'flex';
+// Gateway 계약의 명시 티어 값. 'default'가 UI의 Standard다 — 계약 enum
+// (auto/default/flex/priority)에 'standard'라는 값은 없다.
+export type ServiceTier = 'flex' | 'default';
 
-// 저장값 ''는 service_tier를 body에서 생략한다. 생략 시 DevPass 조직의
-// `Default service tier` 대시보드 설정이 적용될 수 있고(Flex 지원 모델 한정),
-// 명시적 'default' 전송은 이 조직 기본값을 덮어써 버려 구버전에서 생략으로 바꿨다.
-// 미설정과 명시적 끔이 같은 ''라 해석 계층에서 기본값을 바꾸면 껐던 사용자가 뒤집힌다.
-// 구버전 default 저장값을 포함해 Flex 외 값은 undefined로 정규화해 생략한다.
-export function resolveServiceTier(value: string | undefined): ServiceTier | undefined {
+// service_tier는 항상 명시 전송한다. 생략하면 DevPass 조직의 `Default service tier`
+// 대시보드 설정이 끼어들어 실제 처리 티어를 예측할 수 없어, 계정 추종(생략) 상태를
+// 폐기했다. 구버전 저장값 ''(계정 추종)와 'default'(더 오래된 명시 Standard)는 모두
+// Standard('default')로 읽는다 — 계정 추종을 쓰던 사용자는 이 버전부터 Standard 고정이 된다.
+export function resolveServiceTier(value: string | undefined): ServiceTier {
   const trimmed = value?.trim();
   if (trimmed === 'flex') return 'flex';
-  return undefined;
+  return 'default';
 }

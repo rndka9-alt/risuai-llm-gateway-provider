@@ -459,14 +459,19 @@ describe('request body options', () => {
     });
   });
 
-  it('구버전 default 서비스 티어는 Gateway 기본값을 따르도록 생략한다', async () => {
+  it.each([
+    ['구버전 계정 추종', ''],
+    ['구버전 명시 Standard', 'default'],
+  ])('%s 저장값(%s)은 Standard(default)를 명시 전송한다', async (_label, storedServiceTier) => {
     const harness = await loadProvider([createSuccessfulResponse()], {
-      service_tier: 'default',
+      service_tier: storedServiceTier,
     });
 
     await harness.provider(createProviderArguments());
 
-    expect(parseRequestBody(harness.risuFetch, 0)).not.toHaveProperty('service_tier');
+    expect(parseRequestBody(harness.risuFetch, 0)).toMatchObject({
+      service_tier: 'default',
+    });
   });
 
   it('미지정 reasoning_effort, verbosity, penalties는 body에서 생략한다', async () => {

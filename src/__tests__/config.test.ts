@@ -143,10 +143,10 @@ describe('legacy config migration', () => {
   });
 
   it.each([
-    ['Gateway 기본', ''],
-    ['구버전 Gateway 기본', 'default'],
+    ['구버전 계정 추종', ''],
+    ['구버전 명시 Standard', 'default'],
     ['Flex', 'flex'],
-  ])('저장 config의 기존 %s 선택을 유지한다', async (_label, serviceTier) => {
+  ])('저장 config의 기존 %s 값을 원문 그대로 유지한다', async (_label, serviceTier) => {
     const harness = stubConfig({
       configValue: JSON.stringify({ service_tier: serviceTier }),
     });
@@ -157,7 +157,7 @@ describe('legacy config migration', () => {
     expect(harness.getArgument).not.toHaveBeenCalled();
   });
 
-  it('빈 구 argument backup도 기존 설치 이력으로 보고 Gateway 기본을 유지한다', async () => {
+  it('빈 구 argument backup도 기존 설치 이력으로 보고 Flex를 시드하지 않는다', async () => {
     const harness = stubConfig({ legacyBackupValue: JSON.stringify({}) });
 
     await expect(initializeConfigOnStartup()).resolves.toEqual(DEFAULT_CONFIG);

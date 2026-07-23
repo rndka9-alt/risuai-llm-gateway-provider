@@ -20,10 +20,10 @@
 | Verbosity        | 지정 안 함, `low`, `medium`, `high`                                                                     | 지정 안 함         |
 | 응답 방식        | 일반 요청 또는 스트리밍 연결을 끝까지 소비한 뒤 완성 응답 표시                                          | 일반 요청          |
 | 모델             | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`                                                          | `gpt-5.6-sol`      |
-| 서비스 티어      | Gateway 기본 또는 `flex`                                                                                | Gateway 기본       |
+| 서비스 티어      | `Standard` 또는 `Flex`                                                                                  | 신규 설치는 Flex   |
 | LLM flags        | `Full System Prompt`, `First System Prompt`, `Alternate Role`, `Must Start With User`, `Pool Supported` | Full System Prompt |
 
-`Gateway 기본`은 `service_tier`를 요청에서 생략하여 Gateway 또는 조직 설정을 따른다. `flex`를 켜면 `service_tier: "flex"`를 명시한다.
+`service_tier`는 항상 요청에 명시한다 — Flex는 `service_tier: "flex"`, Standard는 `service_tier: "default"`(Gateway 계약의 Standard 값)를 보낸다. 필드를 생략해 Gateway·조직 설정을 따르던 동작은 제거되었으며, 구버전의 `Gateway 기본` 선택은 Standard로 이어진다.
 
 ## 지원 범위
 

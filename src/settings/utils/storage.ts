@@ -54,16 +54,13 @@ export async function saveModel(value: string): Promise<void> {
   await saveConfig({ [MODEL_ARGUMENT]: value });
 }
 
-export async function loadServiceTier(): Promise<ServiceTier | undefined> {
+export async function loadServiceTier(): Promise<ServiceTier> {
   const config = await loadConfig();
   return resolveServiceTier(config[SERVICE_TIER_ARGUMENT]);
 }
 
-export async function saveServiceTier(value: ServiceTier | undefined): Promise<void> {
-  await saveConfig({
-    // 끔은 ''로 저장한다 — 생략이 조직 기본 티어를 살리는 배포된 의미 (resolveServiceTier 참고).
-    [SERVICE_TIER_ARGUMENT]: value === 'flex' ? 'flex' : '',
-  });
+export async function saveServiceTier(value: ServiceTier): Promise<void> {
+  await saveConfig({ [SERVICE_TIER_ARGUMENT]: value });
 }
 
 export async function loadReasoningEffort(): Promise<ReasoningEffort | undefined> {
@@ -121,7 +118,7 @@ export interface SettingsValues {
   model: string;
   promptCacheMode: PromptCacheMode;
   reasoningEffort: ReasoningEffort | undefined;
-  serviceTier: ServiceTier | undefined;
+  serviceTier: ServiceTier;
   streamingMode: StreamingMode;
   verbosity: Verbosity | undefined;
 }
@@ -132,7 +129,7 @@ export async function saveSettings(values: SettingsValues): Promise<void> {
     [EXTRA_BODY_ARGUMENT]: values.extraBody,
     [MODEL_ARGUMENT]: values.model,
     [PROMPT_CACHE_MODE_ARGUMENT]: values.promptCacheMode,
-    [SERVICE_TIER_ARGUMENT]: values.serviceTier === 'flex' ? 'flex' : '',
+    [SERVICE_TIER_ARGUMENT]: values.serviceTier,
     [REASONING_EFFORT_ARGUMENT]: values.reasoningEffort ?? '',
     [VERBOSITY_ARGUMENT]: values.verbosity ?? '',
     [STREAMING_MODE_ARGUMENT]: values.streamingMode,
