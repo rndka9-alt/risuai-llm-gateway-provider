@@ -199,8 +199,8 @@ async function requestLLMGateway(
       // 타 플러그인이 v2 setArg로 바꿔칠 수 있어 api_key가 임의 주소로 전송될 수 있다.
       provider: new LLMGatewayProvider({ apiKey }),
       // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
-      // RisuAI 브릿지를 경유한다. transferable streams 미지원 브라우저(Safari 26 이하)는
-      // nativeFetch의 Response 전달이 실패하므로 risuFetch 폴백 경로를 쓴다.
+      // RisuAI의 server-side proxy-aware 브릿지를 경유한다. 구형 Safari도 raw bytes
+      // 객체만 전달받으므로 ReadableStream transferable 지원 여부와 무관하게 동작한다.
       fetch: createBridgeFetch(),
     });
     const requestOptions: LlmRequestOptions = {

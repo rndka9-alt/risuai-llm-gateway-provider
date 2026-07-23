@@ -10,7 +10,7 @@ const REQUEST_URL = 'https://api.llmgateway.io/v1/chat/completions';
 const REQUEST_BODY = JSON.stringify({ model: 'gpt-5.6', messages: [] });
 const REQUEST_HEADERS = { authorization: 'Bearer key', 'content-type': 'application/json' };
 
-// FetchLike 반환 타입은 최소 Response-like라 headers가 없다 — 폴백 어댑터가
+// FetchLike 반환 타입은 최소 Response-like라 headers가 없다 — 브릿지 어댑터가
 // 실제로 만드는 Response 인스턴스로 좁혀 검사한다.
 function asResponse(value: unknown): Response {
   if (!(value instanceof Response)) {
@@ -30,45 +30,50 @@ function createLegacyResult(overrides: Record<string, unknown> = {}) {
 }
 
 describe('createBridgeFetch', () => {
-  it('transferable streams를 지원하면 nativeFetch로 위임한다', async () => {
-    const nativeResponse = new Response('{}', { status: 200 });
-    const nativeFetch = vi.fn().mockResolvedValue(nativeResponse);
-    vi.stubGlobal('risuai', { nativeFetch });
+  describe('risuFetch 브릿지', () => {
+    it('nativeFetch가 있어도 server-side 경로를 선택한다', async () => {
+      const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
+      const nativeFetch = vi.fn();
+      vi.stubGlobal('risuai', { nativeFetch, risuFetch });
 
-    const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: true });
-    const init = { body: REQUEST_BODY, headers: REQUEST_HEADERS, method: 'POST' };
-    const response = await bridgeFetch(REQUEST_URL, init);
+      await createBridgeFetch()(REQUEST_URL, {
+        body: REQUEST_BODY,
+        headers: REQUEST_HEADERS,
+        method: 'POST',
+      });
 
-    expect(nativeFetch).toHaveBeenCalledWith(REQUEST_URL, init);
-    expect(response).toBe(nativeResponse);
-  });
-
-  it('nativeFetch가 응답을 만들지 못하면 RisuAI 전달 오류로 보존한다', async () => {
-    const nativeError = new TypeError('Load failed');
-    const nativeFetch = vi.fn().mockRejectedValue(nativeError);
-    vi.stubGlobal('risuai', { nativeFetch });
-
-    const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: true });
-
-    await expect(bridgeFetch(REQUEST_URL)).rejects.toMatchObject({
-      name: BridgeFetchError.name,
-      detail: nativeError,
-      cause: nativeError,
+      expect(risuFetch).toHaveBeenCalledOnce();
+      expect(nativeFetch).not.toHaveBeenCalled();
     });
-  });
 
-  it('감지 오버라이드 없이 호출해도 FetchLike를 반환한다', () => {
-    vi.stubGlobal('risuai', {});
-    expect(createBridgeFetch()).toBeTypeOf('function');
-  });
+    it('server-side 경로가 실패해도 nativeFetch로 재시도하지 않는다', async () => {
+      const proxyError = new TypeError('proxy unavailable');
+      const risuFetch = vi.fn().mockRejectedValue(proxyError);
+      const nativeFetch = vi.fn();
+      vi.stubGlobal('risuai', { nativeFetch, risuFetch });
 
-  describe('risuFetch 폴백', () => {
+      await expect(
+        createBridgeFetch()(REQUEST_URL, {
+          body: REQUEST_BODY,
+          headers: REQUEST_HEADERS,
+          method: 'POST',
+        }),
+      ).rejects.toMatchObject({
+        name: BridgeFetchError.name,
+        detail: proxyError,
+        cause: proxyError,
+      });
+
+      expect(risuFetch).toHaveBeenCalledOnce();
+      expect(nativeFetch).not.toHaveBeenCalled();
+    });
+
     it('JSON 문자열 body를 파싱해 넘기고 signal을 abortSignal로 변환한다', async () => {
       const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
       vi.stubGlobal('risuai', { risuFetch });
       const abortController = new AbortController();
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       await bridgeFetch(REQUEST_URL, {
         body: REQUEST_BODY,
         headers: REQUEST_HEADERS,
@@ -81,7 +86,7 @@ describe('createBridgeFetch', () => {
         headers: { authorization: 'Bearer key', 'Content-Type': 'application/json' },
         method: 'POST',
         rawResponse: true,
-        plainFetchForce: true,
+        plainFetchDeforce: true,
         abortSignal: abortController.signal,
       });
     });
@@ -92,7 +97,7 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       await bridgeFetch(REQUEST_URL, {
         body: REQUEST_BODY,
         headers: { 'content-type': 'application/json', authorization: 'Bearer key' },
@@ -113,7 +118,7 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn();
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, {
@@ -131,7 +136,7 @@ describe('createBridgeFetch', () => {
         .mockResolvedValue(createLegacyResult({ data: new Uint8Array(0), status: 204 }));
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       const response = asResponse(
         await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
       );
@@ -144,7 +149,7 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       const response = asResponse(
         await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
       );
@@ -159,7 +164,7 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       const response = asResponse(
         await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
       );
@@ -183,7 +188,7 @@ describe('createBridgeFetch', () => {
       );
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
       ).rejects.toMatchObject({
@@ -203,7 +208,7 @@ describe('createBridgeFetch', () => {
       );
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
       const response = asResponse(
         await bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
       );
@@ -216,11 +221,11 @@ describe('createBridgeFetch', () => {
     it('risuFetch가 제거된 환경이면 안내 메시지와 함께 실패한다', async () => {
       vi.stubGlobal('risuai', {});
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
-      ).rejects.toThrow(/RisuAI가 플러그인의 요청을 전달할 수 없어요/);
+      ).rejects.toThrow(/현재 버전의 RisuAI를 지원하지 않아요/);
     });
 
     it('브릿지가 risuFetch not found로 거절해도 같은 안내 메시지로 바꾼다', async () => {
@@ -229,11 +234,11 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn().mockRejectedValue(new Error('API method risuFetch not found'));
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),
-      ).rejects.toThrow(/RisuAI가 플러그인의 요청을 전달할 수 없어요/);
+      ).rejects.toThrow(/현재 버전의 RisuAI를 지원하지 않아요/);
     });
 
     it('abort된 요청은 HTTP 실패 대신 abort 예외로 끝난다', async () => {
@@ -244,7 +249,7 @@ describe('createBridgeFetch', () => {
       });
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, {
@@ -259,7 +264,7 @@ describe('createBridgeFetch', () => {
       const risuFetch = vi.fn();
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'DELETE' }),
@@ -273,7 +278,7 @@ describe('createBridgeFetch', () => {
         .mockResolvedValue(createLegacyResult({ data: { unexpected: true } }));
       vi.stubGlobal('risuai', { risuFetch });
 
-      const bridgeFetch = createBridgeFetch({ transferableStreamsSupported: false });
+      const bridgeFetch = createBridgeFetch();
 
       await expect(
         bridgeFetch(REQUEST_URL, { body: REQUEST_BODY, method: 'POST' }),

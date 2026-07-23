@@ -33,7 +33,7 @@
 - RisuAI의 `max_tokens`를 Gateway의 `max_tokens`로 전달
 - 플러그인 설정의 `reasoning_effort`, `verbosity`, `service_tier`
 - `o200k` tokenizer 메타데이터
-- RisuAI 요청 취소 신호 전달
+- RisuAI 네트워크 계층까지 요청 취소 신호 전달
 
 Responses API, 커스텀 endpoint, 오디오·비디오 변환은 지원하지 않는다. API 키가 임의 주소로 전송되지 않도록 endpoint는 llm-io의 공식 LLM Gateway 주소로 고정되어 있다.
 
@@ -41,10 +41,25 @@ Hosted GPT-5.6는 `max_tokens` 범위를 검증하지만 실제 출력 제한에
 2026-07-23 실측에서도 확인되었다. 플러그인은 공식 필드명으로 전달하지만 Gateway가 수정되기 전까지
 RisuAI의 최대 토큰 설정이 적용되지 않을 수 있다.
 
+### 네트워크 경로
+
+LLM Gateway는 browser direct 호출을 지원하지 않으므로 모든 요청은 RisuAI의 server-side
+네트워크 경로를 사용한다. web과 node에서는 `/proxy2`를 거치고, Tauri에서는 RisuAI의 native
+HTTP를 사용한다. 이 프로바이더에는 RisuAI의 **직접 요청 보내기** 설정이 적용되지 않는다.
+
+공식 web에서는 API 키가 요청 헤더와 함께 RisuAI hub의 `/proxy2`를 통과한다. Node self-host와
+RisuAI-NodeOnly에서는 사용자가 운영하는 같은 출처 서버의 `/proxy2`를 통과한다.
+RisuAI-NodeOnly는 `plainFetchDeforce`가 userscript 경로까지 우선하는 v0.5.0 이상을 권장한다.
+
+플러그인은 RisuAI의 deprecated `risuFetch` 브릿지에 `rawResponse: true`와
+`plainFetchDeforce: true`를 지정한다. 이 경로는 구형 iOS에서도 ReadableStream transfer 없이
+동작하지만, 응답 전체를 `Uint8Array`로 받은 뒤 플러그인에 전달한다. RisuAI에서 이 API가
+제거되면 요청을 다른 경로로 재시도하지 않고 플러그인 개발자 문의 안내와 함께 실패한다.
+
 ### 응답 방식
 
 - **일반 요청**: 비스트리밍 JSON 응답을 한 번에 받는다.
-- **스트리밍 연결 · 완료 후 표시**: upstream 스트림을 플러그인이 끝까지 소비해 조립한 뒤 RisuAI에 완성 문자열을 반환한다. RisuAI 화면에 토큰이 실시간으로 표시되는 방식은 아니다.
+- **스트리밍 연결 · 완료 후 표시**: Gateway와 RisuAI 네트워크 계층 사이에서는 스트리밍으로 전송한다. RisuAI 브릿지가 응답 전체를 받은 뒤 플러그인이 조립하여 완성 문자열을 반환하므로, 화면에 토큰이 실시간으로 표시되는 방식은 아니다.
 
 응답 방식은 요청할 때마다 현재 설정을 읽으므로 변경 후 새로고침하지 않아도 된다. 구버전의 `stream` 저장값은 `스트리밍 연결 · 완료 후 표시`로 자동 정규화된다.
 

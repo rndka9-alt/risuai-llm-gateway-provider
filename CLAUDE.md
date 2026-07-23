@@ -65,8 +65,8 @@ npm run test:all  # 둘 다
 ## 구조
 
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
-- `src/bridge-fetch.ts` — 브릿지 경유 FetchLike 생성. transferable streams 미지원 브라우저
-  (Safari 26 이하)는 legacy `risuFetch` 폴백으로 자동 전환 (아래 런타임 제약 참고)
+- `src/bridge-fetch.ts` — RisuAI의 server-side 경로를 강제하는 FetchLike 생성.
+  legacy `risuFetch`의 raw bytes 응답을 iframe 안에서 Response로 재구성 (아래 런타임 제약 참고)
 - `src/failure-content.ts` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
@@ -84,8 +84,8 @@ npm run test:all  # 둘 다
 - `src/toast.ts` — 캐시 백오프 발동/해제 메인 DOM 토스트 (`SafeDocument`, 실패 시 경고 폴백)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
-- `types/risuai-legacy.d.ts` — 본체 d.ts에 없는 deprecated `risuFetch` 선언 (Safari 폴백 전용,
-  본체 제거 가능성 때문에 optional로 선언해 존재 확인을 강제)
+- `types/risuai-legacy.d.ts` — 본체 d.ts에 없는 deprecated `risuFetch`와 `plainFetchDeforce`
+  선언 (본체 제거 가능성 때문에 optional로 선언해 존재 확인을 강제)
 
 ## breakpoint 자동 배치 (`src/cache/`)
 
@@ -150,20 +150,18 @@ npm run test:all  # 둘 다
 
 ## 런타임 환경 / 제약
 
-- **iframe 샌드박스**: CSP `connect-src 'none'` — 네트워크는 `risuai.nativeFetch` 브릿지 경유만 가능.
-  브릿지는 `Response`(body ReadableStream transferable 포함)와 `AbortSignal`(ABORT_SIGNAL_REF) 모두 통과시킨다.
-- **Safari 폴백 (bridge-fetch.ts)**: transferable streams 미지원 브라우저(Safari 26 이하)에서는
-  브릿지의 Response 전달이 DataCloneError("The object can not be cloned")로 실패해 스트리밍 모드와
-  무관하게 모든 nativeFetch가 죽는다 (Safari 27 beta부터 지원). 요청 전에 MessageChannel probe로
-  지원 여부를 감지해, 미지원이면 legacy `risuFetch(rawResponse:true, plainFetchForce:true)`로 받은
-  `Uint8Array`를 iframe 안에서 `new Response(...)`로 재구성한다. **전송 실패 후 재시도는 중복 과금
-  위험이 있어 금지** — 반드시 요청 전에 경로를 결정한다. decoupled 모드는 이 경로에서
-  buffered-decoupled로 동작한다 (연결은 스트리밍, 소비는 완료 후 일괄).
-  `plainFetchForce`인 이유: fetchNative가 NodeOnly에서 직접 fetch로 동작하므로 폴백도 같은 직접
-  경로로 통일한다. llmgateway.io는 `Access-Control-Allow-Origin: *`라 공식 웹·Tauri에서도 통과한다.
+- **iframe 샌드박스**: CSP `connect-src 'none'` — 네트워크는 RisuAI 브릿지 경유만 가능.
+  `AbortSignal`은 ABORT_SIGNAL_REF로 통과한다.
+- **server-side 단일 경로 (bridge-fetch.ts)**: LLM Gateway는 browser direct 호출을 지원하지 않고,
+  최신 `nativeFetch`에는 외부 URL의 proxy 강제 옵션이 없다. 모든 요청을 legacy
+  `risuFetch(rawResponse:true, plainFetchDeforce:true)`로 보내 web/node에서는 `/proxy2`,
+  Tauri에서는 native HTTP를 사용한다. RisuAI의 "직접 요청 보내기" 설정은 이 프로바이더에
+  적용하지 않는다. 구형 Safari도 `ReadableStream` 대신 완성된 `Uint8Array`만 iframe으로
+  전달받아 같은 경로로 동작하며 별도 transferable streams probe가 필요 없다.
+  **실패 후 다른 경로 재시도는 중복 과금 위험이 있어 금지**한다. decoupled 모드는
+  buffered-decoupled로 동작한다 (네트워크 연결은 스트리밍, 플러그인 소비는 완료 후 일괄).
   `globalFetch` 내부 실패의 문자열·빈 헤더·합성 400은 실제 HTTP 400으로 재구성하지 않고
-  `BridgeFetchError`로 올려 사용자 문구에서 구분한다. `nativeFetch`가 Response를 만들기 전에 던진 오류도
-  같은 타입으로 감싸되 abort는 보존한다. 실제 응답은 성공 여부와 무관하게 `Uint8Array`다.
+  `BridgeFetchError`로 올려 사용자 문구에서 구분한다. 실제 응답은 성공 여부와 무관하게 `Uint8Array`다.
   headers의 content-type은 반드시 `Content-Type` 표기 하나로 정규화한다 — globalFetch가 대문자
   기본값을 별도 키로 추가해 중복되면 게이트웨이가 body를 빈 객체로 취급한다 (실측 HTTP 400 ZodError).
 - **프로바이더 인자 실체**: `ProviderArguments`의 샘플러 값들은 d.ts와 달리 런타임에 누락될 수 있다
@@ -206,8 +204,8 @@ npm run test:all  # 둘 다
 - 캐시 원장과 앵커 상태는 read-modify-write가 비원자적이라 동시 요청 시 갱신이 유실될 수 있다.
   RisuAI의 `doingChat` 락으로 실사용 채팅 요청은 순차 실행되므로 별도 잠금은 두지 않는다.
 - decoupled 소비 루프는 body chunk 사이에서 abort를 확인해 중단하고 앵커·원장을 저장하지 않는다.
-  다만 헤더 수신 뒤 abort가 본체 브릿지의 response body까지 전달되지 않아, 다음 chunk가 오기 전까지
-  `reader.read()`를 즉시 깨우지 못한다.
+  legacy 브릿지는 abort를 RisuAI 네트워크 계층까지 전달하지만 `/proxy2` 서버가 응답 헤더 전에
+  upstream 요청을 중단하는지는 런타임 구현에 의존한다.
 - RisuAI 본체의 provider 권한 확인은 반환값을 무시해 사용자가 권한을 거부해도 호출을 차단하지 않는다.
 - RisuAI 본체의 `customV3ProviderMetaStore`는 재활성화 때 이전 메타를 제거하지 않고 누적한다.
   옛 flags가 계속 사용될 수 있으므로 설정 변경 적용은 플러그인 재활성화가 아니라 새로고침을 사용한다.

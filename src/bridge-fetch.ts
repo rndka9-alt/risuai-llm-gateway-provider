@@ -1,10 +1,5 @@
 import type { FetchLike } from 'llm-io';
 
-interface BridgeFetchOptions {
-  /** 테스트나 런타임 교체용 transferable streams 감지 결과 오버라이드입니다. */
-  transferableStreamsSupported?: boolean;
-}
-
 interface LegacyFetchResult {
   ok: boolean;
   data: unknown;
@@ -29,34 +24,8 @@ export class BridgeFetchError extends Error {
   }
 }
 
-const LEGACY_FALLBACK_UNAVAILABLE_MESSAGE =
-  '현재 브라우저에서는 RisuAI가 플러그인의 요청을 전달할 수 없어요. ' +
-  '기기 소프트웨어를 최신 버전으로 업데이트하거나 컴퓨터의 Chrome 또는 Firefox에서 다시 시도해 주세요.';
-
-let cachedTransferableStreamsSupport: boolean | undefined;
-
-function supportsTransferableStreams(): boolean {
-  if (cachedTransferableStreamsSupport !== undefined) {
-    return cachedTransferableStreamsSupport;
-  }
-  // 전용 MessageChannel 안에서만 오가므로 RisuAI 브릿지(window message)에는 닿지 않는다.
-  // transferable 지원은 브라우저 엔진 레벨 속성이라, iframe 안에서 찔러본 결과가
-  // 호스트→iframe으로 Response body를 전송할 때의 성공 여부와 일치한다.
-  const probeStream = new ReadableStream();
-  const channel = new MessageChannel();
-  try {
-    channel.port1.postMessage(probeStream, [probeStream]);
-    cachedTransferableStreamsSupport = true;
-  } catch {
-    // Safari 26 이하는 transfer 목록의 스트림에 동기로 DataCloneError를 던진다.
-    // 이 실패가 곧 감지 결과다.
-    cachedTransferableStreamsSupport = false;
-  } finally {
-    channel.port1.close();
-    channel.port2.close();
-  }
-  return cachedTransferableStreamsSupport;
-}
+const LEGACY_FETCH_UNAVAILABLE_MESSAGE =
+  '이 플러그인은 현재 버전의 RisuAI를 지원하지 않아요. ' + '플러그인 개발자에게 문의해 주세요.';
 
 // Response 생성자는 이 상태 코드들에 body를 넣으면 TypeError를 던진다.
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
@@ -83,7 +52,7 @@ function toLegacyResponseBody(data: unknown): Uint8Array<ArrayBuffer> {
     copied.set(data);
     return copied;
   }
-  throw new Error(`risuFetch 폴백이 해석할 수 없는 응답 본문 형태입니다: ${typeof data}`);
+  throw new Error(`risuFetch 브릿지가 해석할 수 없는 응답 본문 형태입니다: ${typeof data}`);
 }
 
 function isSyntheticBridgeFailure(result: LegacyFetchResult): result is LegacyFetchResult & {
@@ -100,15 +69,15 @@ function isSyntheticBridgeFailure(result: LegacyFetchResult): result is LegacyFe
 }
 
 const legacyRisuFetch: FetchLike = async (url, init) => {
-  // JSON.parse나 폴백 안내 에러가 abort보다 먼저 나가지 않도록 진입 시점에 확인한다.
+  // JSON.parse나 브릿지 안내 에러가 abort보다 먼저 나가지 않도록 진입 시점에 확인한다.
   init?.signal?.throwIfAborted();
   const risuFetch = risuai.risuFetch;
   if (risuFetch === undefined) {
-    throw new BridgeFetchError(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
+    throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
   }
   const method = init?.method;
   if (method !== undefined && method !== 'POST' && method !== 'GET') {
-    throw new Error(`risuFetch 폴백은 ${method} 요청을 지원하지 않습니다.`);
+    throw new Error(`risuFetch 브릿지는 ${method} 요청을 지원하지 않습니다.`);
   }
   let result: LegacyFetchResult;
   try {
@@ -120,10 +89,9 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
       ...(method === undefined ? {} : { method }),
       // 끄면 SSE·오류 본문이 globalFetch의 JSON 파싱 경로로 들어가 깨진다.
       rawResponse: true,
-      // nativeFetch(fetchNative)가 NodeOnly에서 직접 fetch로 동작하므로 폴백도 같은
-      // 직접 경로로 통일한다. llmgateway.io는 Access-Control-Allow-Origin: *라
-      // 공식 웹·Tauri의 브라우저 직접 요청도 통과한다.
-      plainFetchForce: true,
+      // LLM Gateway는 server-to-server 호출만 지원하므로 RisuAI의 "직접 요청 보내기"
+      // 설정을 이 요청에 적용하지 않는다. web/node는 /proxy2, Tauri는 native HTTP를 쓴다.
+      plainFetchDeforce: true,
       ...(init?.signal === undefined ? {} : { abortSignal: init.signal }),
     });
   } catch (error) {
@@ -132,7 +100,7 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
     // 실전에서 걸리지 않는다. 본체에서 risuFetch가 제거되면 브릿지가
     // 'API method risuFetch not found'로 거절하므로 여기서 안내 메시지로 바꾼다.
     if (error instanceof Error && error.message.includes('risuFetch not found')) {
-      throw new BridgeFetchError(LEGACY_FALLBACK_UNAVAILABLE_MESSAGE);
+      throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
     }
     throw new BridgeFetchError(error);
   }
@@ -154,24 +122,11 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
 /**
  * RisuAI 브릿지를 건너는 FetchLike를 만든다.
  *
- * 브릿지는 nativeFetch의 Response body를 ReadableStream transfer로 iframe에
- * 돌려주는데, transferable streams 미지원 브라우저(Safari 26 이하)에서는 이 전송이
- * DataCloneError로 실패해 스트리밍 모드와 무관하게 모든 요청이 죽는다.
- * 전송 실패 시점엔 과금 요청이 이미 실행된 뒤라 사후 재시도는 중복 과금 위험이
- * 있으므로, 반드시 요청 전에 지원 여부를 감지해 경로를 고른다.
+ * LLM Gateway의 browser direct 호출은 지원 대상이 아니므로, user setting과 플랫폼에
+ * 따라 direct fetch로 바뀌는 nativeFetch 대신 proxy-aware legacy risuFetch를 사용한다.
+ * raw bytes 객체만 iframe으로 전달하므로 transferable streams가 없는 구형 Safari에서도
+ * 같은 경로가 동작한다. 유료 요청 뒤 다른 경로로 재시도하지 않는다.
  */
-export function createBridgeFetch(options?: BridgeFetchOptions): FetchLike {
-  const transferableStreamsSupported =
-    options?.transferableStreamsSupported ?? supportsTransferableStreams();
-  if (transferableStreamsSupported) {
-    return async (url, init) => {
-      try {
-        return await risuai.nativeFetch(url, init);
-      } catch (error) {
-        init?.signal?.throwIfAborted();
-        throw new BridgeFetchError(error);
-      }
-    };
-  }
+export function createBridgeFetch(): FetchLike {
   return legacyRisuFetch;
 }

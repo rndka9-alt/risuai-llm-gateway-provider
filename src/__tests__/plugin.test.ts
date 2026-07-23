@@ -100,10 +100,28 @@ function createAbortingStreamingResponse(abortController: AbortController): Resp
   });
 }
 
+interface RisuFetchOptions {
+  abortSignal?: AbortSignal;
+  body?: unknown;
+  headers?: Record<string, string>;
+  method?: 'GET' | 'POST';
+  plainFetchDeforce?: boolean;
+  rawResponse?: boolean;
+}
+
+interface RisuFetchResult {
+  data: Uint8Array;
+  headers: Record<string, string>;
+  ok: boolean;
+  status: number;
+}
+
+type RisuFetchMock = ReturnType<
+  typeof vi.fn<(url: string, options?: RisuFetchOptions) => Promise<RisuFetchResult>>
+>;
+
 interface ProviderHarness {
-  nativeFetch: ReturnType<
-    typeof vi.fn<(url: string, requestInit?: RequestInit) => Promise<Response>>
-  >;
+  risuFetch: RisuFetchMock;
   provider: ProviderFunction;
   providerOptions: ProviderOptions | undefined;
   startupEvents: string[];
@@ -134,12 +152,17 @@ async function loadProvider(
   });
   const toastMessages: string[] = [];
   let remainingCacheAnchorBankLoadFailures = cacheAnchorBankLoadFailures;
-  const nativeFetch = vi.fn(async (url: string, requestInit?: RequestInit) => {
+  const risuFetch: RisuFetchMock = vi.fn(async (url: string, options?: RisuFetchOptions) => {
     void url;
-    void requestInit;
+    void options;
     const response = responses.shift();
     if (response === undefined) throw new Error('No stubbed response remains');
-    return response;
+    return {
+      data: new Uint8Array(await response.arrayBuffer()),
+      headers: Object.fromEntries(response.headers),
+      ok: response.ok,
+      status: response.status,
+    };
   });
 
   vi.stubGlobal('__VERSION__', 'test');
@@ -162,7 +185,7 @@ async function loadProvider(
         stored.set(key, value);
       },
     },
-    nativeFetch,
+    risuFetch,
     getRootDocument: async () => ({
       createElement: async () => ({
         remove: async () => undefined,
@@ -199,7 +222,7 @@ async function loadProvider(
   if (registeredProvider === undefined) throw new Error('Provider was not registered');
 
   return {
-    nativeFetch,
+    risuFetch,
     provider: registeredProvider,
     providerOptions,
     startupEvents,
@@ -208,21 +231,19 @@ async function loadProvider(
   };
 }
 
-function getRequestBody(nativeFetch: ProviderHarness['nativeFetch'], requestIndex: number): string {
-  const requestInit = nativeFetch.mock.calls[requestIndex]?.[1];
-  if (typeof requestInit?.body !== 'string') throw new Error('Expected a string request body');
-  return requestInit.body;
+function getRequestBody(risuFetch: ProviderHarness['risuFetch'], requestIndex: number): string {
+  const body = risuFetch.mock.calls[requestIndex]?.[1]?.body;
+  if (!isRecord(body)) throw new Error('Expected an object request body');
+  return JSON.stringify(body);
 }
 
 function parseRequestBody(
-  nativeFetch: ProviderHarness['nativeFetch'],
+  risuFetch: ProviderHarness['risuFetch'],
   requestIndex: number,
 ): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(getRequestBody(nativeFetch, requestIndex));
-  if (!isRecord(parsed)) {
-    throw new Error('Expected an object request body');
-  }
-  return parsed;
+  const body = risuFetch.mock.calls[requestIndex]?.[1]?.body;
+  if (!isRecord(body)) throw new Error('Expected an object request body');
+  return body;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -336,7 +357,7 @@ describe('request body options', () => {
       content:
         'LLM Gateway API 키가 설정되어 있지 않아요.\n플러그인 설정에서 API 키를 입력해 주세요.',
     });
-    expect(harness.nativeFetch).not.toHaveBeenCalled();
+    expect(harness.risuFetch).not.toHaveBeenCalled();
   });
 
   it('model 인자가 비어 있으면 UI 표시값과 같은 기본 모델로 요청한다', async () => {
@@ -344,7 +365,7 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments());
 
-    expect(parseRequestBody(harness.nativeFetch, 0).model).toBe('gpt-5.6-sol');
+    expect(parseRequestBody(harness.risuFetch, 0).model).toBe('gpt-5.6-sol');
   });
 
   it('image-only 안정 prefix를 cache breakpoint가 있는 image_url로 전달한다', async () => {
@@ -371,7 +392,7 @@ describe('request body options', () => {
       ],
     });
 
-    expect(parseRequestBody(harness.nativeFetch, 0).messages).toEqual([
+    expect(parseRequestBody(harness.risuFetch, 0).messages).toEqual([
       {
         role: 'user',
         content: [
@@ -393,7 +414,7 @@ describe('request body options', () => {
 
     await harness.provider(providerArguments);
 
-    const body = parseRequestBody(harness.nativeFetch, 0);
+    const body = parseRequestBody(harness.risuFetch, 0);
     expect(body.max_tokens).toBe(321);
     expect(body).not.toHaveProperty('max_completion_tokens');
   });
@@ -405,7 +426,7 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments());
 
-    const body = parseRequestBody(harness.nativeFetch, 0);
+    const body = parseRequestBody(harness.risuFetch, 0);
     expect(body.max_tokens).toBe(654);
     expect(body).not.toHaveProperty('max_completion_tokens');
   });
@@ -418,7 +439,7 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments());
 
-    expect(parseRequestBody(harness.nativeFetch, 0)).toMatchObject({
+    expect(parseRequestBody(harness.risuFetch, 0)).toMatchObject({
       frequency_penalty: 0.25,
       presence_penalty: -0.5,
       reasoning_effort: 'xhigh',
@@ -433,7 +454,7 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments());
 
-    expect(parseRequestBody(harness.nativeFetch, 0)).toMatchObject({
+    expect(parseRequestBody(harness.risuFetch, 0)).toMatchObject({
       service_tier: 'flex',
     });
   });
@@ -445,7 +466,7 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments());
 
-    expect(parseRequestBody(harness.nativeFetch, 0)).not.toHaveProperty('service_tier');
+    expect(parseRequestBody(harness.risuFetch, 0)).not.toHaveProperty('service_tier');
   });
 
   it('미지정 reasoning_effort, verbosity, penalties는 body에서 생략한다', async () => {
@@ -453,20 +474,20 @@ describe('request body options', () => {
 
     await harness.provider(createProviderArguments(LONG_SYSTEM_TEXT, false));
 
-    const body = parseRequestBody(harness.nativeFetch, 0);
+    const body = parseRequestBody(harness.risuFetch, 0);
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body).not.toHaveProperty('verbosity');
     expect(body).not.toHaveProperty('frequency_penalty');
     expect(body).not.toHaveProperty('presence_penalty');
   });
 
-  it('abortSignal을 nativeFetch까지 전달한다', async () => {
+  it('abortSignal을 risuFetch까지 전달한다', async () => {
     const harness = await loadProvider([createSuccessfulResponse()]);
     const controller = new AbortController();
 
     await harness.provider(createProviderArguments(), controller.signal);
 
-    expect(harness.nativeFetch.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    expect(harness.risuFetch.mock.calls[0]?.[1]?.abortSignal).toBe(controller.signal);
   });
 });
 
@@ -477,7 +498,11 @@ describe('streaming modes', () => {
     const response = await harness.provider(createProviderArguments());
 
     expect(response).toEqual({ success: true, content: 'ok' });
-    expect(parseRequestBody(harness.nativeFetch, 0)).not.toHaveProperty('stream');
+    expect(harness.risuFetch.mock.calls[0]?.[1]).toMatchObject({
+      plainFetchDeforce: true,
+      rawResponse: true,
+    });
+    expect(parseRequestBody(harness.risuFetch, 0)).not.toHaveProperty('stream');
   });
 
   it('decoupled는 streaming 연결을 끝까지 소비하고 완성 문자열과 usage를 반영한다', async () => {
@@ -489,7 +514,7 @@ describe('streaming modes', () => {
     const response = await harness.provider(createProviderArguments());
 
     expect(response).toEqual({ success: true, content: 'hello' });
-    expect(parseRequestBody(harness.nativeFetch, 0)).toMatchObject({
+    expect(parseRequestBody(harness.risuFetch, 0)).toMatchObject({
       stream: true,
       stream_options: { include_usage: true },
     });
@@ -523,7 +548,7 @@ describe('streaming modes', () => {
     const response = await harness.provider(createProviderArguments(), abortController.signal);
 
     expect(response.success).toBe(false);
-    expect(harness.nativeFetch).toHaveBeenCalledOnce();
+    expect(harness.risuFetch).toHaveBeenCalledOnce();
     expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
     expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(false);
   });
@@ -548,11 +573,11 @@ describe('cache health backoff', () => {
     }
     await harness.provider(createProviderArguments(changingSystemTexts[3]));
 
-    expect(getRequestBody(harness.nativeFetch, 0)).toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 1)).toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 2)).not.toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 3)).not.toContain('prompt_cache_breakpoint');
-    expect(getRequestBody(harness.nativeFetch, 4)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.risuFetch, 0)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.risuFetch, 1)).toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.risuFetch, 2)).not.toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.risuFetch, 3)).not.toContain('prompt_cache_breakpoint');
+    expect(getRequestBody(harness.risuFetch, 4)).toContain('prompt_cache_breakpoint');
     expect(harness.toastMessages).toEqual([
       'LLM Gateway: 프롬프트 앞부분이 계속 바뀌어 캐시를 잠시 멈췄어요',
       'LLM Gateway: 프롬프트 앞부분이 안정되어 캐시를 다시 시작했어요',
