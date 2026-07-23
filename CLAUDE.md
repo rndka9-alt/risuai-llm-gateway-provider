@@ -45,6 +45,24 @@ npm run test:all  # 둘 다
 - `src/__tests__/sim/`의 일부 파일은 타 플러그인 이식 코드라 `.git/info/exclude`(로컬 전용)로
   커밋에서 제외돼 있다. git이 추적하지 않으므로 삭제하면 복구할 수 없다.
 
+### sim 결과 해석 원칙
+
+- 정책 비교는 전체 합산·평균이 아니라 **trajectory별 증감률(net/input, pp)**로 판단한다.
+  trajectory마다 입력 토큰 총량이 달라 합산 net/input은 토큰이 큰 trajectory가 지배하고,
+  특정 워크로드의 퇴행이 전체 개선 수치에 가려진다. (실례: TTL-aware admission의 전체
+  +3.24pp는 사실상 TTL 밖 회전·unique churn에서 왔고, within-TTL eight-fast에서는
+  −3.9pp 퇴행이 숨어 있었다.)
+- 순절감(net)만 보지 않고 read/write를 분해해서 본다. 같은 net이라도 "히트 유지"와
+  "write 낭비 절감"은 전략적 의미가 다르다.
+- 기준선은 두 층을 함께 둔다: 현행 production("지금보다 나은가")과 직전 릴리즈 실배포
+  정책("이전 릴리즈보다 퇴행하지 않는가", 예: `v013-single-slot`). 릴리즈 안전선은
+  assertion으로 고정한다.
+- 짧은 horizon(36요청)은 admission류 정책의 학습비 회수 구간을 놓친다. 재등장 주기가 긴
+  trajectory는 회수 구간을 포함한 long 변형(96요청 등)을 함께 둔다.
+- 새 정책 후보는 스코어를 믿기 전에 adversarial trajectory(전략의 가정을 정면으로 찌르는
+  패턴)로 먼저 흔들어 본다. oracle 정책의 수치는 구조를 미리 아는 상한선이며 실구현
+  예상치가 아니다.
+
 ## 모듈 구조 원칙
 
 - 디렉터리 모듈의 루트에는 모듈의 목적을 표현하는 "주인공"(공개 오케스트레이션)만

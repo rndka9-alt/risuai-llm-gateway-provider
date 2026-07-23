@@ -22,10 +22,19 @@ export interface CachePolicyDecision {
   promptCacheKey: string;
 }
 
+// wall-clock 기반 실험 정책(재등장 창을 분 단위로 재는 admission)이 요청 시각을
+// 필요로 해서 replay가 전달한다. 기존 정책은 두 번째 인자를 무시하면 된다.
+export interface ReplayPolicyContext {
+  atMinute: number;
+}
+
 // 새 정책은 이 인터페이스만 구현하면 동일 trajectory와 gateway kernel을 재사용한다.
 export interface ReplayCachePolicy {
   readonly name: string;
-  apply(messages: readonly LlmMessage[]): Promise<CachePolicyDecision>;
+  apply(
+    messages: readonly LlmMessage[],
+    context?: ReplayPolicyContext,
+  ): Promise<CachePolicyDecision>;
 }
 
 function fingerprintsEqual(left: MessageFingerprint, right: MessageFingerprint): boolean {

@@ -103,7 +103,7 @@ export async function replayTrajectory(options: {
       );
     }
     atMinute += request.elapsedMinutes;
-    const decision = await policy.apply(request.messages);
+    const decision = await policy.apply(request.messages, { atMinute });
     const markerObservation = countPolicyMarkers(decision.messages);
     const format = new OpenAIChatCompletionsFormat({
       model: 'offline-simulation-model',
