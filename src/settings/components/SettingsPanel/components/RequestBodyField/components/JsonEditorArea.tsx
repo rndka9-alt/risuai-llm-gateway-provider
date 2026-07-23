@@ -22,7 +22,8 @@ interface JsonEditorAreaProps {
 }
 
 /** textarea와 backdrop이 같은 글꼴 metrics를 공유해야 하이라이트가 글자 위에 정확히 겹친다 */
-const EDITOR_TEXT_CLASS = 'p-2.5 font-mono text-xs leading-5 whitespace-pre-wrap break-words';
+const EDITOR_TEXT_CLASS =
+  'touch-input-text p-2.5 font-mono text-xs leading-5 whitespace-pre-wrap break-words';
 
 /** 스키마 warning은 '권장에서 벗어남' 톤이 되도록 에러(물결)보다 옅은 점선으로 표시한다 */
 const HIGHLIGHT_CLASSES = {

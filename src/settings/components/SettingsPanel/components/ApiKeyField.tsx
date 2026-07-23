@@ -1,5 +1,5 @@
 import { Eye, EyeOff } from 'lucide-preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { FIELD_CAPTION_CLASS, FIELD_CLASS, INPUT_CLASS } from '../../constants';
 import { persistSetting } from '../../../utils/persistence';
 import { updateSettingsSnapshot, useSettingsSnapshot } from '../../../utils/settings-snapshot';
@@ -14,10 +14,17 @@ export function ApiKeyField({ editing, onCommit }: ApiKeyFieldProps) {
   const { apiKey } = useSettingsSnapshot();
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const togglingVisibilityRef = useRef(false);
 
   useEffect(() => {
     if (editing && apiKey.trim() !== '') inputRef.current?.focus();
   }, [editing]);
+
+  useLayoutEffect(() => {
+    if (!editing || !togglingVisibilityRef.current) return;
+    inputRef.current?.focus();
+    togglingVisibilityRef.current = false;
+  }, [apiKeyVisible, editing]);
 
   const commitApiKey = (): void => {
     const input = inputRef.current;
@@ -31,6 +38,9 @@ export function ApiKeyField({ editing, onCommit }: ApiKeyFieldProps) {
       id="api-key-editor"
       aria-hidden={!editing}
       onFocusOut={(event) => {
+        // iOS Safari는 password/text 전환 중 relatedTarget 없이 input을 blur할 수 있다.
+        // 눈 버튼에서 시작한 포인터 상호작용은 editor 바깥 이탈이 아니므로 접지 않는다.
+        if (togglingVisibilityRef.current) return;
         const nextTarget = event.relatedTarget;
         if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
         commitApiKey();
@@ -62,6 +72,18 @@ export function ApiKeyField({ editing, onCommit }: ApiKeyFieldProps) {
           aria-label={apiKeyVisible ? 'API 키 숨기기' : 'API 키 표시'}
           aria-pressed={apiKeyVisible}
           disabled={!editing}
+          onPointerDown={(event) => {
+            togglingVisibilityRef.current = true;
+            event.preventDefault();
+          }}
+          onPointerUp={() => {
+            window.setTimeout(() => {
+              togglingVisibilityRef.current = false;
+            }, 0);
+          }}
+          onPointerCancel={() => {
+            togglingVisibilityRef.current = false;
+          }}
           onClick={() => setApiKeyVisible((visible) => !visible)}
           class="absolute top-[7px] right-[7px] grid h-6 w-[30px] cursor-pointer place-items-center border-0 border-l border-ui-frame bg-transparent p-0 text-ui-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent"
         >

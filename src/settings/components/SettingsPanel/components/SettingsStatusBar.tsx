@@ -1,8 +1,52 @@
 import { ArrowBigDownDash, KeyRound, RadioTower } from 'lucide-preact';
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { resolveModelDisplayLabel } from '../../../../options';
 import { useSettingsSnapshot } from '../../../utils/settings-snapshot';
+import { useTooltipDisclosure } from '../../../utils/tooltip-disclosure';
 import { ApiKeyField } from './ApiKeyField';
+
+interface StatusTooltipChipProps {
+  children: ComponentChildren;
+  icon: ComponentChildren;
+  id: string;
+  label: string;
+  tooltipId: string;
+}
+
+function StatusTooltipChip({ children, icon, id, label, tooltipId }: StatusTooltipChipProps) {
+  const { closeOnEscape, closeOnFocusOut, expanded, rootRef, toggleTooltip, triggerRef } =
+    useTooltipDisclosure<HTMLSpanElement, HTMLButtonElement>();
+
+  return (
+    <span
+      ref={rootRef}
+      class="group relative inline-flex size-[18px] shrink-0"
+      onFocusOut={closeOnFocusOut}
+      onKeyDown={closeOnEscape}
+    >
+      <button
+        id={id}
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={tooltipId}
+        aria-expanded={expanded}
+        onClick={toggleTooltip}
+        class="grid size-[18px] cursor-help place-items-center border-0 bg-transparent p-0 text-ui-content/70 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
+      >
+        {icon}
+      </button>
+      <span
+        id={tooltipId}
+        role="tooltip"
+        class={`absolute top-[calc(100%+7px)] left-0 z-30 w-max rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-xs leading-[1.45] font-normal tracking-normal whitespace-nowrap text-ui-on-popover shadow-xl transition duration-150 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 ${expanded ? 'visible translate-y-0 opacity-100' : 'pointer-events-none invisible -translate-y-1 opacity-0'}`}
+      >
+        {children}
+      </span>
+    </span>
+  );
+}
 
 export function SettingsStatusBar() {
   const { apiKey, model, serviceTier, streamingMode } = useSettingsSnapshot();
@@ -32,42 +76,24 @@ export function SettingsStatusBar() {
             class={`flex min-w-0 flex-1 items-center gap-4 transition-opacity duration-200 ease-out motion-reduce:transition-none motion-reduce:delay-0 ${editingApiKey ? 'pointer-events-none opacity-0 delay-0' : 'opacity-100 delay-100'}`}
           >
             {streamingMode === 'decoupled' && (
-              <span
+              <StatusTooltipChip
                 id="status-streaming-chip"
-                role="img"
-                tabIndex={0}
-                aria-label="스트리밍"
-                aria-describedby="status-streaming-tooltip"
-                class="group relative grid size-[18px] shrink-0 cursor-help place-items-center text-ui-content/70 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
+                label="스트리밍"
+                tooltipId="status-streaming-tooltip"
+                icon={<RadioTower size={18} strokeWidth={1.7} aria-hidden="true" />}
               >
-                <RadioTower size={18} strokeWidth={1.7} aria-hidden="true" />
-                <span
-                  id="status-streaming-tooltip"
-                  role="tooltip"
-                  class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-0 z-30 w-max -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-xs leading-[1.45] font-normal tracking-normal whitespace-nowrap text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
-                >
-                  스트리밍 연결 · 완료 후 표시
-                </span>
-              </span>
+                스트리밍 연결 · 완료 후 표시
+              </StatusTooltipChip>
             )}
             {serviceTier === 'flex' && (
-              <span
+              <StatusTooltipChip
                 id="status-flex-chip"
-                role="img"
-                tabIndex={0}
-                aria-label="Flex"
-                aria-describedby="status-flex-tooltip"
-                class="group relative grid size-[18px] shrink-0 cursor-help place-items-center text-ui-content/70 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
+                label="Flex"
+                tooltipId="status-flex-tooltip"
+                icon={<ArrowBigDownDash size={18} strokeWidth={1.7} aria-hidden="true" />}
               >
-                <ArrowBigDownDash size={18} strokeWidth={1.7} aria-hidden="true" />
-                <span
-                  id="status-flex-tooltip"
-                  role="tooltip"
-                  class="pointer-events-none invisible absolute top-[calc(100%+7px)] left-0 z-30 w-max -translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-[11px] py-2.5 text-xs leading-[1.45] font-normal tracking-normal whitespace-nowrap text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
-                >
-                  Flex · 반값, 느릴 수 있음
-                </span>
-              </span>
+                Flex · 반값, 느릴 수 있음
+              </StatusTooltipChip>
             )}
             <span
               id="status-model"

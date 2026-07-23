@@ -1,5 +1,5 @@
 export const INPUT_CLASS =
-  'h-[38px] w-full rounded-lg border border-ui-frame bg-ui-control px-3 text-sm text-ui-content outline-none focus:border-ui-accent focus:ring-2 focus:ring-ui-accent/30';
+  'touch-input-text h-[38px] w-full rounded-lg border border-ui-frame bg-ui-control px-3 text-sm text-ui-content outline-none focus:border-ui-accent focus:ring-2 focus:ring-ui-accent/30';
 export const NOTICE_CLASS =
   'm-0 rounded-lg border border-ui-accent px-2.5 py-2 text-xs text-ui-content';
 // 네이티브 select 화살표는 우측에 딱 붙어 여백을 줄 수 없어, CSS 그라디언트

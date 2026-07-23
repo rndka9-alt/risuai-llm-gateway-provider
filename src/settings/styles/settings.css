@@ -24,6 +24,14 @@
   --color-ui-warn: #fbbf24;
 }
 
+/* iOS Safari는 작은 입력 글자를 확대하므로 터치 환경에서 font-size만 16px로 올린다.
+   고정된 control 높이와 line-height는 그대로 두어 기존 세로 정렬을 보존한다. */
+@media (pointer: coarse) {
+  .touch-input-text {
+    font-size: 16px;
+  }
+}
+
 /* 스크롤바가 나타날 때 콘텐츠가 밀리지 않게 공간을 예약하고(gutter), 예약 폭이
    티 나지 않도록 트랙 투명 + 얇은 thumb만 보이는 네이티브 커스텀을 쓴다 */
 .settings-scroll {

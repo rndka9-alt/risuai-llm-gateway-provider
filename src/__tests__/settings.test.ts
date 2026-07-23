@@ -473,6 +473,27 @@ describe('settings UI', () => {
     expect(button.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('API key 눈 버튼의 iOS식 focusout을 editor 이탈로 처리하지 않는다', async () => {
+    await renderSettingsUi({ api_key: 'llmgtwy_secret' });
+    const input = requireInput('api-key');
+    const button = requireButton('api-key-visibility');
+    await act(async () => requireButton('api-key-edit').click());
+
+    const pointerDown = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      pointerType: 'touch',
+    });
+    button.dispatchEvent(pointerDown);
+    input.blur();
+    await act(async () => button.click());
+
+    expect(pointerDown.defaultPrevented).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(input.type).toBe('text');
+    expect(document.getElementById('api-key-editor')?.className).toContain('w-full');
+  });
+
   it('API key를 blur에서 저장하고 상태바 전환 순서와 활성 칩을 유지한다', async () => {
     const harness = await renderSettingsUi({
       model: 'gpt-5.6-terra',
@@ -793,6 +814,58 @@ describe('settings UI', () => {
     expect(document.getElementById('ledger-popover')?.className).toContain('group-hover:visible');
     expect(document.querySelector('footer')?.classList.contains('sticky')).toBe(true);
     expect(document.querySelector('button[type="submit"]')).toBeNull();
+  });
+
+  it('터치 입력 확대 방지 글자 크기를 외곽 높이와 editor metrics 변경 없이 와이어한다', async () => {
+    await renderSettingsUi();
+    const apiKey = requireInput('api-key');
+    const promptCacheMode = requireSelect('prompt-cache-mode');
+    const jsonEditor = document.querySelector('textarea[aria-labelledby="request-body-label"]');
+    if (!(jsonEditor instanceof HTMLTextAreaElement)) {
+      throw new Error('Expected request body textarea');
+    }
+    const jsonBackdrop = jsonEditor.previousElementSibling;
+    if (!(jsonBackdrop instanceof HTMLDivElement)) {
+      throw new Error('Expected request body backdrop');
+    }
+
+    expect(apiKey.classList.contains('touch-input-text')).toBe(true);
+    expect(apiKey.className).toContain('h-[38px]');
+    expect(promptCacheMode.classList.contains('touch-input-text')).toBe(true);
+    expect(promptCacheMode.className).toContain('h-[38px]');
+    expect(jsonEditor.classList.contains('touch-input-text')).toBe(true);
+    expect(jsonEditor.className).toContain('h-40');
+    expect(jsonEditor.className).toContain('leading-5');
+    expect(jsonBackdrop.classList.contains('touch-input-text')).toBe(true);
+    expect(jsonBackdrop.className).toContain('leading-5');
+  });
+
+  it('터치처럼 focus가 남지 않는 click에서도 도움말과 손익 팝오버를 토글한다', async () => {
+    await renderSettingsUi();
+    const helpTrigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="캐시 모드 도움말"]',
+    );
+    if (helpTrigger === null) throw new Error('Expected cache mode help trigger');
+
+    await act(async () => helpTrigger.click());
+    expect(helpTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('prompt-cache-mode-tooltip')?.className).toContain('visible');
+
+    await act(async () => {
+      const ledgerSummary = requireButton('ledger-summary');
+      ledgerSummary.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }),
+      );
+      ledgerSummary.click();
+    });
+    expect(helpTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(requireButton('ledger-summary').getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('ledger-popover')?.className).toContain('visible');
+
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    });
+    expect(requireButton('ledger-summary').getAttribute('aria-expanded')).toBe('false');
   });
 
   it('도움말·닫기 동작과 저장 실패 표시를 유지한다', async () => {

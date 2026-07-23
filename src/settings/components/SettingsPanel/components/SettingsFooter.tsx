@@ -11,6 +11,7 @@ import {
   formatTokenCount,
   type LedgerDisplay,
 } from '../../../utils/ledger-display';
+import { useTooltipDisclosure } from '../../../utils/tooltip-disclosure';
 
 const LEDGER_TONE_CLASSES: Record<LedgerDisplay['tone'], string> = {
   gain: 'text-ui-gain',
@@ -30,6 +31,14 @@ export function SettingsFooter() {
   const cacheLedger = useCacheLedgerSnapshot();
   const [ledgerResetting, setLedgerResetting] = useState(false);
   const [ledgerResetFailed, setLedgerResetFailed] = useState(false);
+  const {
+    closeOnEscape,
+    closeOnFocusOut,
+    expanded: ledgerExpanded,
+    rootRef: ledgerRootRef,
+    toggleTooltip: toggleLedger,
+    triggerRef: ledgerTriggerRef,
+  } = useTooltipDisclosure<HTMLDivElement, HTMLButtonElement>();
   const ledgerDisplay = buildLedgerDisplay(cacheLedger);
   const ledgerReadText = formatTokenCount(cacheLedger.readTokens);
   const ledgerWriteText = formatTokenCount(cacheLedger.writeTokens);
@@ -49,12 +58,20 @@ export function SettingsFooter() {
 
   return (
     <footer class="sticky bottom-0 z-10 flex min-h-14 shrink-0 items-center justify-between border-t border-ui-frame bg-ui-panel px-4 py-2.5">
-      <div class="group relative flex min-w-0 items-center gap-0.5">
+      <div
+        ref={ledgerRootRef}
+        class="group relative flex min-w-0 items-center gap-0.5"
+        onFocusOut={closeOnFocusOut}
+        onKeyDown={closeOnEscape}
+      >
         <button
           id="ledger-summary"
+          ref={ledgerTriggerRef}
           type="button"
           aria-label="캐시 손익 상세"
           aria-describedby="ledger-popover"
+          aria-expanded={ledgerExpanded}
+          onClick={toggleLedger}
           class="flex min-w-0 cursor-help items-center gap-1.5 border-0 bg-transparent py-1 pr-0.5 pl-0 text-xs text-ui-muted hover:text-ui-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent"
         >
           <span
@@ -81,7 +98,7 @@ export function SettingsFooter() {
         <div
           id="ledger-popover"
           role="tooltip"
-          class="pointer-events-none invisible absolute bottom-[calc(100%+11px)] left-[-2px] z-20 w-[190px] translate-y-1 rounded-lg border border-ui-on-popover/20 bg-ui-popover px-3 py-[11px] text-ui-on-popover opacity-0 shadow-xl transition duration-150 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100"
+          class={`absolute bottom-[calc(100%+11px)] left-[-2px] z-20 w-[190px] rounded-lg border border-ui-on-popover/20 bg-ui-popover px-3 py-[11px] text-ui-on-popover shadow-xl transition duration-150 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 ${ledgerExpanded ? 'pointer-events-auto visible translate-y-0 opacity-100' : 'pointer-events-none invisible translate-y-1 opacity-0'}`}
         >
           <div class="flex flex-col gap-1.5">
             <div class="flex justify-between gap-3 text-xs tabular-nums">
