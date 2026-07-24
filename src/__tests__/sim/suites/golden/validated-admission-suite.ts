@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isMultiRoomCanonicalScenario } from '../../reporting/format-scoreboard';
+import { isMultiRoomCanonicalScenario } from '../../reporting';
 import {
   type PolicyName,
   POSITIVE_SCENARIO_IDS,

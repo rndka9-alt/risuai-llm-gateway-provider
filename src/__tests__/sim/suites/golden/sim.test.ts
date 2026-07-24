@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ReplayResult } from '../../core/replay';
-import { formatScoreboard } from '../../reporting/format-scoreboard';
+import type { ReplayResult } from '../../core';
+import { formatScoreboard } from '../../reporting';
 import { registerAdaptivePolicyTransitions } from './adaptive-policy-transition-suite';
 import { expectGoldenDirection } from './golden-direction-assertions';
 import {

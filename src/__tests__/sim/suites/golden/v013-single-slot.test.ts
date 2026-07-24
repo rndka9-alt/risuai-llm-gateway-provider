@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
+import { createFakeGatewayKernel } from '../../gateway';
 import { createCanonicalScenarios } from '../../scenarios';
-import { replayScenario } from '../../core/replay';
-import { V013_SINGLE_SLOT_SOURCE_COMMIT } from '../../strategies/v013/v013-single-slot-vendor';
-import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
+import { replayScenario } from '../../core';
+import {
+  createV013SingleSlotCachePolicy,
+  V013_SINGLE_SLOT_SOURCE_COMMIT,
+} from '../../strategies/v013';
 
 interface ExpectedV013Score {
   id: string;

@@ -2,9 +2,8 @@ import type { JsonObject, LlmMessage } from 'llm-io';
 import type { SimulationScenario } from '../scenarios';
 import { OpenAIChatCompletionsFormat } from 'llm-io';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../ledger';
-import type { FakeGatewayAccounting } from '../gateway/fake-gateway';
-import { FakeGatewayKernel } from '../gateway/fake-gateway';
-import type { ReplayCachePolicy } from '../strategies/cache-policies';
+import { FakeGatewayKernel, type FakeGatewayAccounting } from '../gateway';
+import type { ReplayCachePolicy } from '../strategies';
 
 export interface ReplayRequestLog extends FakeGatewayAccounting {
   anchorIndexes: readonly number[];
