@@ -706,7 +706,7 @@ describe('settings UI', () => {
       streaming_mode: 'decoupled',
       verbosity: 'low',
     });
-    expect(document.getElementById('reload-notice')?.textContent).toContain(
+    expect(document.getElementById('footer-message')?.textContent).toContain(
       '변경 사항을 적용하려면 새로고침해 주세요.',
     );
 
@@ -714,7 +714,7 @@ describe('settings UI', () => {
     await dispatchChange(poolSupported);
     imageInput.checked = false;
     await dispatchChange(imageInput);
-    expect(document.getElementById('reload-notice')).toBeNull();
+    expect(document.getElementById('footer-message')).toBeNull();
   });
 
   it('flags 변경 후 설정창을 재오픈해도 새로고침 안내를 복원한다', async () => {
@@ -724,7 +724,7 @@ describe('settings UI', () => {
     const poolSupported = requireInput('flag-poolSupported');
     poolSupported.checked = true;
     await dispatchChange(poolSupported);
-    expect(document.getElementById('reload-notice')?.textContent).toContain(
+    expect(document.getElementById('footer-message')?.textContent).toContain(
       '변경 사항을 적용하려면 새로고침해 주세요.',
     );
 
@@ -733,9 +733,46 @@ describe('settings UI', () => {
       await openSettings({ flagNames: ['hasFullSystemPrompt'] });
     });
 
-    expect(document.getElementById('reload-notice')?.textContent).toContain(
+    expect(document.getElementById('footer-message')?.textContent).toContain(
       '변경 사항을 적용하려면 새로고침해 주세요.',
     );
+  });
+
+  it('푸터 메시지를 저금통·워닝 아이콘 상태로 전환한다', async () => {
+    await renderSettingsUi();
+    await expandSettingsAccordion('advanced-settings');
+    expect(document.getElementById('footer-message')).toBeNull();
+    expect(document.getElementById('footer-message-reveal')).toBeNull();
+    expect(document.getElementById('ledger-layer')?.className).toContain('opacity-100');
+
+    const poolSupported = requireInput('flag-poolSupported');
+    poolSupported.checked = true;
+    await dispatchChange(poolSupported);
+
+    // 메시지 상태: 원장은 숨고 저금통+메시지가 표시, 워닝 아이콘은 숨김
+    expect(document.getElementById('ledger-layer')?.className).toContain('opacity-0');
+    expect(document.getElementById('footer-message')?.textContent).toContain('새로고침');
+    expect(requireButton('ledger-reveal').className).toContain('opacity-100');
+    expect(requireButton('footer-message-reveal').className).toContain('opacity-0');
+
+    // 저금통 클릭: 원장 복귀, 메시지는 숨고 닫기 옆에 워닝 아이콘 표시
+    await act(async () => requireButton('ledger-reveal').click());
+    expect(document.getElementById('ledger-layer')?.className).toContain('opacity-100');
+    expect(document.getElementById('footer-message')?.className).toContain('opacity-0');
+    expect(requireButton('footer-message-reveal').className).toContain('opacity-100');
+
+    // 워닝 아이콘 클릭: 다시 메시지 상태로
+    await act(async () => requireButton('footer-message-reveal').click());
+    expect(document.getElementById('ledger-layer')?.className).toContain('opacity-0');
+    expect(document.getElementById('footer-message')?.className).toContain('opacity-100');
+
+    // 원장을 보던 중 메시지가 해소되면 워닝 아이콘 없이 원장만 남는다
+    await act(async () => requireButton('ledger-reveal').click());
+    poolSupported.checked = false;
+    await dispatchChange(poolSupported);
+    expect(document.getElementById('footer-message')).toBeNull();
+    expect(document.getElementById('footer-message-reveal')).toBeNull();
+    expect(document.getElementById('ledger-layer')?.className).toContain('opacity-100');
   });
 
   it('손익·백오프를 표시하고 원장 초기화를 저장소에 반영한다', async () => {
@@ -760,11 +797,12 @@ describe('settings UI', () => {
     expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
     expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');
     expect(document.getElementById('ledger-write-detail')?.textContent).toBe('4.0k');
-    const cacheBackoffDiagnostic = document.getElementById('cache-backoff-diagnostic');
-    expect(cacheBackoffDiagnostic?.textContent).toBe(
+    expect(document.getElementById('footer-message')?.textContent).toBe(
       '프롬프트 앞부분이 계속 바뀌어 캐싱을 잠시 멈췄어요.',
     );
-    expect(cacheBackoffDiagnostic?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+
+    // 백오프 메시지가 원장을 가리므로 저금통으로 원장을 되살린 뒤 초기화한다
+    await act(async () => requireButton('ledger-reveal').click());
 
     await act(async () => {
       requireButton('ledger-reset').click();

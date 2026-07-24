@@ -53,6 +53,15 @@
   background: color-mix(in srgb, var(--border2) 70%, transparent);
 }
 
+/* 푸터 메시지 레이어는 등장하는 순간 마운트되어 transition 시작점이 없으므로,
+   마운트에도 동작하는 animation으로 지연 페이드인을 처리한다 (backwards fill이
+   지연 구간의 opacity 0을 유지한다). */
+@keyframes footer-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .stepped-slider {
   appearance: none;
   cursor: pointer;
