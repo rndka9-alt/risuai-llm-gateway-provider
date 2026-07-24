@@ -4,14 +4,14 @@ import {
   createMiddleBlockTrajectories,
   MIDDLE_BLOCK_POLICY_FACTORIES,
   type MiddleBlockPolicyFactory,
-  type MiddleBlockTrajectory,
+  type MiddleBlockScenario,
 } from './middle-block-anchor-experiment';
 import {
   createNoCachePolicy,
   createProductionCachePolicy,
   type ReplayCachePolicy,
 } from '../../strategies/cache-policies';
-import { replayTrajectory, type ReplayResult } from '../../core/replay';
+import { replayScenario, type ReplayResult } from '../../core/replay';
 import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
 const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
@@ -23,14 +23,14 @@ interface PolicyFactory {
 
 const POLICY_FACTORIES: readonly PolicyFactory[] = [
   // 이전 릴리즈(v0.13) 실배포 정책 — "지금보다 효율적인가"가 아니라
-  // "이전 릴리즈보다 좋아졌는가"를 같은 trajectory에서 답하기 위한 기준선.
+  // "이전 릴리즈보다 좋아졌는가"를 같은 scenario에서 답하기 위한 기준선.
   { create: createV013SingleSlotCachePolicy, name: 'v013-single-slot' },
   { create: createProductionCachePolicy, name: 'production' },
   ...MIDDLE_BLOCK_POLICY_FACTORIES,
   { create: createNoCachePolicy, name: 'no-cache' },
 ];
 
-const trajectories = createMiddleBlockTrajectories();
+const scenarios = createMiddleBlockTrajectories();
 const pluginStorage = new Map<string, string>();
 const results: ReplayResult[] = [];
 
@@ -46,18 +46,18 @@ function stubPluginStorage(): void {
 }
 
 function resultFor(
-  trajectoryId: string,
+  scenarioId: string,
   kernelName: FakeGatewayKernelPreset,
   policyName: string,
 ): ReplayResult {
   const result = results.find(
     (candidate) =>
-      candidate.trajectoryId === trajectoryId &&
+      candidate.scenarioId === scenarioId &&
       candidate.kernelName === kernelName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing result for ${trajectoryId}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing result for ${scenarioId}/${kernelName}/${policyName}.`);
   }
   return result;
 }
@@ -84,24 +84,24 @@ function formatTable(
   ].join('\n');
 }
 
-function formatPerTrajectoryScoreboard(): string {
+function formatPerScenarioScoreboard(): string {
   const comparedPolicyNames = POLICY_FACTORIES.filter((factory) => factory.name !== 'no-cache').map(
     (factory) => factory.name,
   );
 
   return formatTable(
     'Middle-block anchor oracle — calibrated net/input',
-    ['trajectory', ...comparedPolicyNames, 'winner', 'vs production'],
-    trajectories.map((trajectory) => {
+    ['scenario', ...comparedPolicyNames, 'winner', 'vs production'],
+    scenarios.map((scenario) => {
       const policyResults = comparedPolicyNames.map((policyName) =>
-        resultFor(trajectory.id, 'calibrated', policyName),
+        resultFor(scenario.id, 'calibrated', policyName),
       );
       const winner = policyResults.reduce((best, candidate) =>
         candidate.totalNetSavedTokens > best.totalNetSavedTokens ? candidate : best,
       );
-      const production = resultFor(trajectory.id, 'calibrated', 'production');
+      const production = resultFor(scenario.id, 'calibrated', 'production');
       return [
-        trajectory.id,
+        scenario.id,
         ...policyResults.map((result) => `${efficiency(result).toFixed(1)}%`),
         winner.policyName,
         `${(efficiency(winner) - efficiency(production)).toFixed(1)}pp`,
@@ -113,23 +113,21 @@ function formatPerTrajectoryScoreboard(): string {
 function formatScopeScoreboards(): string {
   const scopes: readonly {
     label: string;
-    matches: (trajectory: MiddleBlockTrajectory) => boolean;
+    matches: (scenario: MiddleBlockScenario) => boolean;
   }[] = [
     {
       label: 'recurrent within TTL',
-      matches: (trajectory) =>
-        trajectory.phaseCount !== null &&
-        trajectory.phaseCount * trajectory.switchEveryTurns * 2 < 30,
+      matches: (scenario) =>
+        scenario.phaseCount !== null && scenario.phaseCount * scenario.switchEveryTurns * 2 < 30,
     },
     {
       label: 'recurrent after TTL',
-      matches: (trajectory) =>
-        trajectory.phaseCount !== null &&
-        trajectory.phaseCount * trajectory.switchEveryTurns * 2 >= 30,
+      matches: (scenario) =>
+        scenario.phaseCount !== null && scenario.phaseCount * scenario.switchEveryTurns * 2 >= 30,
     },
     {
       label: 'unique churn',
-      matches: (trajectory) => trajectory.phaseCount === null,
+      matches: (scenario) => scenario.phaseCount === null,
     },
     {
       label: 'all',
@@ -143,9 +141,9 @@ function formatScopeScoreboards(): string {
       ['policy', 'scope', 'net/input', 'read', 'write'],
       POLICY_FACTORIES.flatMap((factory) =>
         scopes.map((scope) => {
-          const scopedTrajectories = trajectories.filter(scope.matches);
-          const scopedResults = scopedTrajectories.map((trajectory) =>
-            resultFor(trajectory.id, kernelName, factory.name),
+          const scopedTrajectories = scenarios.filter(scope.matches);
+          const scopedResults = scopedTrajectories.map((scenario) =>
+            resultFor(scenario.id, kernelName, factory.name),
           );
           const inputTokens = scopedResults.reduce(
             (total, result) => total + result.totalInputTokens,
@@ -170,22 +168,22 @@ function formatScopeScoreboards(): string {
 
 beforeAll(async () => {
   stubPluginStorage();
-  for (const trajectory of trajectories) {
+  for (const scenario of scenarios) {
     for (const kernelPreset of KERNEL_PRESETS) {
       for (const factory of POLICY_FACTORIES) {
         pluginStorage.clear();
         stubPluginStorage();
         results.push(
-          await replayTrajectory({
+          await replayScenario({
             kernel: createFakeGatewayKernel(kernelPreset),
             policy: factory.create(),
-            trajectory,
+            scenario,
           }),
         );
       }
     }
   }
-  console.log([formatPerTrajectoryScoreboard(), formatScopeScoreboards()].join('\n\n'));
+  console.log([formatPerScenarioScoreboard(), formatScopeScoreboards()].join('\n\n'));
 }, 300_000);
 
 afterAll(() => {
@@ -193,9 +191,9 @@ afterAll(() => {
 });
 
 describe('middle-block semantic anchor oracle', () => {
-  it('모든 trajectory × kernel × policy 결과를 수집한다', () => {
+  it('모든 scenario × kernel × policy 결과를 수집한다', () => {
     expect(results).toHaveLength(
-      trajectories.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
+      scenarios.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
     );
   });
 
@@ -229,30 +227,28 @@ describe('middle-block semantic anchor oracle', () => {
   });
 
   it('TTL 안에 phase가 재등장하면 전체 phase-recall이 production보다 유리하다', () => {
-    trajectories
+    scenarios
       .filter(
-        (trajectory) =>
-          trajectory.phaseCount !== null &&
-          trajectory.phaseCount * trajectory.switchEveryTurns * 2 < 30,
+        (scenario) =>
+          scenario.phaseCount !== null && scenario.phaseCount * scenario.switchEveryTurns * 2 < 30,
       )
-      .forEach((trajectory) => {
-        const production = resultFor(trajectory.id, 'calibrated', 'production');
-        const fullRecall = resultFor(trajectory.id, 'calibrated', 'oracle-shield-phase-recall');
+      .forEach((scenario) => {
+        const production = resultFor(scenario.id, 'calibrated', 'production');
+        const fullRecall = resultFor(scenario.id, 'calibrated', 'oracle-shield-phase-recall');
         expect(fullRecall.totalNetSavedTokens).toBeGreaterThan(production.totalNetSavedTokens);
       });
   });
 
   it('TTL 밖 재등장과 unique churn에서는 TTL-aware admission이 방패-only로 강하한다', () => {
-    trajectories
+    scenarios
       .filter(
-        (trajectory) =>
-          trajectory.phaseCount === null ||
-          trajectory.phaseCount * trajectory.switchEveryTurns * 2 >= 30,
+        (scenario) =>
+          scenario.phaseCount === null || scenario.phaseCount * scenario.switchEveryTurns * 2 >= 30,
       )
-      .forEach((trajectory) => {
+      .forEach((scenario) => {
         for (const kernelPreset of KERNEL_PRESETS) {
-          const shield = resultFor(trajectory.id, kernelPreset, 'oracle-shield');
-          const ttlAware = resultFor(trajectory.id, kernelPreset, 'oracle-ttl-recurrence-admitted');
+          const shield = resultFor(scenario.id, kernelPreset, 'oracle-shield');
+          const ttlAware = resultFor(scenario.id, kernelPreset, 'oracle-ttl-recurrence-admitted');
           expect(ttlAware.totalNetSavedTokens).toBeCloseTo(shield.totalNetSavedTokens);
         }
       });
@@ -260,15 +256,15 @@ describe('middle-block semantic anchor oracle', () => {
 
   it('TTL-aware admission은 전체 스윕에서 production보다 높은 순절감을 낸다', () => {
     for (const kernelPreset of KERNEL_PRESETS) {
-      const productionNet = trajectories.reduce(
-        (total, trajectory) =>
-          total + resultFor(trajectory.id, kernelPreset, 'production').totalNetSavedTokens,
+      const productionNet = scenarios.reduce(
+        (total, scenario) =>
+          total + resultFor(scenario.id, kernelPreset, 'production').totalNetSavedTokens,
         0,
       );
-      const ttlAwareNet = trajectories.reduce(
-        (total, trajectory) =>
+      const ttlAwareNet = scenarios.reduce(
+        (total, scenario) =>
           total +
-          resultFor(trajectory.id, kernelPreset, 'oracle-ttl-recurrence-admitted')
+          resultFor(scenario.id, kernelPreset, 'oracle-ttl-recurrence-admitted')
             .totalNetSavedTokens,
         0,
       );
@@ -276,18 +272,18 @@ describe('middle-block semantic anchor oracle', () => {
     }
   });
 
-  it('admission 후보들은 모든 trajectory에서 이전 릴리즈(v0.13)보다 순절감이 낮지 않다', () => {
+  it('admission 후보들은 모든 scenario에서 이전 릴리즈(v0.13)보다 순절감이 낮지 않다', () => {
     // "지금 production보다 나은가"와 별개로, 후보 전략이 실배포됐던 어느
     // 릴리즈보다도 뒤로 가지 않는지를 릴리즈 안전선으로 고정한다.
     const candidatePolicyNames = [
       'oracle-ttl-recurrence-admitted',
       'oracle-wallclock-recurrence-admitted',
     ] as const;
-    trajectories.forEach((trajectory) => {
+    scenarios.forEach((scenario) => {
       for (const kernelPreset of KERNEL_PRESETS) {
-        const previousRelease = resultFor(trajectory.id, kernelPreset, 'v013-single-slot');
+        const previousRelease = resultFor(scenario.id, kernelPreset, 'v013-single-slot');
         for (const candidatePolicyName of candidatePolicyNames) {
-          const candidate = resultFor(trajectory.id, kernelPreset, candidatePolicyName);
+          const candidate = resultFor(scenario.id, kernelPreset, candidatePolicyName);
           expect(candidate.totalNetSavedTokens).toBeGreaterThanOrEqual(
             previousRelease.totalNetSavedTokens,
           );
@@ -299,24 +295,24 @@ describe('middle-block semantic anchor oracle', () => {
   it('production은 TTL 밖 16상태 회전에서 이전 릴리즈(v0.13)보다 퇴행해 있다', () => {
     // 깊은 write가 전부 죽는 패턴에서는 v0.13의 보수적 single slot이 현행
     // 공격 배치보다 낫다 — 이 릴리즈 퇴행의 복구가 admission 실험의 동기다.
-    trajectories
-      .filter((trajectory) => trajectory.phaseCount === 16)
-      .forEach((trajectory) => {
+    scenarios
+      .filter((scenario) => scenario.phaseCount === 16)
+      .forEach((scenario) => {
         for (const kernelPreset of KERNEL_PRESETS) {
-          const previousRelease = resultFor(trajectory.id, kernelPreset, 'v013-single-slot');
-          const production = resultFor(trajectory.id, kernelPreset, 'production');
+          const previousRelease = resultFor(scenario.id, kernelPreset, 'v013-single-slot');
+          const production = resultFor(scenario.id, kernelPreset, 'production');
           expect(production.totalNetSavedTokens).toBeLessThan(previousRelease.totalNetSavedTokens);
         }
       });
   });
 
   it('재등장 phase 뒤의 고정 B가 클수록 full recall의 production 대비 이득이 커진다', () => {
-    const fourPhaseTrajectories = trajectories
-      .filter((trajectory) => trajectory.phaseCount === 4)
+    const fourPhaseTrajectories = scenarios
+      .filter((scenario) => scenario.phaseCount === 4)
       .sort((left, right) => left.fixedTailTokens - right.fixedTailTokens);
-    const improvements = fourPhaseTrajectories.map((trajectory) => {
-      const production = resultFor(trajectory.id, 'calibrated', 'production');
-      const fullRecall = resultFor(trajectory.id, 'calibrated', 'oracle-shield-phase-recall');
+    const improvements = fourPhaseTrajectories.map((scenario) => {
+      const production = resultFor(scenario.id, 'calibrated', 'production');
+      const fullRecall = resultFor(scenario.id, 'calibrated', 'oracle-shield-phase-recall');
       return efficiency(fullRecall) - efficiency(production);
     });
 

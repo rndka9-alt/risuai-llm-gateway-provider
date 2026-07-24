@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { isMultiRoomGoldenTrajectory } from '../../reporting/format-scoreboard';
+import { isMultiRoomCanonicalScenario } from '../../reporting/format-scoreboard';
 import {
   type PolicyName,
-  POSITIVE_TRAJECTORY_IDS,
+  POSITIVE_SCENARIO_IDS,
   replayResults,
   requireReplayResult,
-  requireTrajectoryById,
-  trajectories,
+  requireScenarioById,
+  scenarios,
 } from './sim-context';
 
 export function registerValidatedAdmissionPolicyComparisons(): void {
   describe('validated admission policy comparisons', () => {
     it('실측 branch boundary 우회 손실을 대규모 write 없이 얕은 cold write로 제한한다', () => {
-      const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
-      const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
-      const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
+      const scenario = requireScenarioById('18-suppressed-frontier-branch-boundary');
+      const legacy = requireReplayResult(scenario, 'calibrated', 'legacy-production');
+      const validated = requireReplayResult(scenario, 'calibrated', 'validated-all');
       const legacyBypassRequest = legacy.logs[3];
       const validatedBypassRequest = validated.logs[3];
 
@@ -25,10 +25,10 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('영구 hard cap은 현실 크기의 기존 양수 골든도 admission하지 못한다', () => {
-      for (const trajectoryId of POSITIVE_TRAJECTORY_IDS) {
-        const trajectory = requireTrajectoryById(trajectoryId);
-        const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
-        const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
+      for (const scenarioId of POSITIVE_SCENARIO_IDS) {
+        const scenario = requireScenarioById(scenarioId);
+        const legacy = requireReplayResult(scenario, 'calibrated', 'legacy-production');
+        const validated = requireReplayResult(scenario, 'calibrated', 'validated-all');
 
         expect(validated.totalNetSavedTokens).toBe(0);
         expect(validated.totalNetSavedTokens).toBeLessThan(legacy.totalNetSavedTokens);
@@ -41,8 +41,8 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
       const calibrated = replayResults.filter(
         (result) =>
           result.kernelName === 'calibrated' &&
-          result.trajectoryId !== '19-large-stable-prefix-admission' &&
-          result.trajectoryId !== '20-large-prefix-invalidated-after-admission',
+          result.scenarioId !== '19-large-stable-prefix-admission' &&
+          result.scenarioId !== '20-large-prefix-invalidated-after-admission',
       );
       const totalsFor = (policyName: PolicyName) => {
         const policyResults = calibrated.filter((result) => result.policyName === policyName);
@@ -84,13 +84,13 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
         .filter(
           (result) =>
             result.policyName === 'legacy-production' &&
-            !isMultiRoomGoldenTrajectory(result.trajectoryId),
+            !isMultiRoomCanonicalScenario(result.scenarioId),
         )
         .reduce((total, result) => total + result.totalWriteTokens, 0);
       const singleRoomSelectiveWriteTokens = calibrated
         .filter(
           (result) =>
-            result.policyName === 'production' && !isMultiRoomGoldenTrajectory(result.trajectoryId),
+            result.policyName === 'production' && !isMultiRoomCanonicalScenario(result.scenarioId),
         )
         .reduce((total, result) => total + result.totalWriteTokens, 0);
 
@@ -123,13 +123,13 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
         .filter(
           (result) =>
             result.policyName === 'legacy-production' &&
-            !isMultiRoomGoldenTrajectory(result.trajectoryId),
+            !isMultiRoomCanonicalScenario(result.scenarioId),
         )
         .reduce((total, result) => total + result.totalWriteTokens, 0);
       const singleRoomCurrentWriteTokens = calibrated
         .filter(
           (result) =>
-            result.policyName === 'production' && !isMultiRoomGoldenTrajectory(result.trajectoryId),
+            result.policyName === 'production' && !isMultiRoomCanonicalScenario(result.scenarioId),
         )
         .reduce((total, result) => total + result.totalWriteTokens, 0);
 
@@ -141,10 +141,10 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('fork 경계 admission 승계는 분기 우회의 read를 복구한다', () => {
-      const trajectory = requireTrajectoryById('18-suppressed-frontier-branch-boundary');
-      const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
-      const validated = requireReplayResult(trajectory, 'calibrated', 'validated-all');
-      const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+      const scenario = requireScenarioById('18-suppressed-frontier-branch-boundary');
+      const legacy = requireReplayResult(scenario, 'calibrated', 'legacy-production');
+      const validated = requireReplayResult(scenario, 'calibrated', 'validated-all');
+      const selective = requireReplayResult(scenario, 'calibrated', 'production');
 
       expect(selective.totalNetSavedTokens).toBeGreaterThan(legacy.totalNetSavedTokens);
       expect(selective.totalNetSavedTokens).toBeGreaterThan(validated.totalNetSavedTokens);
@@ -153,16 +153,16 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('안전한 일반 흐름도 대규모 첫 prefix의 warm-up 비용을 내되 흑자를 유지한다', () => {
-      for (const trajectoryId of [
+      for (const scenarioId of [
         '01-append',
         '04-reroll',
         '05-lore-toggle',
         '06-context-trim',
         '08-lua-post-edit',
       ]) {
-        const trajectory = requireTrajectoryById(trajectoryId);
-        const legacy = requireReplayResult(trajectory, 'calibrated', 'legacy-production');
-        const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+        const scenario = requireScenarioById(scenarioId);
+        const legacy = requireReplayResult(scenario, 'calibrated', 'legacy-production');
+        const selective = requireReplayResult(scenario, 'calibrated', 'production');
 
         expect(selective.totalNetSavedTokens).toBeGreaterThan(0);
         expect(selective.totalNetSavedTokens).toBeLessThan(legacy.totalNetSavedTokens);
@@ -170,9 +170,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('16k 초과 안정 prefix는 두 번 생존한 뒤 write하고 다음 요청에서 회수한다', () => {
-      const trajectory = requireTrajectoryById('19-large-stable-prefix-admission');
-      const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
-      const previous = requireReplayResult(trajectory, 'calibrated', 'production-two-survival');
+      const scenario = requireScenarioById('19-large-stable-prefix-admission');
+      const hardCapped = requireReplayResult(scenario, 'calibrated', 'selective-hard-cap');
+      const previous = requireReplayResult(scenario, 'calibrated', 'production-two-survival');
 
       expect(hardCapped.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 0, 0]);
       expect(hardCapped.totalNetSavedTokens).toBe(0);
@@ -187,9 +187,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('한 번 생존한 16k 초과 prefix를 두 번째 요청에서 write한다', () => {
-      const trajectory = requireTrajectoryById('19-large-stable-prefix-admission');
-      const previous = requireReplayResult(trajectory, 'calibrated', 'production-two-survival');
-      const current = requireReplayResult(trajectory, 'calibrated', 'production');
+      const scenario = requireScenarioById('19-large-stable-prefix-admission');
+      const previous = requireReplayResult(scenario, 'calibrated', 'production-two-survival');
+      const current = requireReplayResult(scenario, 'calibrated', 'production');
 
       expect(current.logs.map((log) => log.policyMarkerCount)).toEqual([0, 1, 1, 1]);
       expect(current.logs[1].writeTokens).toBeGreaterThan(16_384);
@@ -199,9 +199,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('한 번만 재사용되고 깨지는 prefix도 첫 hit으로 write를 회수한다', () => {
-      const trajectory = requireTrajectoryById('20-large-prefix-invalidated-after-admission');
-      const previous = requireReplayResult(trajectory, 'calibrated', 'production-two-survival');
-      const current = requireReplayResult(trajectory, 'calibrated', 'production');
+      const scenario = requireScenarioById('20-large-prefix-invalidated-after-admission');
+      const previous = requireReplayResult(scenario, 'calibrated', 'production-two-survival');
+      const current = requireReplayResult(scenario, 'calibrated', 'production');
 
       expect(current.logs.map((log) => log.policyMarkerCount)).toEqual([0, 1, 1, 0]);
       expect(current.logs[1].writeTokens).toBeGreaterThan(16_384);
@@ -211,9 +211,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('직전 두 번 생존 정책은 admission 직후 깨지면 cold write를 회수하지 못한다', () => {
-      const trajectory = requireTrajectoryById('20-large-prefix-invalidated-after-admission');
-      const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
-      const previous = requireReplayResult(trajectory, 'calibrated', 'production-two-survival');
+      const scenario = requireScenarioById('20-large-prefix-invalidated-after-admission');
+      const hardCapped = requireReplayResult(scenario, 'calibrated', 'selective-hard-cap');
+      const previous = requireReplayResult(scenario, 'calibrated', 'production-two-survival');
 
       expect(hardCapped.logs.map((log) => log.policyMarkerCount)).toEqual([0, 0, 0, 0]);
       expect(hardCapped.totalNetSavedTokens).toBe(0);
@@ -227,19 +227,19 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('production bank와 hard cap 비교는 admission과 fork 차이를 함께 드러낸다', () => {
-      const changedTrajectoryIds = trajectories
-        .filter((trajectory) => {
-          const hardCapped = requireReplayResult(trajectory, 'calibrated', 'selective-hard-cap');
-          const selective = requireReplayResult(trajectory, 'calibrated', 'production');
+      const changedScenarioIds = scenarios
+        .filter((scenario) => {
+          const hardCapped = requireReplayResult(scenario, 'calibrated', 'selective-hard-cap');
+          const selective = requireReplayResult(scenario, 'calibrated', 'production');
           return hardCapped.totalNetSavedTokens !== selective.totalNetSavedTokens;
         })
-        .map((trajectory) => trajectory.id);
+        .map((scenario) => scenario.id);
 
-      expect(changedTrajectoryIds).toContain('01-append');
-      expect(changedTrajectoryIds).toContain('19-large-stable-prefix-admission');
-      expect(changedTrajectoryIds).toContain('20-large-prefix-invalidated-after-admission');
-      expect(changedTrajectoryIds).not.toContain('02-cbs-trap');
-      expect(changedTrajectoryIds).toContain('14-trim-saturation');
+      expect(changedScenarioIds).toContain('01-append');
+      expect(changedScenarioIds).toContain('19-large-stable-prefix-admission');
+      expect(changedScenarioIds).toContain('20-large-prefix-invalidated-after-admission');
+      expect(changedScenarioIds).not.toContain('02-cbs-trap');
+      expect(changedScenarioIds).toContain('14-trim-saturation');
     });
   });
 }

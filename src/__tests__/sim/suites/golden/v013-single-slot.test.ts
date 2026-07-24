@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
-import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
-import { replayTrajectory } from '../../core/replay';
+import { createCanonicalScenarios } from '../../scenarios';
+import { replayScenario } from '../../core/replay';
 import { V013_SINGLE_SLOT_SOURCE_COMMIT } from '../../strategies/v013/v013-single-slot-vendor';
 import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
@@ -12,7 +12,7 @@ interface ExpectedV013Score {
   totalWriteTokens: number;
 }
 
-// Commit 3f3d7733 worktree 정책을 현재 27종 trajectory에서 calibrated kernel로
+// Commit 3f3d7733 worktree 정책을 현재 27종 scenario에서 calibrated kernel로
 // replay한 값이다. 22 fixture 재설계 외 26종은 기존 실측값을 그대로 유지하며,
 // 벤더 로직이나 다른 fixture가 drift하면 시나리오 단위로 잡는다.
 const EXPECTED_V013_SCORES: readonly ExpectedV013Score[] = [
@@ -183,20 +183,20 @@ const EXPECTED_V013_SCORES: readonly ExpectedV013Score[] = [
 describe('v0.13 single-slot production fidelity', () => {
   it('HEAD 3f3d7733 worktree의 calibrated 27종 read/write/net과 정확히 일치한다', async () => {
     expect(V013_SINGLE_SLOT_SOURCE_COMMIT).toBe('3f3d7733250877ef53d34ebf4a150a4f2447f159');
-    const trajectories = createGoldenTrajectories();
-    expect(trajectories.map((trajectory) => trajectory.id)).toEqual(
+    const scenarios = createCanonicalScenarios();
+    expect(scenarios.map((scenario) => scenario.id)).toEqual(
       EXPECTED_V013_SCORES.map((score) => score.id),
     );
 
     const actualScores: ExpectedV013Score[] = [];
-    for (const trajectory of trajectories) {
-      const result = await replayTrajectory({
+    for (const scenario of scenarios) {
+      const result = await replayScenario({
         kernel: createFakeGatewayKernel('calibrated'),
         policy: createV013SingleSlotCachePolicy(),
-        trajectory,
+        scenario,
       });
       actualScores.push({
-        id: result.trajectoryId,
+        id: result.scenarioId,
         totalNetSavedTokens: result.totalNetSavedTokens,
         totalReadTokens: result.totalReadTokens,
         totalWriteTokens: result.totalWriteTokens,

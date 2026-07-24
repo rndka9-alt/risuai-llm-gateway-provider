@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory } from '../../core/replay';
+import type { SimulationScenario } from '../scenario-contract';
 import { makeBlock, makeMessage, mutateBlock, request } from './fixture-builders';
 
 // 컨텍스트 스케일 프로필. characters/4 = 시뮬 토큰이며, 한국어 실프롬프트의
@@ -70,7 +70,7 @@ export const MANUAL_SUMMARY_SCALES: readonly ManualSummaryScale[] = [
 // 추가형 구조라, 얕은 앵커 히트만 남고 요약 뒤 히스토리가 매턴 재쓰기된다.
 // 블록 비율은 실측 4요청 구조(80k 프로필)를 따르고, 스케일별 손익 비교를 위해
 // 히스토리·로어북·장기기억만 프로필로 바꾼다.
-export function createManualSummaryAdditiveTrajectory(scale: ManualSummaryScale): GoldenTrajectory {
+export function createManualSummaryAdditiveScenario(scale: ManualSummaryScale): SimulationScenario {
   const recentWindowTurns = 5;
   const totalRequests = 8;
   const memoryAppearsAtRequest = 2;

@@ -34,7 +34,7 @@ npm run test:sim  # 캐싱 효율 측정 (src/__tests__/sim/) — 캐시 정책 
 npm run test:all  # 둘 다
 ```
 
-- `src/__tests__/sim/`은 fake gateway 커널 위에서 golden trajectory를 replay해 정책별 절감
+- `src/__tests__/sim/`은 fake gateway 커널 위에서 canonical scenario를 replay해 정책별 절감
   토큰을 집계하는 벤치마크 하네스다. 정책 × 시나리오 × 커널 조합이라 실행 시간이 기능 테스트의
   10배를 넘으므로(실측 21초 vs 2초) 기본 `npm test`에서 제외한다.
 - **캐싱 효율을 측정·비교할 때만** `npm run test:sim`을 쓴다. 대상은 `src/cache/`의 breakpoint
@@ -47,8 +47,8 @@ npm run test:all  # 둘 다
 
 ### sim 결과 해석 원칙
 
-- 정책 비교는 전체 합산·평균이 아니라 **trajectory별 증감률(net/input, pp)**로 판단한다.
-  trajectory마다 입력 토큰 총량이 달라 합산 net/input은 토큰이 큰 trajectory가 지배하고,
+- 정책 비교는 전체 합산·평균이 아니라 **scenario별 증감률(net/input, pp)**로 판단한다.
+  scenario마다 입력 토큰 총량이 달라 합산 net/input은 토큰이 큰 scenario가 지배하고,
   특정 워크로드의 퇴행이 전체 개선 수치에 가려진다. (실례: TTL-aware admission의 전체
   +3.24pp는 사실상 TTL 밖 회전·unique churn에서 왔고, within-TTL eight-fast에서는
   −3.9pp 퇴행이 숨어 있었다.)
@@ -58,25 +58,27 @@ npm run test:all  # 둘 다
   정책("이전 릴리즈보다 퇴행하지 않는가", 예: `v013-single-slot`). 릴리즈 안전선은
   assertion으로 고정한다.
 - 짧은 horizon(36요청)은 admission류 정책의 학습비 회수 구간을 놓친다. 재등장 주기가 긴
-  trajectory는 회수 구간을 포함한 long 변형(96요청 등)을 함께 둔다.
-- 새 정책 후보는 스코어를 믿기 전에 adversarial trajectory(전략의 가정을 정면으로 찌르는
+  scenario는 회수 구간을 포함한 long 변형(96요청 등)을 함께 둔다.
+- 새 정책 후보는 스코어를 믿기 전에 adversarial scenario(전략의 가정을 정면으로 찌르는
   패턴)로 먼저 흔들어 본다. oracle 정책의 수치는 구조를 미리 아는 상한선이며 실구현
   예상치가 아니다.
 
 ### sim 내부 구조
 
-- `core/` — trajectory replay와 공통 결과 타입
+- `core/` — scenario replay와 공통 결과 타입
 - `gateway/` — fake gateway 커널과 커널 계약 테스트
-- `workloads/` — golden·long-run·neutral trajectory
+- `scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
 - `strategies/` — 현행·과거·실험 캐시 정책 adapter
 - `reporting/` — scoreboard 등 결과 표현
 - `suites/` — golden 회귀와 eviction 비교 스위트
 - `experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험
 
-`workloads/golden-trajectories.ts`는 golden workload 조립만 담당하고, fixture builder·기본
-시나리오·실사용 변동·멀티룸/뱅크·admission 경계·현실 토큰 스케일링은
-`workloads/golden/`에 나눈다. `suites/golden/sim.test.ts`도 전체 replay 생명주기와 suite
-등록만 담당하며, 공통 실행 컨텍스트와 큰 assertion 묶음은 같은 디렉터리의 보조 모듈에 둔다.
+소비자는 `scenarios` 폴더 경로로 import한다. `scenarios/index.ts`에는 `scenarios.ts`의
+공개 심볼을 named re-export하는 선언만 두고, 폴더명과 같은 `scenarios/scenarios.ts`가
+모듈의 주인공 역할을 맡는다. 시나리오는 요청 메시지·시간 간격·식별자처럼 replay할 입력만
+소유하고, 커널·정책·assertion·report는 소유하지 않는다.
+구현은 `scenarios/internal/` 아래 canonical·long-run·neutral로 나눈다. `suites/golden/`은
+이 입력에 고정 기대값을 적용하는 golden 회귀 테스트이며, 시나리오 자체의 분류가 아니다.
 
 ## 모듈 구조 원칙
 

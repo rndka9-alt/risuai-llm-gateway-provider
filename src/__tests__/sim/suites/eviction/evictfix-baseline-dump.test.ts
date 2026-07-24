@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
-import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
-import { createAppendSweepTrajectories } from '../../workloads/longrun-patterns';
-import { createAuthoredTrajectories } from '../../workloads/neutral/neutral-authored';
-import { createProceduralTrajectories } from '../../workloads/neutral/neutral-procedural';
+import { createCanonicalScenarios } from '../../scenarios';
+import { createAppendSweepScenarios } from '../../scenarios';
+import { createAuthoredNeutralScenarios } from '../../scenarios';
+import { createProceduralNeutralScenarios } from '../../scenarios';
 import { createProductionCachePolicy } from '../../strategies/cache-policies';
-import { replayTrajectory } from '../../core/replay';
+import { replayScenario } from '../../core/replay';
 
 // 현재 구현(frontier 보호 축출 규칙) 기준 production의 케이스별 수치를 JSON으로
 // 남긴다. longrun-evictfix.test.ts의 구 규칙 JSON과 diff하면 보호 규칙의 효과를
@@ -31,10 +31,10 @@ describe('evictfix baseline dump', () => {
     });
 
     const suites = [
-      ['golden-27', createGoldenTrajectories()],
-      ['neutral-authored', createAuthoredTrajectories().map((entry) => entry.trajectory)],
-      ['neutral-procedural', createProceduralTrajectories()],
-      ['append-sweep', createAppendSweepTrajectories(SWEEP_TURN_COUNTS)],
+      ['canonical-27', createCanonicalScenarios()],
+      ['neutral-authored', createAuthoredNeutralScenarios().map((entry) => entry.scenario)],
+      ['neutral-procedural', createProceduralNeutralScenarios()],
+      ['append-sweep', createAppendSweepScenarios(SWEEP_TURN_COUNTS)],
     ] as const;
 
     const scenarios: {
@@ -43,16 +43,16 @@ describe('evictfix baseline dump', () => {
       netSavedTokens: number;
       suite: string;
     }[] = [];
-    for (const [suiteName, trajectories] of suites) {
-      for (const trajectory of trajectories) {
+    for (const [suiteName, suiteScenarios] of suites) {
+      for (const scenario of suiteScenarios) {
         pluginStorage.clear();
-        const result = await replayTrajectory({
+        const result = await replayScenario({
           kernel: createFakeGatewayKernel('calibrated'),
           policy: createProductionCachePolicy(),
-          trajectory,
+          scenario,
         });
         scenarios.push({
-          id: trajectory.id,
+          id: scenario.id,
           inputTokens: result.totalInputTokens,
           netSavedTokens: result.totalNetSavedTokens,
           suite: suiteName,

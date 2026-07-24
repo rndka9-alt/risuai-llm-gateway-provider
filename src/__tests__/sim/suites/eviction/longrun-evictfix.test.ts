@@ -3,18 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
-import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
-import {
-  createAppendSweepTrajectories,
-  createLongRunPatternTrajectories,
-} from '../../workloads/longrun-patterns';
-import { createAuthoredTrajectories } from '../../workloads/neutral/neutral-authored';
-import { createProceduralTrajectories } from '../../workloads/neutral/neutral-procedural';
+import { createCanonicalScenarios } from '../../scenarios';
+import { createAppendSweepScenarios, createLongRunScenarios } from '../../scenarios';
+import { createAuthoredNeutralScenarios } from '../../scenarios';
+import { createProceduralNeutralScenarios } from '../../scenarios';
 import {
   createLegacyProductionCachePolicy,
   createProductionCachePolicy,
 } from '../../strategies/cache-policies';
-import { replayTrajectory } from '../../core/replay';
+import { replayScenario } from '../../core/replay';
 
 // 회귀 참조 실험: frontier 보호 규칙이 본체(evict-closest-anchors.ts)에 반영된 뒤,
 // 보호가 없던 구 축출 규칙을 vi.mock으로 재현해 병리의 크기를 기록으로 남긴다.
@@ -23,9 +20,8 @@ import { replayTrajectory } from '../../core/replay';
 // (lr01 append 60턴 eff 21.2% vs 보호 후 86.7%).
 
 vi.mock('../../../../cache/planner/utils/evict-closest-anchors', async () => {
-  const { sumTokenEstimatesBetween } = await import(
-    '../../../../cache/planner/utils/sum-token-estimates-between'
-  );
+  const { sumTokenEstimatesBetween } =
+    await import('../../../../cache/planner/utils/sum-token-estimates-between');
   return {
     // 보호 규칙 도입 이전의 원본 구현 (커밋 8c27f1f 시점의 본체 코드와 동일).
     evictClosestAnchors: (
@@ -73,17 +69,17 @@ describe('anchor eviction frontier-protection experiment', () => {
     const rows: string[] = [];
     for (const kernelPreset of ['calibrated', 'pessimistic'] as const) {
       const totals = new Map<string, { input: number; net: number }>();
-      for (const trajectory of createLongRunPatternTrajectories()) {
+      for (const scenario of createLongRunScenarios()) {
         const cells: string[] = [];
         for (const [name, createPolicy] of [
           ['legacy+oldevict', createLegacyProductionCachePolicy],
           ['production+oldevict', createProductionCachePolicy],
         ] as const) {
           pluginStorage.clear();
-          const result = await replayTrajectory({
+          const result = await replayScenario({
             kernel: createFakeGatewayKernel(kernelPreset),
             policy: createPolicy(),
-            trajectory,
+            scenario,
           });
           const efficiency = (result.totalNetSavedTokens / result.totalInputTokens) * 100;
           cells.push(`${name}=${efficiency.toFixed(1)}%`);
@@ -93,7 +89,7 @@ describe('anchor eviction frontier-protection experiment', () => {
           totals.set(name, total);
           expect(result.logs.length).toBeGreaterThan(0);
         }
-        rows.push(`[${kernelPreset}] ${trajectory.id}: ${cells.join(' ')}`);
+        rows.push(`[${kernelPreset}] ${scenario.id}: ${cells.join(' ')}`);
       }
       for (const [name, total] of totals) {
         rows.push(
@@ -117,10 +113,10 @@ describe('anchor eviction frontier-protection experiment', () => {
     });
 
     const suites = [
-      ['golden-27', createGoldenTrajectories()],
-      ['neutral-authored', createAuthoredTrajectories().map((entry) => entry.trajectory)],
-      ['neutral-procedural', createProceduralTrajectories()],
-      ['append-sweep', createAppendSweepTrajectories([8, 15, 25, 40, 60])],
+      ['canonical-27', createCanonicalScenarios()],
+      ['neutral-authored', createAuthoredNeutralScenarios().map((entry) => entry.scenario)],
+      ['neutral-procedural', createProceduralNeutralScenarios()],
+      ['append-sweep', createAppendSweepScenarios([8, 15, 25, 40, 60])],
     ] as const;
     const lines: string[] = [];
     const scenarios: {
@@ -129,20 +125,20 @@ describe('anchor eviction frontier-protection experiment', () => {
       netSavedTokens: number;
       suite: string;
     }[] = [];
-    for (const [suiteName, trajectories] of suites) {
+    for (const [suiteName, suiteScenarios] of suites) {
       let net = 0;
       let input = 0;
-      for (const trajectory of trajectories) {
+      for (const scenario of suiteScenarios) {
         pluginStorage.clear();
-        const result = await replayTrajectory({
+        const result = await replayScenario({
           kernel: createFakeGatewayKernel('calibrated'),
           policy: createProductionCachePolicy(),
-          trajectory,
+          scenario,
         });
         net += result.totalNetSavedTokens;
         input += result.totalInputTokens;
         scenarios.push({
-          id: trajectory.id,
+          id: scenario.id,
           inputTokens: result.totalInputTokens,
           netSavedTokens: result.totalNetSavedTokens,
           suite: suiteName,

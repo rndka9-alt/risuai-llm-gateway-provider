@@ -1,5 +1,5 @@
 import type { LlmMessage, LlmMessageRole } from 'llm-io';
-import type { TrajectoryRequest } from '../../core/replay';
+import type { ScenarioRequest } from '../scenario-contract';
 
 export function makeMessage(role: LlmMessageRole, text: string): LlmMessage {
   return { role, content: [{ type: 'text', text }] };
@@ -10,7 +10,7 @@ export function makeBlock(label: string, characters: number): string {
   return sentence.repeat(Math.ceil(characters / sentence.length)).slice(0, characters);
 }
 
-export function request(messages: readonly LlmMessage[], elapsedMinutes = 1): TrajectoryRequest {
+export function request(messages: readonly LlmMessage[], elapsedMinutes = 1): ScenarioRequest {
   return { elapsedMinutes, messages: [...messages] };
 }
 

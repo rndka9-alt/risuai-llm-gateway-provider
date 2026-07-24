@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../gateway/fake-gateway';
 import {
   createAdversarialTrajectories,
-  type AdversarialTrajectory,
+  type AdversarialScenario,
 } from './middle-block-adversarial';
 import { MIDDLE_BLOCK_POLICY_FACTORIES } from './middle-block-anchor-experiment';
 import {
@@ -10,7 +10,7 @@ import {
   createProductionCachePolicy,
   type ReplayCachePolicy,
 } from '../../strategies/cache-policies';
-import { replayTrajectory, type ReplayResult } from '../../core/replay';
+import { replayScenario, type ReplayResult } from '../../core/replay';
 import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
 const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
@@ -44,7 +44,7 @@ const POLICY_FACTORIES: readonly PolicyFactory[] = [
   { create: createNoCachePolicy, name: 'no-cache' },
 ];
 
-const trajectories = createAdversarialTrajectories();
+const scenarios = createAdversarialTrajectories();
 const pluginStorage = new Map<string, string>();
 const results: ReplayResult[] = [];
 
@@ -60,18 +60,18 @@ function stubPluginStorage(): void {
 }
 
 function resultFor(
-  trajectoryId: string,
+  scenarioId: string,
   kernelName: FakeGatewayKernelPreset,
   policyName: string,
 ): ReplayResult {
   const result = results.find(
     (candidate) =>
-      candidate.trajectoryId === trajectoryId &&
+      candidate.scenarioId === scenarioId &&
       candidate.kernelName === kernelName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing result for ${trajectoryId}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing result for ${scenarioId}/${kernelName}/${policyName}.`);
   }
   return result;
 }
@@ -102,12 +102,12 @@ function formatScoreboard(): string {
   return KERNEL_PRESETS.map((kernelName) =>
     formatTable(
       `Middle-block adversarial — ${kernelName} net/input · read · write`,
-      ['trajectory', 'policy', 'net/input', 'read', 'write'],
-      trajectories.flatMap((trajectory) =>
+      ['scenario', 'policy', 'net/input', 'read', 'write'],
+      scenarios.flatMap((scenario) =>
         POLICY_FACTORIES.map((factory) => {
-          const result = resultFor(trajectory.id, kernelName, factory.name);
+          const result = resultFor(scenario.id, kernelName, factory.name);
           return [
-            trajectory.id,
+            scenario.id,
             factory.name,
             `${efficiency(result).toFixed(2)}%`,
             result.totalReadTokens.toFixed(0),
@@ -121,16 +121,16 @@ function formatScoreboard(): string {
 
 beforeAll(async () => {
   stubPluginStorage();
-  for (const trajectory of trajectories) {
+  for (const scenario of scenarios) {
     for (const kernelPreset of KERNEL_PRESETS) {
       for (const factory of POLICY_FACTORIES) {
         pluginStorage.clear();
         stubPluginStorage();
         results.push(
-          await replayTrajectory({
+          await replayScenario({
             kernel: createFakeGatewayKernel(kernelPreset),
             policy: factory.create(),
-            trajectory,
+            scenario,
           }),
         );
       }
@@ -143,10 +143,10 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-describe('middle-block adversarial trajectories', () => {
-  it('모든 trajectory × kernel × policy 결과를 수집한다', () => {
+describe('middle-block adversarial scenarios', () => {
+  it('모든 scenario × kernel × policy 결과를 수집한다', () => {
     expect(results).toHaveLength(
-      trajectories.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
+      scenarios.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
     );
   });
 
@@ -161,10 +161,10 @@ describe('middle-block adversarial trajectories', () => {
     });
   });
 
-  it('적대적 trajectory마다 attack surface가 선언돼 있다', () => {
-    const declaredTrajectories: readonly AdversarialTrajectory[] = trajectories;
-    declaredTrajectories.forEach((trajectory) => {
-      expect(trajectory.attackSurface.length).toBeGreaterThan(0);
+  it('적대적 scenario마다 attack surface가 선언돼 있다', () => {
+    const declaredTrajectories: readonly AdversarialScenario[] = scenarios;
+    declaredTrajectories.forEach((scenario) => {
+      expect(scenario.attackSurface.length).toBeGreaterThan(0);
     });
   });
 
@@ -230,10 +230,10 @@ describe('middle-block adversarial trajectories', () => {
     // cumulative prefix identity가 unique-head의 over-admit을, wall-clock 창이
     // slow-clock의 TTL 초과 admit을 각각 막아 안전 바닥(shield)에 안착한다.
     for (const kernelPreset of KERNEL_PRESETS) {
-      for (const trajectoryId of ['adv-unique-head', 'adv-slow-clock']) {
-        const shield = resultFor(trajectoryId, kernelPreset, 'oracle-shield');
+      for (const scenarioId of ['adv-unique-head', 'adv-slow-clock']) {
+        const shield = resultFor(scenarioId, kernelPreset, 'oracle-shield');
         const wallClock = resultFor(
-          trajectoryId,
+          scenarioId,
           kernelPreset,
           'oracle-wallclock-recurrence-admitted',
         );

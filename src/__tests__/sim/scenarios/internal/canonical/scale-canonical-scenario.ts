@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory } from '../../core/replay';
+import type { SimulationScenario } from '../scenario-contract';
 import { makeBlock, makeMessage } from './fixture-builders';
 
 interface RealisticScaleProfile {
@@ -11,7 +11,7 @@ interface RealisticScaleProfile {
 const DEFAULT_RESPONSE_TOKEN_SIZES = [3_000, 6_000, 12_000];
 
 // 원본 메시지의 동일/변동 관계와 인덱스는 유지한 채 텍스트 크기만 확장한다.
-// 그래야 각 trajectory가 검증하던 diff topology를 현실 토큰 규모에서도 재사용할 수 있다.
+// 그래야 각 scenario가 검증하던 diff topology를 현실 토큰 규모에서도 재사용할 수 있다.
 const REALISTIC_SCALE_PROFILES = new Map<string, RealisticScaleProfile>([
   ['01-append', profile(79_000)],
   ['02-cbs-trap', profile(78_500, 1)],
@@ -87,25 +87,25 @@ function appendFixturePadding(
   );
 }
 
-export function scaleGoldenTrajectory(trajectory: GoldenTrajectory): GoldenTrajectory {
-  const scaleProfile = REALISTIC_SCALE_PROFILES.get(trajectory.id);
+export function scaleCanonicalScenario(scenario: SimulationScenario): SimulationScenario {
+  const scaleProfile = REALISTIC_SCALE_PROFILES.get(scenario.id);
   if (scaleProfile === undefined) {
-    throw new Error(`Missing realistic scale profile for ${trajectory.id}.`);
+    throw new Error(`Missing realistic scale profile for ${scenario.id}.`);
   }
   if (scaleProfile.responseTokenSizes.length === 0) {
-    throw new Error(`Response token sizes must not be empty for ${trajectory.id}.`);
+    throw new Error(`Response token sizes must not be empty for ${scenario.id}.`);
   }
 
   const responseTargets = new Map<string, number>();
   let nextResponseTargetIndex = 0;
-  trajectory.requests.forEach((trajectoryRequest) => {
-    trajectoryRequest.messages.forEach((message) => {
+  scenario.requests.forEach((scenarioRequest) => {
+    scenarioRequest.messages.forEach((message) => {
       if (message.role !== 'assistant') return;
       const text = textOfFixtureMessage(message);
       if (responseTargets.has(text)) return;
       const target = scaleProfile.responseTokenSizes[nextResponseTargetIndex];
       if (target === undefined) {
-        throw new Error(`Missing response target for ${trajectory.id}.`);
+        throw new Error(`Missing response target for ${scenario.id}.`);
       }
       responseTargets.set(text, target);
       nextResponseTargetIndex =
@@ -114,39 +114,39 @@ export function scaleGoldenTrajectory(trajectory: GoldenTrajectory): GoldenTraje
   });
 
   return {
-    ...trajectory,
-    requests: trajectory.requests.map((trajectoryRequest) => {
+    ...scenario,
+    requests: scenario.requests.map((scenarioRequest) => {
       const contextPaddingMessageIndex =
         scaleProfile.contextPaddingMessageIndex === 'penultimate'
-          ? trajectoryRequest.messages.length - 2
+          ? scenarioRequest.messages.length - 2
           : scaleProfile.contextPaddingMessageIndex;
       if (
         contextPaddingMessageIndex < 0 ||
-        contextPaddingMessageIndex >= trajectoryRequest.messages.length
+        contextPaddingMessageIndex >= scenarioRequest.messages.length
       ) {
-        throw new RangeError(`Context padding index is outside ${trajectory.id}.`);
+        throw new RangeError(`Context padding index is outside ${scenario.id}.`);
       }
       return {
-        ...trajectoryRequest,
-        messages: trajectoryRequest.messages.map((message, messageIndex) => {
+        ...scenarioRequest,
+        messages: scenarioRequest.messages.map((message, messageIndex) => {
           let scaledMessage = message;
           if (message.role === 'assistant') {
             const text = textOfFixtureMessage(message);
             const target = responseTargets.get(text);
             if (target === undefined) {
-              throw new Error(`Missing response target for ${trajectory.id}.`);
+              throw new Error(`Missing response target for ${scenario.id}.`);
             }
             scaledMessage = resizeFixtureMessage(
               message,
               target,
-              `${trajectory.id}-response-${target}`,
+              `${scenario.id}-response-${target}`,
             );
           }
           return messageIndex === contextPaddingMessageIndex
             ? appendFixturePadding(
                 scaledMessage,
                 scaleProfile.contextPaddingTokens,
-                `${trajectory.id}-context-padding`,
+                `${scenario.id}-context-padding`,
               )
             : scaledMessage;
         }),

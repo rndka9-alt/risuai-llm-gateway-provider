@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from '../core/replay';
+import type { SimulationScenario, ScenarioRequest } from '../scenario-contract';
 
 /**
  * 단일 패턴 × 장기(60턴) 스위트.
@@ -150,11 +150,11 @@ function estimateMessageTokens(message: LlmMessage): number {
   );
 }
 
-function buildPatternTrajectory(
+function buildPatternScenario(
   config: LongRunPatternConfig,
   seed: number,
   turnCount: number = TURNS_PER_PATTERN,
-): GoldenTrajectory {
+): SimulationScenario {
   const rng = createRng(seed * 104729 + 7);
   const id = config.id;
 
@@ -191,7 +191,7 @@ function buildPatternTrajectory(
   const activeLore = [true, false, true, false];
 
   let cbsVersion = 0;
-  const requests: TrajectoryRequest[] = [];
+  const requests: ScenarioRequest[] = [];
 
   function assemble(room: Room, turn: number): LlmMessage[] {
     const messages: LlmMessage[] = [room.card];
@@ -262,7 +262,9 @@ function buildPatternTrajectory(
       }
     }
 
-    room.history.push(makeMessage('user', `${id}-user-t${turn}`, Math.round(uniform(rng, 80, 200))));
+    room.history.push(
+      makeMessage('user', `${id}-user-t${turn}`, Math.round(uniform(rng, 80, 200))),
+    );
     trim(room, turn);
 
     const promptMessages = assemble(room, turn);
@@ -293,20 +295,20 @@ function buildPatternTrajectory(
   return { id, label: config.label, requests };
 }
 
-export function createLongRunPatternTrajectories(): readonly GoldenTrajectory[] {
-  return PATTERN_CONFIGS.map((config, index) => buildPatternTrajectory(config, index + 1));
+export function createLongRunScenarios(): readonly SimulationScenario[] {
+  return PATTERN_CONFIGS.map((config, index) => buildPatternScenario(config, index + 1));
 }
 
 // append 패턴만 턴 수를 바꿔가며 생성 — 축출 병리의 발병 시점(크로스오버) 측정용.
-export function createAppendSweepTrajectories(
+export function createAppendSweepScenarios(
   turnCounts: readonly number[],
-): readonly GoldenTrajectory[] {
+): readonly SimulationScenario[] {
   return turnCounts.map((turnCount) => {
-    const trajectory = buildPatternTrajectory(
+    const scenario = buildPatternScenario(
       { ...PATTERN_CONFIGS[0], id: `sweep-append-t${turnCount}` },
       1,
       turnCount,
     );
-    return { ...trajectory, label: `append ${turnCount}턴 스윕` };
+    return { ...scenario, label: `append ${turnCount}턴 스윕` };
   });
 }

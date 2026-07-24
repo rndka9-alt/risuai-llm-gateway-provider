@@ -1,7 +1,7 @@
 import { expect, vi } from 'vitest';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../../ledger';
 import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../gateway/fake-gateway';
-import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
+import { createCanonicalScenarios } from '../../scenarios';
 import {
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
@@ -14,7 +14,8 @@ import {
   createValidatedAllCachePolicy,
   type ReplayCachePolicy,
 } from '../../strategies/cache-policies';
-import { replayTrajectory, type GoldenTrajectory, type ReplayResult } from '../../core/replay';
+import { replayScenario, type ReplayResult } from '../../core/replay';
+import type { SimulationScenario } from '../../scenarios';
 import { formatScoreboard } from '../../reporting/format-scoreboard';
 import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
@@ -24,7 +25,7 @@ export const KERNEL_PRESETS = [
   'optimistic',
 ] satisfies readonly FakeGatewayKernelPreset[];
 
-export const trajectories = createGoldenTrajectories();
+export const scenarios = createCanonicalScenarios();
 
 export const pluginStorage = new Map<string, string>();
 
@@ -58,7 +59,7 @@ export const POLICY_NAMES = [
 
 export type PolicyName = (typeof POLICY_NAMES)[number];
 
-export const POSITIVE_TRAJECTORY_IDS = [
+export const POSITIVE_SCENARIO_IDS = [
   '01-append',
   '03-reverse-depth',
   '04-reroll',
@@ -80,18 +81,18 @@ function stubPluginStorage(): void {
 }
 
 export function requireReplayResult(
-  trajectory: GoldenTrajectory,
+  scenario: SimulationScenario,
   kernelName: FakeGatewayKernelPreset,
   policyName: PolicyName,
 ): ReplayResult {
   const result = replayResults.find(
     (candidate) =>
-      candidate.trajectoryId === trajectory.id &&
+      candidate.scenarioId === scenario.id &&
       candidate.kernelName === kernelName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing replay result for ${trajectory.id}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing replay result for ${scenario.id}/${kernelName}/${policyName}.`);
   }
   return result;
 }
@@ -136,26 +137,26 @@ export function expectCommonInvariants(result: ReplayResult): void {
   );
 }
 
-export function requireTrajectoryById(trajectoryId: string): GoldenTrajectory {
-  const trajectory = trajectories.find((candidate) => candidate.id === trajectoryId);
-  if (trajectory === undefined) {
-    throw new Error(`Missing golden trajectory ${trajectoryId}.`);
+export function requireScenarioById(scenarioId: string): SimulationScenario {
+  const scenario = scenarios.find((candidate) => candidate.id === scenarioId);
+  if (scenario === undefined) {
+    throw new Error(`Missing canonical scenario ${scenarioId}.`);
   }
-  return trajectory;
+  return scenario;
 }
 
 export async function initializeReplayResults(): Promise<void> {
-  for (const trajectory of trajectories) {
+  for (const scenario of scenarios) {
     for (const kernelPreset of KERNEL_PRESETS) {
       for (const createPolicy of POLICY_FACTORIES) {
         // planner 상태와 wrapper 클로저를 정책·커널 실행마다 함께 격리한다.
         pluginStorage.clear();
         stubPluginStorage();
         replayResults.push(
-          await replayTrajectory({
+          await replayScenario({
             kernel: createFakeGatewayKernel(kernelPreset),
             policy: createPolicy(),
-            trajectory,
+            scenario,
           }),
         );
       }

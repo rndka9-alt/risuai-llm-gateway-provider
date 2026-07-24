@@ -1,12 +1,12 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
+import type { SimulationScenario, ScenarioRequest } from '../scenario-contract';
 import { makeBlock, makeMessage, request } from './fixture-builders';
 
 // 컨텍스트 포화 + 메모리 시스템 부재의 정상상태: 매턴 가장 오래된 턴이 잘리고
 // 새 턴이 붙어 메시지 수가 일정하다. 채팅 존 전체가 매턴 shift되어 고정 head만
 // 히트 가능한 만성 출혈 패턴이며, reroll-aware의 "같은 개수 = 리롤" 근사가
 // 이 상태를 오분류해 2-strike 구제를 포기하는 알려진 한계의 검증 대상이다.
-export function createTrimSaturationTrajectory(): GoldenTrajectory {
+export function createTrimSaturationScenario(): SimulationScenario {
   const windowTurns = 30;
   const totalRequests = 8;
   const head = [
@@ -48,7 +48,7 @@ export function createTrimSaturationTrajectory(): GoldenTrajectory {
 // 프리픽스가 main(185tok, sub-1024)뿐인 요청이 대부분 — 13번보다 얕은 변동.
 // 그룹챗은 실사용 빈도가 매우 낮으므로 중요도·우선순위·임팩트를 낮게 취급하고,
 // 멀티룸 지표를 해석할 때도 이 시나리오의 가중치를 낮춰 본다.
-export function createGroupSpeakerRotationTrajectory(): GoldenTrajectory {
+export function createGroupSpeakerRotationScenario(): SimulationScenario {
   const main = makeMessage('system', makeBlock('gsr-main', 742));
   const persona = makeMessage('user', makeBlock('gsr-persona', 486));
   const groupLore = makeMessage('system', makeBlock('gsr-group-lorebook', 1_400));
@@ -71,7 +71,7 @@ export function createGroupSpeakerRotationTrajectory(): GoldenTrajectory {
   ];
 
   const chat: LlmMessage[] = [];
-  const requests: TrajectoryRequest[] = [];
+  const requests: ScenarioRequest[] = [];
   speakerPairs.forEach((pair, turnIndex) => {
     const input = makeMessage('user', makeBlock(`gsr-input-${turnIndex + 1}`, 180));
     chat.push(input);
@@ -108,7 +108,7 @@ export function createGroupSpeakerRotationTrajectory(): GoldenTrajectory {
 // N턴 통삭 후 재진행(prefix 수축→재성장), 이어쓰기(마지막 응답 내용 변경)를
 // 일반 append 사이에 끼워 넣은 타임라인. 04(동일 길이 리롤)·06(뭉텅이 트림)이
 // 못 덮는 과거 개서 동역학이다.
-export function createMidHistoryEditsTrajectory(): GoldenTrajectory {
+export function createMidHistoryEditsScenario(): SimulationScenario {
   const head = [
     makeMessage('system', makeBlock('mhe-main', 1_760)),
     makeMessage('system', makeBlock('mhe-description', 4_850)),
@@ -127,7 +127,7 @@ export function createMidHistoryEditsTrajectory(): GoldenTrajectory {
   for (let turn = 1; turn <= 6; turn += 1) appendTurn(turn);
 
   const snapshot = () => request([...head, ...chat, tailNote], 3);
-  const requests: TrajectoryRequest[] = [{ ...snapshot(), elapsedMinutes: 0 }];
+  const requests: ScenarioRequest[] = [{ ...snapshot(), elapsedMinutes: 0 }];
 
   // 7~8턴 일반 진행.
   appendTurn(7);

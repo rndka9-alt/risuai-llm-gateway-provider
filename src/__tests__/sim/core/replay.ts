@@ -1,20 +1,10 @@
 import type { JsonObject, LlmMessage } from 'llm-io';
+import type { SimulationScenario } from '../scenarios';
 import { OpenAIChatCompletionsFormat } from 'llm-io';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../ledger';
 import type { FakeGatewayAccounting } from '../gateway/fake-gateway';
 import { FakeGatewayKernel } from '../gateway/fake-gateway';
 import type { ReplayCachePolicy } from '../strategies/cache-policies';
-
-export interface TrajectoryRequest {
-  elapsedMinutes: number;
-  messages: readonly LlmMessage[];
-}
-
-export interface GoldenTrajectory {
-  id: string;
-  label: string;
-  requests: readonly TrajectoryRequest[];
-}
 
 export interface ReplayRequestLog extends FakeGatewayAccounting {
   anchorIndexes: readonly number[];
@@ -37,8 +27,8 @@ export interface ReplayResult {
   totalNetSavedTokens: number;
   totalReadTokens: number;
   totalWriteTokens: number;
-  trajectoryId: string;
-  trajectoryLabel: string;
+  scenarioId: string;
+  scenarioLabel: string;
 }
 
 function countPolicyMarkers(messages: readonly LlmMessage[]): {
@@ -62,20 +52,20 @@ function calculateRequestNetSavedTokens(readTokens: number, writeTokens: number)
   return readTokens * CACHE_READ_SAVING_RATE - writeTokens * CACHE_WRITE_PREMIUM_RATE;
 }
 
-export async function replayTrajectory(options: {
+export async function replayScenario(options: {
   kernel: FakeGatewayKernel;
   policy: ReplayCachePolicy;
-  trajectory: GoldenTrajectory;
+  scenario: SimulationScenario;
 }): Promise<ReplayResult> {
-  const { kernel, policy, trajectory } = options;
+  const { kernel, policy, scenario } = options;
   const logs: ReplayRequestLog[] = [];
   let atMinute = 0;
 
-  for (let requestIndex = 0; requestIndex < trajectory.requests.length; requestIndex += 1) {
-    const request = trajectory.requests[requestIndex];
+  for (let requestIndex = 0; requestIndex < scenario.requests.length; requestIndex += 1) {
+    const request = scenario.requests[requestIndex];
     if (!Number.isFinite(request.elapsedMinutes) || request.elapsedMinutes < 0) {
       throw new RangeError(
-        `Trajectory ${trajectory.id} request ${requestIndex} has invalid elapsedMinutes.`,
+        `Scenario ${scenario.id} request ${requestIndex} has invalid elapsedMinutes.`,
       );
     }
     atMinute += request.elapsedMinutes;
@@ -117,7 +107,7 @@ export async function replayTrajectory(options: {
     totalNetSavedTokens: logs.reduce((total, log) => total + log.netSavedTokens, 0),
     totalReadTokens: logs.reduce((total, log) => total + log.readTokens, 0),
     totalWriteTokens: logs.reduce((total, log) => total + log.writeTokens, 0),
-    trajectoryId: trajectory.id,
-    trajectoryLabel: trajectory.label,
+    scenarioId: scenario.id,
+    scenarioLabel: scenario.label,
   };
 }

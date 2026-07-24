@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
+import type { SimulationScenario, ScenarioRequest } from '../scenario-contract';
 
 /**
  * 시드 기반 절차적 중립 벤치마크 세션 생성기.
@@ -84,7 +84,7 @@ interface RoomState {
   memoryTokens: number;
 }
 
-function buildSessionTrajectory(seed: number): GoldenTrajectory {
+function buildSessionScenario(seed: number): SimulationScenario {
   const rng = createRng(seed * 7919 + 17);
   const sessionId = `p${String(seed).padStart(2, '0')}`;
 
@@ -102,7 +102,11 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
   const conditionalLoreTokens = Array.from({ length: 6 }, () => uniformInt(rng, 300, 1_500));
   const speakerDescriptions = isGroupChat
     ? Array.from({ length: 3 }, (_, speakerIndex) =>
-        makeMessage('system', `${sessionId}-speaker-${speakerIndex}`, uniformInt(rng, 1_000, 3_000)),
+        makeMessage(
+          'system',
+          `${sessionId}-speaker-${speakerIndex}`,
+          uniformInt(rng, 1_000, 3_000),
+        ),
       )
     : [];
   const depthNote = hasDepthNote
@@ -115,7 +119,11 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
       prefix: {
         baseLore:
           rng() < 0.7
-            ? makeMessage('system', `${sessionId}-${roomKey}-base-lore`, uniformInt(rng, 500, 8_000))
+            ? makeMessage(
+                'system',
+                `${sessionId}-${roomKey}-base-lore`,
+                uniformInt(rng, 500, 8_000),
+              )
             : null,
         card: makeMessage(
           'system',
@@ -138,7 +146,7 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
     : -1;
 
   let randomizedBlockVersion = 0;
-  const requests: TrajectoryRequest[] = [];
+  const requests: ScenarioRequest[] = [];
 
   function assembleRequest(room: RoomState, roomKey: string, turn: number): LlmMessage[] {
     const messages: LlmMessage[] = [room.prefix.card];
@@ -167,11 +175,7 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
     room.activeLore.forEach((active, loreIndex) => {
       if (active) {
         messages.push(
-          makeMessage(
-            'system',
-            `${sessionId}-lore-${loreIndex}`,
-            conditionalLoreTokens[loreIndex],
-          ),
+          makeMessage('system', `${sessionId}-lore-${loreIndex}`, conditionalLoreTokens[loreIndex]),
         );
       }
     });
@@ -244,10 +248,7 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
       }
     }
 
-    const assistantTokens = Math.max(
-      120,
-      Math.round(assistantMeanTokens * uniform(rng, 0.5, 1.5)),
-    );
+    const assistantTokens = Math.max(120, Math.round(assistantMeanTokens * uniform(rng, 0.5, 1.5)));
     room.history.push(
       makeMessage(
         'assistant',
@@ -271,8 +272,6 @@ function buildSessionTrajectory(seed: number): GoldenTrajectory {
   };
 }
 
-export function createProceduralTrajectories(): readonly GoldenTrajectory[] {
-  return Array.from({ length: SESSION_SEED_COUNT }, (_, index) =>
-    buildSessionTrajectory(index + 1),
-  );
+export function createProceduralNeutralScenarios(): readonly SimulationScenario[] {
+  return Array.from({ length: SESSION_SEED_COUNT }, (_, index) => buildSessionScenario(index + 1));
 }

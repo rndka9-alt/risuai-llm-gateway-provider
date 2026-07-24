@@ -111,7 +111,12 @@ function room(lead: NeutralMessage[]) {
   return {
     history,
     requests,
-    send(elapsed: number, tail: NeutralMessage, extras?: Extras, leadOverride?: NeutralMessage[]): void {
+    send(
+      elapsed: number,
+      tail: NeutralMessage,
+      extras?: Extras,
+      leadOverride?: NeutralMessage[],
+    ): void {
       requests.push(req(elapsed, assemble(leadOverride ?? lead, history, tail, extras)));
     },
     commit(tail: NeutralMessage, response: NeutralMessage): void {
@@ -137,26 +142,37 @@ function build_n01(): NeutralScenario {
   const r = room(lead);
 
   const u1 = usr('n01-user-1', 0.2);
-  r.send(0, u1); r.commit(u1, asst('n01-asst-1', 0.7));
+  r.send(0, u1);
+  r.commit(u1, asst('n01-asst-1', 0.7));
 
   const u2 = usr('n01-user-2', 0.15);
-  r.send(2.4, u2); r.send(0.5, u2); // 리롤 1회
+  r.send(2.4, u2);
+  r.send(0.5, u2); // 리롤 1회
   r.commit(u2, asst('n01-asst-2', 0.9));
 
   const u3 = usr('n01-user-3', 0.25);
-  r.send(3.1, u3); r.commit(u3, asst('n01-asst-3', 0.5));
+  r.send(3.1, u3);
+  r.commit(u3, asst('n01-asst-3', 0.5));
 
   const u4 = usr('n01-user-4', 0.2);
-  r.send(1.8, u4); r.commit(u4, asst('n01-asst-4', 1.4));
+  r.send(1.8, u4);
+  r.commit(u4, asst('n01-asst-4', 1.4));
 
   const u5 = usr('n01-user-5', 0.18);
-  r.send(4.2, u5); r.send(0.6, u5); // 리롤 1회
+  r.send(4.2, u5);
+  r.send(0.6, u5); // 리롤 1회
   r.commit(u5, asst('n01-asst-5', 0.8));
 
   const u6 = usr('n01-user-6', 0.3);
-  r.send(2.0, u6); r.commit(u6, asst('n01-asst-6', 1.1));
+  r.send(2.0, u6);
+  r.commit(u6, asst('n01-asst-6', 1.1));
 
-  return { id: 'n01-small-casual-append', label: '소형 캐주얼 append + 소량 리롤', weight: 3.0, requests: r.requests };
+  return {
+    id: 'n01-small-casual-append',
+    label: '소형 캐주얼 append + 소량 리롤',
+    weight: 3.0,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -176,7 +192,8 @@ function build_n02(): NeutralScenario {
   const r = room(lead);
 
   const u1 = usr('n02-user-1', 0.25);
-  r.send(0, u1); r.commit(u1, asst('n02-asst-1', 1.2));
+  r.send(0, u1);
+  r.commit(u1, asst('n02-asst-1', 1.2));
 
   const u2 = usr('n02-user-2', 0.3);
   r.send(3.5, u2, { conditional: [loreA] }); // 로어 A 활성
@@ -203,7 +220,12 @@ function build_n02(): NeutralScenario {
   r.send(1.9, u7, { conditional: [loreA] });
   r.commit(u7, asst('n02-asst-7', 1.7));
 
-  return { id: 'n02-medium-append-condlore', label: '중형 append + 조건부 로어 소량 토글', weight: 2.2, requests: r.requests };
+  return {
+    id: 'n02-medium-append-condlore',
+    label: '중형 append + 조건부 로어 소량 토글',
+    weight: 2.2,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -221,22 +243,34 @@ function build_n03(): NeutralScenario {
   const r = room(lead);
 
   const u1 = usr('n03-user-1', 0.3);
-  r.send(0, u1); r.commit(u1, asst('n03-asst-1', 1.0));
+  r.send(0, u1);
+  r.commit(u1, asst('n03-asst-1', 1.0));
 
   const u2 = usr('n03-user-2', 0.25);
   r.send(2.6, u2);
-  r.send(0.5, u2); r.send(0.4, u2); r.send(0.6, u2); // 연속 3회 리롤
+  r.send(0.5, u2);
+  r.send(0.4, u2);
+  r.send(0.6, u2); // 연속 3회 리롤
   r.commit(u2, asst('n03-asst-2', 1.3));
 
   const u3 = usr('n03-user-3', 0.2);
-  r.send(3.2, u3); r.commit(u3, asst('n03-asst-3', 0.8));
+  r.send(3.2, u3);
+  r.commit(u3, asst('n03-asst-3', 0.8));
 
   const u4 = usr('n03-user-4', 0.28);
   r.send(1.7, u4);
-  r.send(0.3, u4); r.send(0.5, u4); r.send(0.4, u4); r.send(0.6, u4); // 연속 4회 리롤
+  r.send(0.3, u4);
+  r.send(0.5, u4);
+  r.send(0.4, u4);
+  r.send(0.6, u4); // 연속 4회 리롤
   r.commit(u4, asst('n03-asst-4', 1.5));
 
-  return { id: 'n03-reroll-burst', label: '리롤 버스트(연속 리롤 다발)', weight: 2.5, requests: r.requests };
+  return {
+    id: 'n03-reroll-burst',
+    label: '리롤 버스트(연속 리롤 다발)',
+    weight: 2.5,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -254,25 +288,36 @@ function build_n04(): NeutralScenario {
   const r = room(lead);
 
   const u1 = usr('n04-user-1', 0.4);
-  r.send(0, u1); r.commit(u1, asst('n04-asst-1', 5.0));
+  r.send(0, u1);
+  r.commit(u1, asst('n04-asst-1', 5.0));
 
   const u2 = usr('n04-user-2', 0.5);
-  r.send(4.0, u2); r.commit(u2, asst('n04-asst-2', 6.0));
+  r.send(4.0, u2);
+  r.commit(u2, asst('n04-asst-2', 6.0));
 
   const u3 = usr('n04-user-3', 0.3);
-  r.send(3.3, u3); r.send(0.8, u3); // 리롤
+  r.send(3.3, u3);
+  r.send(0.8, u3); // 리롤
   r.commit(u3, asst('n04-asst-3', 3.5));
 
   const u4 = usr('n04-user-4', 0.45);
-  r.send(6.0, u4); r.commit(u4, asst('n04-asst-4', 6.5));
+  r.send(6.0, u4);
+  r.commit(u4, asst('n04-asst-4', 6.5));
 
   const u5 = usr('n04-user-5', 0.35);
-  r.send(2.5, u5); r.commit(u5, asst('n04-asst-5', 5.0));
+  r.send(2.5, u5);
+  r.commit(u5, asst('n04-asst-5', 5.0));
 
   const u6 = usr('n04-user-6', 0.4);
-  r.send(3.8, u6); r.commit(u6, asst('n04-asst-6', 7.0));
+  r.send(3.8, u6);
+  r.commit(u6, asst('n04-asst-6', 7.0));
 
-  return { id: 'n04-large-charcard', label: '대형 카드 + 헤비 응답 append/리롤', weight: 1.5, requests: r.requests };
+  return {
+    id: 'n04-large-charcard',
+    label: '대형 카드 + 헤비 응답 append/리롤',
+    weight: 1.5,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -314,7 +359,12 @@ function build_n05(): NeutralScenario {
   turn(9, 3.1, 0.3, 1.7);
   turn(10, 12.0, 0.26, 1.4); // 딴짓 후 복귀(8~25분대)
 
-  return { id: 'n05-memory-summary', label: '메모리 요약 갱신 + 원문 트림', weight: 1.3, requests: r.requests };
+  return {
+    id: 'n05-memory-summary',
+    label: '메모리 요약 갱신 + 원문 트림',
+    weight: 1.3,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -356,7 +406,12 @@ function build_n06(): NeutralScenario {
     r.commit(u, asst(`n06-asst-${i}`, 1.2 + (idx % 3) * 0.4));
   });
 
-  return { id: 'n06-conditional-lore-churn', label: '조건부 로어 조합 변동(선두 churn)', weight: 1.6, requests: r.requests };
+  return {
+    id: 'n06-conditional-lore-churn',
+    label: '조건부 로어 조합 변동(선두 churn)',
+    weight: 1.6,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -390,7 +445,12 @@ function build_n07(): NeutralScenario {
   turn(6, 3.7, 2.1, true);
   turn(7, 2.9, 1.3);
 
-  return { id: 'n07-depth-authornote', label: 'depth 작가노트(끝에서 N번째) 매턴 이동', weight: 2.0, requests: r.requests };
+  return {
+    id: 'n07-depth-authornote',
+    label: 'depth 작가노트(끝에서 N번째) 매턴 이동',
+    weight: 2.0,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -427,7 +487,12 @@ function build_n08(): NeutralScenario {
   turn(9, 3.3, 3.8);
   turn(10, 2.4, 5.2);
 
-  return { id: 'n08-context-trim-long', label: '장기 세션 오래된 히스토리 트림', weight: 1.5, requests: r.requests };
+  return {
+    id: 'n08-context-trim-long',
+    label: '장기 세션 오래된 히스토리 트림',
+    weight: 1.5,
+    requests: r.requests,
+  };
 }
 
 /**
@@ -459,24 +524,44 @@ function build_n09(): NeutralScenario {
     requests.push(req(elapsed, assemble(leadB, historyB, u)));
 
   // 방 A
-  const a1 = usr('n09-a-1', 0.3); sendA(0, a1); historyA.push(a1, asst('n09-a-1r', 1.2));
-  const a2 = usr('n09-a-2', 0.25); sendA(3.0, a2); historyA.push(a2, asst('n09-a-2r', 1.5));
-  const a3 = usr('n09-a-3', 0.3); sendA(2.2, a3); historyA.push(a3, asst('n09-a-3r', 1.1));
+  const a1 = usr('n09-a-1', 0.3);
+  sendA(0, a1);
+  historyA.push(a1, asst('n09-a-1r', 1.2));
+  const a2 = usr('n09-a-2', 0.25);
+  sendA(3.0, a2);
+  historyA.push(a2, asst('n09-a-2r', 1.5));
+  const a3 = usr('n09-a-3', 0.3);
+  sendA(2.2, a3);
+  historyA.push(a3, asst('n09-a-3r', 1.1));
 
   // 방 B 로 전환 (프리픽스 통째 교체)
-  const b1 = usr('n09-b-1', 0.3); sendB(1.5, b1); historyB.push(b1, asst('n09-b-1r', 1.3));
+  const b1 = usr('n09-b-1', 0.3);
+  sendB(1.5, b1);
+  historyB.push(b1, asst('n09-b-1r', 1.3));
   const b2 = usr('n09-b-2', 0.28);
-  sendB(2.8, b2); sendB(0.5, b2); // B 에서 리롤
+  sendB(2.8, b2);
+  sendB(0.5, b2); // B 에서 리롤
   historyB.push(b2, asst('n09-b-2r', 1.4));
 
   // 방 A 로 복귀 (TTL 내, 원 프리픽스 재개)
-  const a4 = usr('n09-a-4', 0.3); sendA(1.2, a4); historyA.push(a4, asst('n09-a-4r', 1.2));
-  const a5 = usr('n09-a-5', 0.26); sendA(4.0, a5); historyA.push(a5, asst('n09-a-5r', 1.6));
+  const a4 = usr('n09-a-4', 0.3);
+  sendA(1.2, a4);
+  historyA.push(a4, asst('n09-a-4r', 1.2));
+  const a5 = usr('n09-a-5', 0.26);
+  sendA(4.0, a5);
+  historyA.push(a5, asst('n09-a-5r', 1.6));
 
   // 장기 이탈 후 복귀 (30분 초과 → TTL 만료)
-  const a6 = usr('n09-a-6', 0.3); sendA(35.0, a6); historyA.push(a6, asst('n09-a-6r', 1.3));
+  const a6 = usr('n09-a-6', 0.3);
+  sendA(35.0, a6);
+  historyA.push(a6, asst('n09-a-6r', 1.3));
 
-  return { id: 'n09-room-switch-roundtrip', label: '방 전환 왕복 + 장기 이탈(TTL 만료)', weight: 1.4, requests };
+  return {
+    id: 'n09-room-switch-roundtrip',
+    label: '방 전환 왕복 + 장기 이탈(TTL 만료)',
+    weight: 1.4,
+    requests,
+  };
 }
 
 /**
@@ -493,7 +578,12 @@ function build_n10(): NeutralScenario {
     B: sys('n10-card-B', 5.5),
     C: sys('n10-card-C', 6.5),
   };
-  const leadFor = (who: 'A' | 'B' | 'C'): NeutralMessage[] => [mainP, cards[who], persona, groupLore];
+  const leadFor = (who: 'A' | 'B' | 'C'): NeutralMessage[] => [
+    mainP,
+    cards[who],
+    persona,
+    groupLore,
+  ];
 
   const history: NeutralMessage[] = [];
   const requests: NeutralRequest[] = [];
@@ -511,7 +601,12 @@ function build_n10(): NeutralScenario {
     history.push(u, asst(`n10-resp-${i}-${who}`, 1.1 + (idx % 3) * 0.5));
   });
 
-  return { id: 'n10-group-chat', label: '그룹 채팅 응답자 카드 스왑(선두 변동)', weight: 1.0, requests };
+  return {
+    id: 'n10-group-chat',
+    label: '그룹 채팅 응답자 카드 스왑(선두 변동)',
+    weight: 1.0,
+    requests,
+  };
 }
 
 /**
@@ -527,7 +622,13 @@ function build_n11(): NeutralScenario {
   const alwaysLore = sys('n11-always-lore', 1.5);
   // 요청 인덱스마다 달라지는 매크로 블록(리롤도 재평가되어 달라짐)
   const macro = (reqIndex: number): NeutralMessage => sys(`n11-cbs-macro-r${reqIndex}`, 0.3);
-  const leadFor = (reqIndex: number): NeutralMessage[] => [mainP, card, persona, macro(reqIndex), alwaysLore];
+  const leadFor = (reqIndex: number): NeutralMessage[] => [
+    mainP,
+    card,
+    persona,
+    macro(reqIndex),
+    alwaysLore,
+  ];
 
   const history: NeutralMessage[] = [];
   const requests: NeutralRequest[] = [];
@@ -537,16 +638,32 @@ function build_n11(): NeutralScenario {
     reqIndex += 1;
   };
 
-  const u1 = usr('n11-user-1', 0.25); send(0, u1); history.push(u1, asst('n11-asst-1', 1.0));
-  const u2 = usr('n11-user-2', 0.3); send(3.0, u2); history.push(u2, asst('n11-asst-2', 1.4));
+  const u1 = usr('n11-user-1', 0.25);
+  send(0, u1);
+  history.push(u1, asst('n11-asst-1', 1.0));
+  const u2 = usr('n11-user-2', 0.3);
+  send(3.0, u2);
+  history.push(u2, asst('n11-asst-2', 1.4));
   const u3 = usr('n11-user-3', 0.22);
-  send(2.4, u3); send(0.6, u3); // 리롤(매크로 재평가로 프리픽스 달라짐)
+  send(2.4, u3);
+  send(0.6, u3); // 리롤(매크로 재평가로 프리픽스 달라짐)
   history.push(u3, asst('n11-asst-3', 0.9));
-  const u4 = usr('n11-user-4', 0.28); send(4.1, u4); history.push(u4, asst('n11-asst-4', 1.6));
-  const u5 = usr('n11-user-5', 0.26); send(2.0, u5); history.push(u5, asst('n11-asst-5', 1.1));
-  const u6 = usr('n11-user-6', 0.24); send(3.3, u6); history.push(u6, asst('n11-asst-6', 1.3));
+  const u4 = usr('n11-user-4', 0.28);
+  send(4.1, u4);
+  history.push(u4, asst('n11-asst-4', 1.6));
+  const u5 = usr('n11-user-5', 0.26);
+  send(2.0, u5);
+  history.push(u5, asst('n11-asst-5', 1.1));
+  const u6 = usr('n11-user-6', 0.24);
+  send(3.3, u6);
+  history.push(u6, asst('n11-asst-6', 1.3));
 
-  return { id: 'n11-cbs-macro-variable', label: 'CBS 매크로 매요청 가변 system', weight: 1.0, requests };
+  return {
+    id: 'n11-cbs-macro-variable',
+    label: 'CBS 매크로 매요청 가변 system',
+    weight: 1.0,
+    requests,
+  };
 }
 
 /**
@@ -563,26 +680,44 @@ function build_n12(): NeutralScenario {
   ];
   const r = room(lead);
 
-  const u1 = usr('n12-user-1', 0.35); r.send(0, u1); r.commit(u1, asst('n12-asst-1', 2.0));
-  const u2 = usr('n12-user-2', 0.3); r.send(3.4, u2); r.commit(u2, asst('n12-asst-2', 2.6));
-  const u3 = usr('n12-user-3', 0.28); r.send(2.7, u3); r.commit(u3, asst('n12-asst-3', 1.8));
+  const u1 = usr('n12-user-1', 0.35);
+  r.send(0, u1);
+  r.commit(u1, asst('n12-asst-1', 2.0));
+  const u2 = usr('n12-user-2', 0.3);
+  r.send(3.4, u2);
+  r.commit(u2, asst('n12-asst-2', 2.6));
+  const u3 = usr('n12-user-3', 0.28);
+  r.send(2.7, u3);
+  r.commit(u3, asst('n12-asst-3', 1.8));
 
   // 중간 수정: 2턴 전 assistant 응답을 제자리 수정 (history[3] 교체 → 그 뒤 프리픽스 붕괴)
   r.history[3] = asst('n12-asst-2-edited', 2.4);
-  const u4 = usr('n12-user-4', 0.32); r.send(6.0, u4); r.commit(u4, asst('n12-asst-4', 2.2));
+  const u4 = usr('n12-user-4', 0.32);
+  r.send(6.0, u4);
+  r.commit(u4, asst('n12-asst-4', 2.2));
 
   // 롤백: 최근 2턴(4개 메시지) 삭제 후 다른 방향으로 재진행
   r.history.splice(r.history.length - 4, 4);
   const u5 = usr('n12-user-5-branch', 0.3);
-  r.send(2.2, u5); r.send(0.6, u5); // 새 분기에서 리롤
+  r.send(2.2, u5);
+  r.send(0.6, u5); // 새 분기에서 리롤
   r.commit(u5, asst('n12-asst-5', 2.8));
 
-  const u6 = usr('n12-user-6', 0.34); r.send(4.5, u6); r.commit(u6, asst('n12-asst-6', 2.1));
+  const u6 = usr('n12-user-6', 0.34);
+  r.send(4.5, u6);
+  r.commit(u6, asst('n12-asst-6', 2.1));
 
   // 장기 이탈 후 복귀 (TTL 만료)
-  const u7 = usr('n12-user-7', 0.3); r.send(42.0, u7); r.commit(u7, asst('n12-asst-7', 2.3));
+  const u7 = usr('n12-user-7', 0.3);
+  r.send(42.0, u7);
+  r.commit(u7, asst('n12-asst-7', 2.3));
 
-  return { id: 'n12-mid-edit-rollback', label: '중간 수정/롤백 재진행 + 장기 이탈', weight: 1.0, requests: r.requests };
+  return {
+    id: 'n12-mid-edit-rollback',
+    label: '중간 수정/롤백 재진행 + 장기 이탈',
+    weight: 1.0,
+    requests: r.requests,
+  };
 }
 
 /* ────────────────────────────── export ────────────────────────────── */

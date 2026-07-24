@@ -4,14 +4,14 @@ import { getPromptCacheKey } from '../../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../../cache/planner/fingerprint-message';
 import type { CachePlan } from '../../../../cache/types';
 import type { ReplayCachePolicy } from '../../strategies/cache-policies';
-import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
+import type { SimulationScenario, ScenarioRequest } from '../../scenarios';
 
 const FIXED_HEAD_INDEX = 0;
 const ROTATING_BLOCK_INDEX = 1;
 const FIXED_TAIL_INDEX = 2;
-const REQUESTS_PER_TRAJECTORY = 36;
+const REQUESTS_PER_SCENARIO = 36;
 
-export interface MiddleBlockTrajectory extends GoldenTrajectory {
+export interface MiddleBlockScenario extends SimulationScenario {
   fixedTailTokens: number;
   phaseCount: number | null;
   switchEveryTurns: number;
@@ -88,18 +88,18 @@ function phaseIdentityForTurn(
   return phaseCount === null ? phaseOrdinal : phaseOrdinal % phaseCount;
 }
 
-function createMiddleBlockTrajectory(
+function createMiddleBlockScenario(
   pattern: PhasePattern,
   fixedTailTokens: number,
-): MiddleBlockTrajectory {
+): MiddleBlockScenario {
   const id = `middle-${pattern.id}-tail-${fixedTailTokens}`;
   const fixedHead = makeMessage('system', `${id}-fixed-head`, 8_000);
   const fixedTail = makeMessage('system', `${id}-fixed-tail`, fixedTailTokens);
   const phases = new Map<number, LlmMessage>();
   const history: LlmMessage[] = [];
-  const requests: TrajectoryRequest[] = [];
+  const requests: ScenarioRequest[] = [];
 
-  for (let turn = 1; turn <= REQUESTS_PER_TRAJECTORY; turn += 1) {
+  for (let turn = 1; turn <= REQUESTS_PER_SCENARIO; turn += 1) {
     const phaseIdentity = phaseIdentityForTurn(turn, pattern.phaseCount, pattern.switchEveryTurns);
     let rotatingBlock = phases.get(phaseIdentity);
     if (rotatingBlock === undefined) {
@@ -125,10 +125,10 @@ function createMiddleBlockTrajectory(
   };
 }
 
-export function createMiddleBlockTrajectories(): readonly MiddleBlockTrajectory[] {
+export function createMiddleBlockTrajectories(): readonly MiddleBlockScenario[] {
   return PHASE_PATTERNS.flatMap((pattern) =>
     FIXED_TAIL_TOKEN_SIZES.map((fixedTailTokens) =>
-      createMiddleBlockTrajectory(pattern, fixedTailTokens),
+      createMiddleBlockScenario(pattern, fixedTailTokens),
     ),
   );
 }
@@ -180,7 +180,7 @@ function createSemanticAnchorPolicy(options: SemanticAnchorPolicyOptions): Repla
     name: options.name,
     async apply(messages, context) {
       if (messages.length <= FIXED_TAIL_INDEX) {
-        throw new RangeError('Middle-block trajectory must contain head, phase, and tail blocks.');
+        throw new RangeError('Middle-block scenario must contain head, phase, and tail blocks.');
       }
       if (options.recurrenceWindowMinutes !== undefined && context === undefined) {
         throw new Error('Wall-clock admission policy requires replay to pass atMinute context.');

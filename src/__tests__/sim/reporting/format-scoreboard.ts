@@ -1,7 +1,7 @@
 import type { ReplayResult } from '../core/replay';
 
 const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
-const MULTI_ROOM_TRAJECTORY_IDS: ReadonlySet<string> = new Set([
+const MULTI_ROOM_SCENARIO_IDS: ReadonlySet<string> = new Set([
   '15-multi-room-roundrobin',
   '16-group-speaker-rotation',
   '21-content-addressed-roundrobin',
@@ -20,8 +20,8 @@ const SCOREBOARD_POLICIES = [
   'no-cache',
 ];
 
-export function isMultiRoomGoldenTrajectory(trajectoryId: string): boolean {
-  return MULTI_ROOM_TRAJECTORY_IDS.has(trajectoryId);
+export function isMultiRoomCanonicalScenario(scenarioId: string): boolean {
+  return MULTI_ROOM_SCENARIO_IDS.has(scenarioId);
 }
 
 function formatTable(
@@ -47,11 +47,11 @@ function createScoreIndex(
 ): Map<string, Map<string, Map<string, number>>> {
   const index = new Map<string, Map<string, Map<string, number>>>();
   results.forEach((result) => {
-    const trajectoryScores = index.get(result.trajectoryId) ?? new Map();
-    const policyScores = trajectoryScores.get(result.policyName) ?? new Map();
+    const scenarioScores = index.get(result.scenarioId) ?? new Map();
+    const policyScores = scenarioScores.get(result.policyName) ?? new Map();
     policyScores.set(result.kernelName, result.totalNetSavedTokens);
-    trajectoryScores.set(result.policyName, policyScores);
-    index.set(result.trajectoryId, trajectoryScores);
+    scenarioScores.set(result.policyName, policyScores);
+    index.set(result.scenarioId, scenarioScores);
   });
   return index;
 }
@@ -65,11 +65,11 @@ function formatPolicyTotals(results: readonly ReplayResult[]): string {
   const scopes = [
     {
       label: 'multi-room (15/16/21/22)',
-      matches: (result: ReplayResult) => isMultiRoomGoldenTrajectory(result.trajectoryId),
+      matches: (result: ReplayResult) => isMultiRoomCanonicalScenario(result.scenarioId),
     },
     {
       label: 'single-room (remaining 23)',
-      matches: (result: ReplayResult) => !isMultiRoomGoldenTrajectory(result.trajectoryId),
+      matches: (result: ReplayResult) => !isMultiRoomCanonicalScenario(result.scenarioId),
     },
     { label: 'all (27)', matches: () => true },
   ];
@@ -92,7 +92,7 @@ function formatPolicyTotals(results: readonly ReplayResult[]): string {
   );
 
   return formatTable(
-    'Calibrated policy totals by workload scope',
+    'Calibrated policy totals by scenario scope',
     ['policy', 'scope', 'net', 'vs v0.13', 'read', 'write'],
     totals.map((total) => {
       const v013Total = totals.find(
@@ -115,14 +115,14 @@ function formatPolicyTotals(results: readonly ReplayResult[]): string {
 }
 
 function formatRankingReversals(
-  trajectoryOrder: readonly string[],
+  scenarioOrder: readonly string[],
   labels: ReadonlyMap<string, string>,
   scores: ReadonlyMap<string, ReadonlyMap<string, ReadonlyMap<string, number>>>,
 ): string {
   const reversals: string[] = [];
-  trajectoryOrder.forEach((trajectoryId) => {
-    const trajectoryScores = scores.get(trajectoryId);
-    if (trajectoryScores === undefined) return;
+  scenarioOrder.forEach((scenarioId) => {
+    const scenarioScores = scores.get(scenarioId);
+    if (scenarioScores === undefined) return;
 
     for (let leftIndex = 0; leftIndex < SCOREBOARD_POLICIES.length; leftIndex += 1) {
       for (
@@ -133,8 +133,8 @@ function formatRankingReversals(
         const leftPolicy = SCOREBOARD_POLICIES[leftIndex];
         const rightPolicy = SCOREBOARD_POLICIES[rightIndex];
         const comparisons = SCOREBOARD_KERNELS.map((kernel) => {
-          const leftScore = trajectoryScores.get(leftPolicy)?.get(kernel);
-          const rightScore = trajectoryScores.get(rightPolicy)?.get(kernel);
+          const leftScore = scenarioScores.get(leftPolicy)?.get(kernel);
+          const rightScore = scenarioScores.get(rightPolicy)?.get(kernel);
           if (leftScore === undefined || rightScore === undefined) return 0;
           return Math.sign(leftScore - rightScore);
         });
@@ -145,7 +145,7 @@ function formatRankingReversals(
           const relation = comparison > 0 ? '>' : comparison < 0 ? '<' : '=';
           return `${kernel}:${leftPolicy}${relation}${rightPolicy}`;
         }).join(', ');
-        reversals.push(`- ${trajectoryId} ${labels.get(trajectoryId)}: ${comparisonSummary}`);
+        reversals.push(`- ${scenarioId} ${labels.get(scenarioId)}: ${comparisonSummary}`);
       }
     }
   });
@@ -157,32 +157,32 @@ function formatRankingReversals(
 
 export function formatScoreboard(results: readonly ReplayResult[]): string {
   const productionResults = results.filter((result) => result.policyName === 'production');
-  const trajectoryOrder = [...new Set(productionResults.map((result) => result.trajectoryId))];
+  const scenarioOrder = [...new Set(productionResults.map((result) => result.scenarioId))];
   const labels = new Map(
-    productionResults.map((result) => [result.trajectoryId, result.trajectoryLabel]),
+    productionResults.map((result) => [result.scenarioId, result.scenarioLabel]),
   );
   const scores = createScoreIndex(results);
-  const trajectoryLabel = (trajectoryId: string): string => {
-    const label = labels.get(trajectoryId);
+  const scenarioLabel = (scenarioId: string): string => {
+    const label = labels.get(scenarioId);
     if (label === undefined) {
-      throw new Error(`Missing trajectory label for ${trajectoryId}.`);
+      throw new Error(`Missing scenario label for ${scenarioId}.`);
     }
-    return `${trajectoryId} ${label}`;
+    return `${scenarioId} ${label}`;
   };
 
-  const productionRows = trajectoryOrder.map((trajectoryId) => {
-    const productionScores = scores.get(trajectoryId)?.get('production');
+  const productionRows = scenarioOrder.map((scenarioId) => {
+    const productionScores = scores.get(scenarioId)?.get('production');
     return [
-      trajectoryLabel(trajectoryId),
+      scenarioLabel(scenarioId),
       ...SCOREBOARD_KERNELS.map((kernel) => formatScore(productionScores?.get(kernel))),
     ];
   });
-  const policyRows = trajectoryOrder.map((trajectoryId) => {
-    const trajectoryScores = scores.get(trajectoryId);
+  const policyRows = scenarioOrder.map((scenarioId) => {
+    const scenarioScores = scores.get(scenarioId);
     return [
-      trajectoryLabel(trajectoryId),
+      scenarioLabel(scenarioId),
       ...SCOREBOARD_POLICIES.map((policy) =>
-        formatScore(trajectoryScores?.get(policy)?.get('calibrated')),
+        formatScore(scenarioScores?.get(policy)?.get('calibrated')),
       ),
     ];
   });
@@ -191,14 +191,14 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
     formatPolicyTotals(results),
     formatTable(
       'Production by kernel (net token equivalents)',
-      ['trajectory', ...SCOREBOARD_KERNELS],
+      ['scenario', ...SCOREBOARD_KERNELS],
       productionRows,
     ),
     formatTable(
       'Calibrated policy comparison (net token equivalents)',
-      ['trajectory', ...SCOREBOARD_POLICIES],
+      ['scenario', ...SCOREBOARD_POLICIES],
       policyRows,
     ),
-    formatRankingReversals(trajectoryOrder, labels, scores),
+    formatRankingReversals(scenarioOrder, labels, scores),
   ].join('\n\n');
 }

@@ -1,8 +1,8 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
+import type { SimulationScenario, ScenarioRequest } from '../scenario-contract';
 import { makeBlock, makeMessage, request } from './fixture-builders';
 
-export function createAppendOnlyTrajectory(): GoldenTrajectory {
+export function createAppendOnlyScenario(): SimulationScenario {
   const messages: LlmMessage[] = [
     makeMessage('system', makeBlock('append-system', 6_000)),
     makeMessage('user', makeBlock('append-user-1', 700)),
@@ -22,7 +22,7 @@ export function createAppendOnlyTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createLeadingCbsTrapTrajectory(): GoldenTrajectory {
+export function createLeadingCbsTrapScenario(): SimulationScenario {
   const stableLead = makeMessage('system', makeBlock('cbs-stable-lead', 400));
   const stableLargeCard = makeMessage('system', makeBlock('cbs-large-card', 6_000));
   const stableUser = makeMessage('user', 'CBS trap user input remains unchanged.');
@@ -44,11 +44,11 @@ export function createLeadingCbsTrapTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createReverseDepthTrajectory(): GoldenTrajectory {
+export function createReverseDepthScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('reverse-depth-system', 7_000));
   const lore = makeMessage('system', makeBlock('reverse-depth-lore', 1_800));
   const chat: LlmMessage[] = [makeMessage('user', makeBlock('reverse-user-1', 700))];
-  const requests: TrajectoryRequest[] = [];
+  const requests: ScenarioRequest[] = [];
   for (let turn = 1; turn <= 6; turn += 1) {
     if (turn > 1) {
       chat.push(
@@ -71,7 +71,7 @@ export function createReverseDepthTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createRerollTrajectory(): GoldenTrajectory {
+export function createRerollScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('reroll-system', 7_000));
   const setup = makeMessage('user', makeBlock('reroll-setup', 900));
   const trailingUser = makeMessage('user', 'Continue from the rerolled answer.');
@@ -93,7 +93,7 @@ export function createRerollTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createLoreToggleTrajectory(): GoldenTrajectory {
+export function createLoreToggleScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('lore-toggle-system', 9_000));
   const stableUser = makeMessage('user', 'Lore budget competition input.');
   const loreA = makeMessage('system', makeBlock('lore-budget-A', 2_200));
@@ -112,10 +112,10 @@ export function createLoreToggleTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createContextTrimmingTrajectory(): GoldenTrajectory {
+export function createContextTrimmingScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('trim-system', 8_000));
   const chat: LlmMessage[] = [makeMessage('user', makeBlock('trim-user-1', 700))];
-  const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
+  const requests: ScenarioRequest[] = [request([system, ...chat], 0)];
   for (let turn = 2; turn <= 6; turn += 1) {
     chat.push(
       makeMessage('assistant', makeBlock(`trim-assistant-${turn - 1}`, 850)),
@@ -132,7 +132,7 @@ export function createContextTrimmingTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createHypaSummaryTrajectory(): GoldenTrajectory {
+export function createHypaSummaryScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('hypa-system', 9_000));
   const stableRecentChat = [
     makeMessage('user', makeBlock('hypa-recent-user', 700)),
@@ -143,7 +143,7 @@ export function createHypaSummaryTrajectory(): GoldenTrajectory {
     makeMessage('user', makeBlock('hypa-old-user', 1_000)),
     makeMessage('assistant', makeBlock('hypa-old-assistant', 1_000)),
   ];
-  const requests: TrajectoryRequest[] = [
+  const requests: ScenarioRequest[] = [
     request([system, makeMessage('user', 'Hypa bootstrap input.')], 0),
     request([system, ...oldChat, ...stableRecentChat]),
   ];
@@ -163,7 +163,7 @@ export function createHypaSummaryTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createLuaPostEditTrajectory(): GoldenTrajectory {
+export function createLuaPostEditScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('lua-system', 7_500));
   const stableUser = makeMessage('user', makeBlock('lua-stable-user', 900));
   const finalUser = makeMessage('user', 'Input following the post-edited assistant.');
@@ -189,7 +189,7 @@ export function createLuaPostEditTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createRoomSwitchTrajectory(): GoldenTrajectory {
+export function createRoomSwitchScenario(): SimulationScenario {
   const sharedGlobal = makeMessage('system', makeBlock('shared-global-prefix', 5_500));
   return {
     id: '09-room-switch',
@@ -216,7 +216,7 @@ export function createRoomSwitchTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createTtlGapTrajectory(): GoldenTrajectory {
+export function createTtlGapScenario(): SimulationScenario {
   const messages = [
     makeMessage('system', makeBlock('ttl-system', 6_500)),
     makeMessage('user', 'TTL gap input.'),
@@ -228,10 +228,10 @@ export function createTtlGapTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createChurnThenStableTrajectory(): GoldenTrajectory {
+export function createChurnThenStableScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('churn-stable-system', 8_000));
   const chat: LlmMessage[] = [makeMessage('user', makeBlock('churn-stable-user-1', 1_000))];
-  const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
+  const requests: ScenarioRequest[] = [request([system, ...chat], 0)];
   for (let turn = 2; turn <= 3; turn += 1) {
     chat.push(
       makeMessage('assistant', makeBlock(`churn-stable-assistant-${turn - 1}`, 1_400)),
@@ -263,10 +263,10 @@ export function createChurnThenStableTrajectory(): GoldenTrajectory {
   };
 }
 
-export function createChurnOscillatingTrajectory(): GoldenTrajectory {
+export function createChurnOscillatingScenario(): SimulationScenario {
   const system = makeMessage('system', makeBlock('churn-cycle-system', 8_000));
   const chat: LlmMessage[] = [makeMessage('user', makeBlock('churn-cycle-user-1', 1_000))];
-  const requests: TrajectoryRequest[] = [request([system, ...chat], 0)];
+  const requests: ScenarioRequest[] = [request([system, ...chat], 0)];
   chat.push(
     makeMessage('assistant', makeBlock('churn-cycle-assistant-1', 1_400)),
     makeMessage('user', makeBlock('churn-cycle-user-2', 1_000)),
