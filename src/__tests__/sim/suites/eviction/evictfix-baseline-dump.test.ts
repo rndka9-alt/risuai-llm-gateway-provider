@@ -2,13 +2,13 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel } from './fake-gateway';
-import { createGoldenTrajectories } from './golden-trajectories';
-import { createAppendSweepTrajectories } from './longrun-patterns';
-import { createAuthoredTrajectories } from './neutral-authored';
-import { createProceduralTrajectories } from './neutral-procedural';
-import { createProductionCachePolicy } from './policy';
-import { replayTrajectory } from './replay';
+import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
+import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
+import { createAppendSweepTrajectories } from '../../workloads/longrun-patterns';
+import { createAuthoredTrajectories } from '../../workloads/neutral/neutral-authored';
+import { createProceduralTrajectories } from '../../workloads/neutral/neutral-procedural';
+import { createProductionCachePolicy } from '../../strategies/cache-policies';
+import { replayTrajectory } from '../../core/replay';
 
 // 현재 구현(frontier 보호 축출 규칙) 기준 production의 케이스별 수치를 JSON으로
 // 남긴다. longrun-evictfix.test.ts의 구 규칙 JSON과 diff하면 보호 규칙의 효과를

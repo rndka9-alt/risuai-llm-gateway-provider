@@ -2,13 +2,19 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel } from './fake-gateway';
-import { createGoldenTrajectories } from './golden-trajectories';
-import { createAppendSweepTrajectories, createLongRunPatternTrajectories } from './longrun-patterns';
-import { createAuthoredTrajectories } from './neutral-authored';
-import { createProceduralTrajectories } from './neutral-procedural';
-import { createLegacyProductionCachePolicy, createProductionCachePolicy } from './policy';
-import { replayTrajectory } from './replay';
+import { createFakeGatewayKernel } from '../../gateway/fake-gateway';
+import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
+import {
+  createAppendSweepTrajectories,
+  createLongRunPatternTrajectories,
+} from '../../workloads/longrun-patterns';
+import { createAuthoredTrajectories } from '../../workloads/neutral/neutral-authored';
+import { createProceduralTrajectories } from '../../workloads/neutral/neutral-procedural';
+import {
+  createLegacyProductionCachePolicy,
+  createProductionCachePolicy,
+} from '../../strategies/cache-policies';
+import { replayTrajectory } from '../../core/replay';
 
 // 회귀 참조 실험: frontier 보호 규칙이 본체(evict-closest-anchors.ts)에 반영된 뒤,
 // 보호가 없던 구 축출 규칙을 vi.mock으로 재현해 병리의 크기를 기록으로 남긴다.
@@ -16,9 +22,9 @@ import { replayTrajectory } from './replay';
 // 직전 frontier를 매턴 축출했고, exact-match 계약에서 read 체인이 끊겼다
 // (lr01 append 60턴 eff 21.2% vs 보호 후 86.7%).
 
-vi.mock('../../cache/planner/utils/evict-closest-anchors', async () => {
+vi.mock('../../../../cache/planner/utils/evict-closest-anchors', async () => {
   const { sumTokenEstimatesBetween } = await import(
-    '../../cache/planner/utils/sum-token-estimates-between'
+    '../../../../cache/planner/utils/sum-token-estimates-between'
   );
   return {
     // 보호 규칙 도입 이전의 원본 구현 (커밋 8c27f1f 시점의 본체 코드와 동일).

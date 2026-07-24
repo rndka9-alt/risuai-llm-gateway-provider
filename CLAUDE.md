@@ -63,6 +63,16 @@ npm run test:all  # 둘 다
   패턴)로 먼저 흔들어 본다. oracle 정책의 수치는 구조를 미리 아는 상한선이며 실구현
   예상치가 아니다.
 
+### sim 내부 구조
+
+- `core/` — trajectory replay와 공통 결과 타입
+- `gateway/` — fake gateway 커널과 커널 계약 테스트
+- `workloads/` — golden·long-run·neutral trajectory
+- `strategies/` — 현행·과거·실험 캐시 정책 adapter
+- `reporting/` — scoreboard 등 결과 표현
+- `suites/` — golden 회귀와 eviction 비교 스위트
+- `experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험
+
 ## 모듈 구조 원칙
 
 - 디렉터리 모듈의 루트에는 모듈의 목적을 표현하는 "주인공"(공개 오케스트레이션)만

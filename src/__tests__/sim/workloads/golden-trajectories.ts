@@ -1,5 +1,5 @@
 import type { LlmMessage, LlmMessageRole } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from './replay';
+import type { GoldenTrajectory, TrajectoryRequest } from '../core/replay';
 
 function makeMessage(role: LlmMessageRole, text: string): LlmMessage {
   return { role, content: [{ type: 'text', text }] };

@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from './fake-gateway';
+import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../gateway/fake-gateway';
 import {
   createAdversarialTrajectories,
   type AdversarialTrajectory,
 } from './middle-block-adversarial';
 import { MIDDLE_BLOCK_POLICY_FACTORIES } from './middle-block-anchor-experiment';
-import { createNoCachePolicy, createProductionCachePolicy, type ReplayCachePolicy } from './policy';
-import { replayTrajectory, type ReplayResult } from './replay';
-import { createV013SingleSlotCachePolicy } from './v013-single-slot-policy';
+import {
+  createNoCachePolicy,
+  createProductionCachePolicy,
+  type ReplayCachePolicy,
+} from '../../strategies/cache-policies';
+import { replayTrajectory, type ReplayResult } from '../../core/replay';
+import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
 const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
 

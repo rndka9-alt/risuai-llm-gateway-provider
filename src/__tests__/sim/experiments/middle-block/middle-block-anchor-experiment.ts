@@ -1,10 +1,10 @@
 import type { LlmMessage } from 'llm-io';
-import { markCacheBreakpoints } from '../../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../../cache/mode/get-prompt-cache-key';
-import { fingerprintMessage } from '../../cache/planner/fingerprint-message';
-import type { CachePlan } from '../../cache/types';
-import type { ReplayCachePolicy } from './policy';
-import type { GoldenTrajectory, TrajectoryRequest } from './replay';
+import { markCacheBreakpoints } from '../../../../cache/breakpoint/mark-cache-breakpoints';
+import { getPromptCacheKey } from '../../../../cache/mode/get-prompt-cache-key';
+import { fingerprintMessage } from '../../../../cache/planner/fingerprint-message';
+import type { CachePlan } from '../../../../cache/types';
+import type { ReplayCachePolicy } from '../../strategies/cache-policies';
+import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
 
 const FIXED_HEAD_INDEX = 0;
 const ROTATING_BLOCK_INDEX = 1;

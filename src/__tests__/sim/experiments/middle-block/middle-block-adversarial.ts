@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from './replay';
+import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
 
 const REQUESTS_PER_TRAJECTORY = 36;
 const FIXED_HEAD_TOKENS = 8_000;

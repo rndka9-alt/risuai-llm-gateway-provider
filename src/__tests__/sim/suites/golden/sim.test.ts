@@ -1,8 +1,8 @@
 import type { LlmMessage } from 'llm-io';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../ledger';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from './fake-gateway';
-import { createGoldenTrajectories } from './golden-trajectories';
+import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../../ledger';
+import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../gateway/fake-gateway';
+import { createGoldenTrajectories } from '../../workloads/golden-trajectories';
 import {
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
@@ -14,15 +14,10 @@ import {
   createTwoSurvivalProductionCachePolicy,
   createValidatedAllCachePolicy,
   type ReplayCachePolicy,
-} from './policy';
-import {
-  formatScoreboard,
-  isMultiRoomGoldenTrajectory,
-  replayTrajectory,
-  type GoldenTrajectory,
-  type ReplayResult,
-} from './replay';
-import { createV013SingleSlotCachePolicy } from './v013-single-slot-policy';
+} from '../../strategies/cache-policies';
+import { replayTrajectory, type GoldenTrajectory, type ReplayResult } from '../../core/replay';
+import { formatScoreboard, isMultiRoomGoldenTrajectory } from '../../reporting/format-scoreboard';
+import { createV013SingleSlotCachePolicy } from '../../strategies/v013/v013-single-slot-policy';
 
 const KERNEL_PRESETS = [
   'calibrated',

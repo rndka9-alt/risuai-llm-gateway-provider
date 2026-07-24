@@ -2,18 +2,18 @@ import type { LlmMessage } from 'llm-io';
 import {
   FRONTIER_DEATH_MONITOR_THRESHOLD,
   MAX_NEW_CACHE_WRITE_TOKENS,
-} from '../../cache/constants';
-import { sumTextTokenEstimatesBetween } from '../../cache/planner/utils/sum-token-estimates-between';
-import type { AnchorAdmission } from '../../cache/state/schema';
-import { commitPromptCacheState, preparePromptCacheRequest } from '../../cache';
-import { markCacheBreakpoints } from '../../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../../cache/mode/get-prompt-cache-key';
-import { fingerprintMessage } from '../../cache/planner/fingerprint-message';
-import { planCacheAnchors } from '../../cache/planner/plan-cache-anchors';
-import { loadCacheAnchorState } from '../../cache/state/load-cache-anchor-state';
-import { saveCacheAnchorState } from '../../cache/state/save-cache-anchor-state';
-import type { CacheAnchorState, MessageFingerprint } from '../../cache/state/schema';
-import type { CachePlan } from '../../cache/types';
+} from '../../../cache/constants';
+import { sumTextTokenEstimatesBetween } from '../../../cache/planner/utils/sum-token-estimates-between';
+import type { AnchorAdmission } from '../../../cache/state/schema';
+import { commitPromptCacheState, preparePromptCacheRequest } from '../../../cache';
+import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
+import { getPromptCacheKey } from '../../../cache/mode/get-prompt-cache-key';
+import { fingerprintMessage } from '../../../cache/planner/fingerprint-message';
+import { planCacheAnchors } from '../../../cache/planner/plan-cache-anchors';
+import { loadCacheAnchorState } from '../../../cache/state/load-cache-anchor-state';
+import { saveCacheAnchorState } from '../../../cache/state/save-cache-anchor-state';
+import type { CacheAnchorState, MessageFingerprint } from '../../../cache/state/schema';
+import type { CachePlan } from '../../../cache/types';
 
 export interface CachePolicyDecision {
   anchorIndexes: readonly number[];

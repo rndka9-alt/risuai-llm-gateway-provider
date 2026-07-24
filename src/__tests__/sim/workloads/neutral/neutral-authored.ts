@@ -1,6 +1,6 @@
 import type { LlmMessage } from 'llm-io';
 import { neutralScenarios } from './neutral-authored-scenarios';
-import type { GoldenTrajectory } from './replay';
+import type { GoldenTrajectory } from '../../core/replay';
 
 // neutral-authored-scenarios.ts는 블라인드 설계 에이전트의 산출물이다. 설계자는
 // 비교 대상 정책들의 코드를 일절 보지 않은 채(레포 탐색 금지) 도메인 브리프만으로

@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from './replay';
+import type { GoldenTrajectory, TrajectoryRequest } from '../core/replay';
 
 /**
  * 단일 패턴 × 장기(60턴) 스위트.

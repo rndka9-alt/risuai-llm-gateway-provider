@@ -1,5 +1,5 @@
 import type { LlmMessage } from 'llm-io';
-import type { GoldenTrajectory, TrajectoryRequest } from './replay';
+import type { GoldenTrajectory, TrajectoryRequest } from '../../core/replay';
 
 /**
  * 시드 기반 절차적 중립 벤치마크 세션 생성기.
