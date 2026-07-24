@@ -65,10 +65,10 @@ npm run test:all  # 둘 다
 
 ### sim 내부 구조
 
-- `core/` — scenario replay와 공통 결과 타입
-- `gateway/` — fake gateway 커널과 커널 계약 테스트
+- `replay/` — scenario·cache strategy·cache hit simulator를 조립하고 비용 결과를 집계
+- `cache-hit-simulators/` — 서버측 prompt cache의 hit·miss·read·write 회계 재현
 - `scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
-- `strategies/` — 현행·과거·실험 캐시 정책 adapter
+- `cache-strategies/` — breakpoint·cache key·admission을 결정하는 현행·과거·실험 전략
 - `reporting/` — scoreboard 등 결과 표현
 - `suites/` — golden 회귀와 eviction 비교 스위트
 - `experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험

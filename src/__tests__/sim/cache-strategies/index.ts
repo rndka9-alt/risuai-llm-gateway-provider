@@ -12,4 +12,4 @@ export {
   type CachePolicyDecision,
   type ReplayCachePolicy,
   type ReplayPolicyContext,
-} from './cache-policies';
+} from './cache-strategies';

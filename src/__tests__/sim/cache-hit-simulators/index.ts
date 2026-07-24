@@ -8,4 +8,4 @@ export {
   type FakeGatewayRequest,
   type KernelTokenizer,
   type MarkerMatchMode,
-} from './fake-gateway';
+} from './cache-hit-simulators';

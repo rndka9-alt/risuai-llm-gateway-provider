@@ -1,4 +1,4 @@
-import type { ReplayCachePolicy } from '../cache-policies';
+import type { ReplayCachePolicy } from '../cache-strategies';
 import {
   type CacheAnchorState,
   EXPLICIT_PROMPT_CACHE_KEY,

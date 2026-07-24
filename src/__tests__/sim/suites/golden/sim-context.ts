@@ -1,6 +1,6 @@
 import { expect, vi } from 'vitest';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../../ledger';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../gateway';
+import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import {
   createAdaptiveTwoStrikeCachePolicy,
@@ -13,9 +13,9 @@ import {
   createTwoSurvivalProductionCachePolicy,
   createValidatedAllCachePolicy,
   type ReplayCachePolicy,
-} from '../../strategies';
-import { createV013SingleSlotCachePolicy } from '../../strategies/v013';
-import { replayScenario, type ReplayResult } from '../../core';
+} from '../../cache-strategies';
+import { createV013SingleSlotCachePolicy } from '../../cache-strategies/v013';
+import { replayScenario, type ReplayResult } from '../../replay';
 import type { SimulationScenario } from '../../scenarios';
 import { formatScoreboard } from '../../reporting';
 

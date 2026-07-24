@@ -1,1 +1,1 @@
-export { formatScoreboard, isMultiRoomCanonicalScenario } from './format-scoreboard';
+export { formatScoreboard, isMultiRoomCanonicalScenario } from './reporting';

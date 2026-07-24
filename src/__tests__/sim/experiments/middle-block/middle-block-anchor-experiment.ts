@@ -3,7 +3,7 @@ import { markCacheBreakpoints } from '../../../../cache/breakpoint/mark-cache-br
 import { getPromptCacheKey } from '../../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../../cache/planner/fingerprint-message';
 import type { CachePlan } from '../../../../cache/types';
-import type { ReplayCachePolicy } from '../../strategies';
+import type { ReplayCachePolicy } from '../../cache-strategies';
 import type { SimulationScenario, ScenarioRequest } from '../../scenarios';
 
 const FIXED_HEAD_INDEX = 0;

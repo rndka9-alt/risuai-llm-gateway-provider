@@ -4,7 +4,7 @@ import {
   createAdaptiveTwoStrikeCachePolicy,
   createAdaptiveTwoStrikeRerollAwareCachePolicy,
   createFirstTurnSafeCachePolicy,
-} from '../../strategies';
+} from '../../cache-strategies';
 import { pluginStorage } from './sim-context';
 
 function makePolicyTestMessage(role: LlmMessage['role'], text: string): LlmMessage {

@@ -1,4 +1,4 @@
-import type { ReplayResult } from '../core';
+import type { ReplayResult } from '../replay';
 
 const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
 const MULTI_ROOM_SCENARIO_IDS: ReadonlySet<string> = new Set([

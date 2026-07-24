@@ -2,13 +2,16 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel } from '../../gateway';
+import { createFakeGatewayKernel } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import { createAppendSweepScenarios, createLongRunScenarios } from '../../scenarios';
 import { createAuthoredNeutralScenarios } from '../../scenarios';
 import { createProceduralNeutralScenarios } from '../../scenarios';
-import { createLegacyProductionCachePolicy, createProductionCachePolicy } from '../../strategies';
-import { replayScenario } from '../../core';
+import {
+  createLegacyProductionCachePolicy,
+  createProductionCachePolicy,
+} from '../../cache-strategies';
+import { replayScenario } from '../../replay';
 
 // 회귀 참조 실험: frontier 보호 규칙이 본체(evict-closest-anchors.ts)에 반영된 뒤,
 // 보호가 없던 구 축출 규칙을 vi.mock으로 재현해 병리의 크기를 기록으로 남긴다.

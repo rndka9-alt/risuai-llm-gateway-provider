@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeGatewayKernel } from '../../gateway';
+import { createFakeGatewayKernel } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
-import { replayScenario } from '../../core';
+import { replayScenario } from '../../replay';
 import {
   createV013SingleSlotCachePolicy,
   V013_SINGLE_SLOT_SOURCE_COMMIT,
-} from '../../strategies/v013';
+} from '../../cache-strategies/v013';
 
 interface ExpectedV013Score {
   id: string;

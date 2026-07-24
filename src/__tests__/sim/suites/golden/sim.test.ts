@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ReplayResult } from '../../core';
+import type { ReplayResult } from '../../replay';
 import { formatScoreboard } from '../../reporting';
 import { registerAdaptivePolicyTransitions } from './adaptive-policy-transition-suite';
 import { expectGoldenDirection } from './golden-direction-assertions';
