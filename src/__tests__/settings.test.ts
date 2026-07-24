@@ -454,7 +454,7 @@ describe('settings UI', () => {
 
     expect(requireInput('flag-hasImageInput').checked).toBe(false);
     expect(requireInput('flag-hasImageInput').disabled).toBe(false);
-    expect(document.querySelector('fieldset label:last-child')?.textContent).toBe('Image Input');
+    expect(document.querySelector('fieldset > :last-child label')?.textContent).toBe('Image Input');
     expect(document.body.textContent).not.toContain('Image Input · 미지원');
     expect(document.body.textContent).not.toContain('Image Output');
   });
@@ -568,6 +568,30 @@ describe('settings UI', () => {
       'true',
     );
     expect(requireButton('advanced-settings-toggle').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('펼침 전환이 끝나면 클립을 해제해 툴팁이 아코디언 밖으로 나올 수 있다', async () => {
+    await renderSettingsUi();
+    await expandSettingsAccordion('advanced-settings');
+    const content = document.getElementById('advanced-settings-content');
+    if (content === null) throw new Error('Expected advanced accordion content');
+    const clipContainer = content.firstElementChild;
+    if (clipContainer === null) throw new Error('Expected accordion clip container');
+
+    // 펼침 전환 중에는 0fr 축소 클립이 유지된다
+    expect(clipContainer.className).toContain('overflow-hidden');
+
+    await act(async () => {
+      content.dispatchEvent(
+        Object.assign(new Event('transitionend', { bubbles: true }), {
+          propertyName: 'grid-template-rows',
+        }),
+      );
+    });
+    expect(clipContainer.className).toContain('overflow-visible');
+
+    await act(async () => requireButton('advanced-settings-toggle').click());
+    expect(clipContainer.className).toContain('overflow-hidden');
   });
 
   it('비활성 상태 칩은 숨기고 모델명은 항상 짧은 라벨로 표시한다', async () => {
@@ -889,6 +913,19 @@ describe('settings UI', () => {
     expect(document.getElementById('request-body-help')?.textContent).toContain(
       '입력한 JSON은 LLM Gateway 요청 body에 포함돼요.',
     );
+    expect(document.getElementById('flag-requiresAlternateRole-tooltip')?.textContent).toContain(
+      '캐시 효율이 떨어질 수 있어요.',
+    );
+
+    const flagHelpTrigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Alternate Role 도움말"]',
+    );
+    if (flagHelpTrigger === null) throw new Error('Expected alternate role help trigger');
+    const alternateRoleCheckedBefore = requireInput('flag-requiresAlternateRole').checked;
+    await act(async () => flagHelpTrigger.click());
+    expect(flagHelpTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(requireInput('flag-requiresAlternateRole').checked).toBe(alternateRoleCheckedBefore);
+    await act(async () => flagHelpTrigger.click());
 
     await act(async () => requireButton('close').click());
     expect(harness.hideContainer).toHaveBeenCalledOnce();

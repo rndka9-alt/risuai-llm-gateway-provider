@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
 import { FIELD_CAPTION_CLASS } from '../../constants';
 
 interface SettingsAccordionProps {
@@ -20,6 +21,21 @@ export function SettingsAccordion({
   onToggle,
   title,
 }: SettingsAccordionProps) {
+  // 0fr 축소 애니메이션에는 clip이 필요하지만, 펼침이 끝난 뒤까지 유지하면
+  // 콘텐츠의 툴팁·팝오버가 아코디언 경계에서 잘린다. 펼침 전환이 끝난 뒤에만 해제한다.
+  const [expansionSettled, setExpansionSettled] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) {
+      setExpansionSettled(false);
+      return;
+    }
+    // reduced motion 환경은 transition이 없어 transitionend가 오지 않는다
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setExpansionSettled(true);
+    }
+  }, [expanded]);
+
   return (
     <section class="min-w-0">
       <button
@@ -53,9 +69,15 @@ export function SettingsAccordion({
         id={`${id}-content`}
         aria-hidden={!expanded}
         inert={!expanded}
+        onTransitionEnd={(event) => {
+          if (expanded && event.propertyName === 'grid-template-rows') {
+            setExpansionSettled(true);
+          }
+        }}
         class={`grid transition-[grid-template-rows,opacity] duration-150 ease-out motion-reduce:transition-none ${expanded ? 'grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0'}`}
       >
-        <div class="min-h-0 overflow-hidden">
+        {/* 접힘 시작 렌더에서 바로 재클립되도록 settled 단독이 아닌 expanded와 함께 판정한다 */}
+        <div class={`min-h-0 ${expanded && expansionSettled ? 'overflow-visible' : 'overflow-hidden'}`}>
           <div class="flex flex-col gap-3 pt-2 pb-1">{children}</div>
         </div>
       </div>
