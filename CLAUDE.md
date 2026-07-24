@@ -73,6 +73,11 @@ npm run test:all  # 둘 다
 - `suites/` — golden 회귀와 eviction 비교 스위트
 - `experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험
 
+`workloads/golden-trajectories.ts`는 golden workload 조립만 담당하고, fixture builder·기본
+시나리오·실사용 변동·멀티룸/뱅크·admission 경계·현실 토큰 스케일링은
+`workloads/golden/`에 나눈다. `suites/golden/sim.test.ts`도 전체 replay 생명주기와 suite
+등록만 담당하며, 공통 실행 컨텍스트와 큰 assertion 묶음은 같은 디렉터리의 보조 모듈에 둔다.
+
 ## 모듈 구조 원칙
 
 - 디렉터리 모듈의 루트에는 모듈의 목적을 표현하는 "주인공"(공개 오케스트레이션)만
