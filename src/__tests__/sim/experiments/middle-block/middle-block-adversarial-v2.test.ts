@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../cache-hit-simulators';
+import { createCacheHitSimulator, type CacheHitSimulatorPreset } from '../../cache-hit-simulators';
 import {
   createAdversarialV2Trajectories,
   type AdversarialV2Scenario,
@@ -13,7 +13,10 @@ import {
 import { createV013SingleSlotCachePolicy } from '../../cache-strategies/v013';
 import { replayScenario, type ReplayResult } from '../../replay';
 
-const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
+const CACHE_HIT_SIMULATOR_PRESETS = [
+  'calibrated',
+  'pessimistic',
+] satisfies readonly CacheHitSimulatorPreset[];
 
 const ORACLE_POLICY_NAMES = [
   'oracle-shield',
@@ -58,17 +61,17 @@ function stubPluginStorage(): void {
 
 function resultFor(
   scenarioId: string,
-  kernelName: FakeGatewayKernelPreset,
+  cacheHitSimulatorName: CacheHitSimulatorPreset,
   policyName: string,
 ): ReplayResult {
   const result = results.find(
     (candidate) =>
       candidate.scenarioId === scenarioId &&
-      candidate.kernelName === kernelName &&
+      candidate.cacheHitSimulatorName === cacheHitSimulatorName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing result for ${scenarioId}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing result for ${scenarioId}/${cacheHitSimulatorName}/${policyName}.`);
   }
   return result;
 }
@@ -96,13 +99,13 @@ function formatTable(
 }
 
 function formatScoreboard(): string {
-  return KERNEL_PRESETS.map((kernelName) =>
+  return CACHE_HIT_SIMULATOR_PRESETS.map((cacheHitSimulatorName) =>
     formatTable(
-      `Middle-block adversarial v2 — ${kernelName} net/input · read · write`,
+      `Middle-block adversarial v2 — ${cacheHitSimulatorName} net/input · read · write`,
       ['scenario', 'policy', 'net/input', 'read', 'write'],
       scenarios.flatMap((scenario) =>
         POLICY_FACTORIES.map((factory) => {
-          const result = resultFor(scenario.id, kernelName, factory.name);
+          const result = resultFor(scenario.id, cacheHitSimulatorName, factory.name);
           return [
             scenario.id,
             factory.name,
@@ -119,13 +122,13 @@ function formatScoreboard(): string {
 beforeAll(async () => {
   stubPluginStorage();
   for (const scenario of scenarios) {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       for (const factory of POLICY_FACTORIES) {
         pluginStorage.clear();
         stubPluginStorage();
         results.push(
           await replayScenario({
-            kernel: createFakeGatewayKernel(kernelPreset),
+            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
             policy: factory.create(),
             scenario,
           }),
@@ -141,9 +144,9 @@ afterAll(() => {
 });
 
 describe('middle-block adversarial v2 scenarios', () => {
-  it('모든 scenario × kernel × policy 결과를 수집한다', () => {
+  it('모든 scenario × cache hit simulator × policy 결과를 수집한다', () => {
     expect(results).toHaveLength(
-      scenarios.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
+      scenarios.length * CACHE_HIT_SIMULATOR_PRESETS.length * POLICY_FACTORIES.length,
     );
   });
 
@@ -166,17 +169,25 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('boundary jitter: 27분 write를 29분 뒤 읽지 못해 shield와 실배포 정책보다 뒤진다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       const v013SingleSlot = resultFor(
         'adv2-boundary-jitter-bait',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'v013-single-slot',
       );
-      const production = resultFor('adv2-boundary-jitter-bait', kernelPreset, 'production');
-      const shield = resultFor('adv2-boundary-jitter-bait', kernelPreset, 'oracle-shield');
+      const production = resultFor(
+        'adv2-boundary-jitter-bait',
+        cacheHitSimulatorPreset,
+        'production',
+      );
+      const shield = resultFor(
+        'adv2-boundary-jitter-bait',
+        cacheHitSimulatorPreset,
+        'oracle-shield',
+      );
       const wallClock = resultFor(
         'adv2-boundary-jitter-bait',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 
@@ -192,12 +203,20 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('28분 refresh chain: 포함 경계에서는 frontier 연쇄를 유지해 실배포 기준선도 넘는다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv2-boundary-refresh-chain', kernelPreset, 'production');
-      const shield = resultFor('adv2-boundary-refresh-chain', kernelPreset, 'oracle-shield');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor(
+        'adv2-boundary-refresh-chain',
+        cacheHitSimulatorPreset,
+        'production',
+      );
+      const shield = resultFor(
+        'adv2-boundary-refresh-chain',
+        cacheHitSimulatorPreset,
+        'oracle-shield',
+      );
       const wallClock = resultFor(
         'adv2-boundary-refresh-chain',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 
@@ -209,12 +228,20 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('dwell→tail churn: 과거 recurrence 증거를 철회하지 못해 shield 아래로 무너진다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv2-dwell-to-tail-churn', kernelPreset, 'production');
-      const shield = resultFor('adv2-dwell-to-tail-churn', kernelPreset, 'oracle-shield');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor(
+        'adv2-dwell-to-tail-churn',
+        cacheHitSimulatorPreset,
+        'production',
+      );
+      const shield = resultFor(
+        'adv2-dwell-to-tail-churn',
+        cacheHitSimulatorPreset,
+        'oracle-shield',
+      );
       const wallClock = resultFor(
         'adv2-dwell-to-tail-churn',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 
@@ -227,20 +254,20 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('저빈도 tail 교체: 8요청 dwell의 read가 교체 write를 상쇄해 공격을 버틴다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       const production = resultFor(
         'adv2-low-frequency-tail-replacement',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'production',
       );
       const shield = resultFor(
         'adv2-low-frequency-tail-replacement',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-shield',
       );
       const wallClock = resultFor(
         'adv2-low-frequency-tail-replacement',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 
@@ -250,13 +277,17 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('history rebase: 범위 안에 복귀한 stale frontier가 다른 lineage를 가리키며 퇴행한다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const v013SingleSlot = resultFor('adv2-history-rebase', kernelPreset, 'v013-single-slot');
-      const production = resultFor('adv2-history-rebase', kernelPreset, 'production');
-      const shield = resultFor('adv2-history-rebase', kernelPreset, 'oracle-shield');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const v013SingleSlot = resultFor(
+        'adv2-history-rebase',
+        cacheHitSimulatorPreset,
+        'v013-single-slot',
+      );
+      const production = resultFor('adv2-history-rebase', cacheHitSimulatorPreset, 'production');
+      const shield = resultFor('adv2-history-rebase', cacheHitSimulatorPreset, 'oracle-shield');
       const wallClock = resultFor(
         'adv2-history-rebase',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 
@@ -270,12 +301,20 @@ describe('middle-block adversarial v2 scenarios', () => {
   });
 
   it('혼합 phase 수명: one-off 상태는 shield에 격리되고 hot phase recall은 유지된다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv2-mixed-phase-lifetimes', kernelPreset, 'production');
-      const shield = resultFor('adv2-mixed-phase-lifetimes', kernelPreset, 'oracle-shield');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor(
+        'adv2-mixed-phase-lifetimes',
+        cacheHitSimulatorPreset,
+        'production',
+      );
+      const shield = resultFor(
+        'adv2-mixed-phase-lifetimes',
+        cacheHitSimulatorPreset,
+        'oracle-shield',
+      );
       const wallClock = resultFor(
         'adv2-mixed-phase-lifetimes',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
 

@@ -1,6 +1,6 @@
 import { expect, vi } from 'vitest';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../../ledger';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../cache-hit-simulators';
+import { createCacheHitSimulator, type CacheHitSimulatorPreset } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import {
   createAdaptiveTwoStrikeCachePolicy,
@@ -19,11 +19,11 @@ import { replayScenario, type ReplayResult } from '../../replay';
 import type { SimulationScenario } from '../../scenarios';
 import { formatScoreboard } from '../../reporting';
 
-export const KERNEL_PRESETS = [
+export const CACHE_HIT_SIMULATOR_PRESETS = [
   'calibrated',
   'pessimistic',
   'optimistic',
-] satisfies readonly FakeGatewayKernelPreset[];
+] satisfies readonly CacheHitSimulatorPreset[];
 
 export const scenarios = createCanonicalScenarios();
 
@@ -82,17 +82,19 @@ function stubPluginStorage(): void {
 
 export function requireReplayResult(
   scenario: SimulationScenario,
-  kernelName: FakeGatewayKernelPreset,
+  cacheHitSimulatorName: CacheHitSimulatorPreset,
   policyName: PolicyName,
 ): ReplayResult {
   const result = replayResults.find(
     (candidate) =>
       candidate.scenarioId === scenario.id &&
-      candidate.kernelName === kernelName &&
+      candidate.cacheHitSimulatorName === cacheHitSimulatorName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing replay result for ${scenario.id}/${kernelName}/${policyName}.`);
+    throw new Error(
+      `Missing replay result for ${scenario.id}/${cacheHitSimulatorName}/${policyName}.`,
+    );
   }
   return result;
 }
@@ -147,14 +149,14 @@ export function requireScenarioById(scenarioId: string): SimulationScenario {
 
 export async function initializeReplayResults(): Promise<void> {
   for (const scenario of scenarios) {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       for (const createPolicy of POLICY_FACTORIES) {
-        // planner 상태와 wrapper 클로저를 정책·커널 실행마다 함께 격리한다.
+        // planner 상태와 wrapper 클로저를 정책·simulator 실행마다 함께 격리한다.
         pluginStorage.clear();
         stubPluginStorage();
         replayResults.push(
           await replayScenario({
-            kernel: createFakeGatewayKernel(kernelPreset),
+            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
             policy: createPolicy(),
             scenario,
           }),

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../cache-hit-simulators';
+import { createCacheHitSimulator, type CacheHitSimulatorPreset } from '../../cache-hit-simulators';
 import {
   createMiddleBlockTrajectories,
   MIDDLE_BLOCK_POLICY_FACTORIES,
@@ -14,7 +14,10 @@ import {
 import { createV013SingleSlotCachePolicy } from '../../cache-strategies/v013';
 import { replayScenario, type ReplayResult } from '../../replay';
 
-const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
+const CACHE_HIT_SIMULATOR_PRESETS = [
+  'calibrated',
+  'pessimistic',
+] satisfies readonly CacheHitSimulatorPreset[];
 
 interface PolicyFactory {
   create: () => ReplayCachePolicy;
@@ -47,17 +50,17 @@ function stubPluginStorage(): void {
 
 function resultFor(
   scenarioId: string,
-  kernelName: FakeGatewayKernelPreset,
+  cacheHitSimulatorName: CacheHitSimulatorPreset,
   policyName: string,
 ): ReplayResult {
   const result = results.find(
     (candidate) =>
       candidate.scenarioId === scenarioId &&
-      candidate.kernelName === kernelName &&
+      candidate.cacheHitSimulatorName === cacheHitSimulatorName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing result for ${scenarioId}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing result for ${scenarioId}/${cacheHitSimulatorName}/${policyName}.`);
   }
   return result;
 }
@@ -135,15 +138,15 @@ function formatScopeScoreboards(): string {
     },
   ];
 
-  return KERNEL_PRESETS.map((kernelName) =>
+  return CACHE_HIT_SIMULATOR_PRESETS.map((cacheHitSimulatorName) =>
     formatTable(
-      `Middle-block anchor oracle — ${kernelName} totals`,
+      `Middle-block anchor oracle — ${cacheHitSimulatorName} totals`,
       ['policy', 'scope', 'net/input', 'read', 'write'],
       POLICY_FACTORIES.flatMap((factory) =>
         scopes.map((scope) => {
           const scopedTrajectories = scenarios.filter(scope.matches);
           const scopedResults = scopedTrajectories.map((scenario) =>
-            resultFor(scenario.id, kernelName, factory.name),
+            resultFor(scenario.id, cacheHitSimulatorName, factory.name),
           );
           const inputTokens = scopedResults.reduce(
             (total, result) => total + result.totalInputTokens,
@@ -169,13 +172,13 @@ function formatScopeScoreboards(): string {
 beforeAll(async () => {
   stubPluginStorage();
   for (const scenario of scenarios) {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       for (const factory of POLICY_FACTORIES) {
         pluginStorage.clear();
         stubPluginStorage();
         results.push(
           await replayScenario({
-            kernel: createFakeGatewayKernel(kernelPreset),
+            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
             policy: factory.create(),
             scenario,
           }),
@@ -191,9 +194,9 @@ afterAll(() => {
 });
 
 describe('middle-block semantic anchor oracle', () => {
-  it('모든 scenario × kernel × policy 결과를 수집한다', () => {
+  it('모든 scenario × cache hit simulator × policy 결과를 수집한다', () => {
     expect(results).toHaveLength(
-      scenarios.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
+      scenarios.length * CACHE_HIT_SIMULATOR_PRESETS.length * POLICY_FACTORIES.length,
     );
   });
 
@@ -246,25 +249,29 @@ describe('middle-block semantic anchor oracle', () => {
           scenario.phaseCount === null || scenario.phaseCount * scenario.switchEveryTurns * 2 >= 30,
       )
       .forEach((scenario) => {
-        for (const kernelPreset of KERNEL_PRESETS) {
-          const shield = resultFor(scenario.id, kernelPreset, 'oracle-shield');
-          const ttlAware = resultFor(scenario.id, kernelPreset, 'oracle-ttl-recurrence-admitted');
+        for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+          const shield = resultFor(scenario.id, cacheHitSimulatorPreset, 'oracle-shield');
+          const ttlAware = resultFor(
+            scenario.id,
+            cacheHitSimulatorPreset,
+            'oracle-ttl-recurrence-admitted',
+          );
           expect(ttlAware.totalNetSavedTokens).toBeCloseTo(shield.totalNetSavedTokens);
         }
       });
   });
 
   it('TTL-aware admission은 전체 스윕에서 production보다 높은 순절감을 낸다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       const productionNet = scenarios.reduce(
         (total, scenario) =>
-          total + resultFor(scenario.id, kernelPreset, 'production').totalNetSavedTokens,
+          total + resultFor(scenario.id, cacheHitSimulatorPreset, 'production').totalNetSavedTokens,
         0,
       );
       const ttlAwareNet = scenarios.reduce(
         (total, scenario) =>
           total +
-          resultFor(scenario.id, kernelPreset, 'oracle-ttl-recurrence-admitted')
+          resultFor(scenario.id, cacheHitSimulatorPreset, 'oracle-ttl-recurrence-admitted')
             .totalNetSavedTokens,
         0,
       );
@@ -280,10 +287,10 @@ describe('middle-block semantic anchor oracle', () => {
       'oracle-wallclock-recurrence-admitted',
     ] as const;
     scenarios.forEach((scenario) => {
-      for (const kernelPreset of KERNEL_PRESETS) {
-        const previousRelease = resultFor(scenario.id, kernelPreset, 'v013-single-slot');
+      for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+        const previousRelease = resultFor(scenario.id, cacheHitSimulatorPreset, 'v013-single-slot');
         for (const candidatePolicyName of candidatePolicyNames) {
-          const candidate = resultFor(scenario.id, kernelPreset, candidatePolicyName);
+          const candidate = resultFor(scenario.id, cacheHitSimulatorPreset, candidatePolicyName);
           expect(candidate.totalNetSavedTokens).toBeGreaterThanOrEqual(
             previousRelease.totalNetSavedTokens,
           );
@@ -298,9 +305,13 @@ describe('middle-block semantic anchor oracle', () => {
     scenarios
       .filter((scenario) => scenario.phaseCount === 16)
       .forEach((scenario) => {
-        for (const kernelPreset of KERNEL_PRESETS) {
-          const previousRelease = resultFor(scenario.id, kernelPreset, 'v013-single-slot');
-          const production = resultFor(scenario.id, kernelPreset, 'production');
+        for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+          const previousRelease = resultFor(
+            scenario.id,
+            cacheHitSimulatorPreset,
+            'v013-single-slot',
+          );
+          const production = resultFor(scenario.id, cacheHitSimulatorPreset, 'production');
           expect(production.totalNetSavedTokens).toBeLessThan(previousRelease.totalNetSavedTokens);
         }
       });

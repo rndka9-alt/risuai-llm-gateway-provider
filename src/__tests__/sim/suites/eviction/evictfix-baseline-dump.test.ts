@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel } from '../../cache-hit-simulators';
+import { createCacheHitSimulator } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import { createAppendSweepScenarios } from '../../scenarios';
 import { createAuthoredNeutralScenarios } from '../../scenarios';
@@ -47,7 +47,7 @@ describe('evictfix baseline dump', () => {
       for (const scenario of suiteScenarios) {
         pluginStorage.clear();
         const result = await replayScenario({
-          kernel: createFakeGatewayKernel('calibrated'),
+          cacheHitSimulator: createCacheHitSimulator('calibrated'),
           policy: createProductionCachePolicy(),
           scenario,
         });

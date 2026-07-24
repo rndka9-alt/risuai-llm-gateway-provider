@@ -7,7 +7,7 @@ import {
   cleanupReplayGlobals,
   expectCommonInvariants,
   initializeReplayResults,
-  KERNEL_PRESETS,
+  CACHE_HIT_SIMULATOR_PRESETS,
   POLICY_NAMES,
   type PolicyName,
   POSITIVE_SCENARIO_IDS,
@@ -29,7 +29,7 @@ describe('deterministic replay canonical scenarios', () => {
 
   it('실사용 context·응답 규모를 유지한다', () => {
     const noCacheResults = replayResults.filter(
-      (result) => result.kernelName === 'calibrated' && result.policyName === 'no-cache',
+      (result) => result.cacheHitSimulatorName === 'calibrated' && result.policyName === 'no-cache',
     );
     // 22는 eviction을 만들 최소 요청 수를 유지하면서 질량을 낮추려고 의도적으로
     // 35k 프로필을 쓴다. 나머지 분포의 기존 범위·대표성은 별도로 고정한다.
@@ -73,15 +73,20 @@ describe('deterministic replay canonical scenarios', () => {
   });
 
   describe.each(scenarios)('$id $label', (scenario) => {
-    it.each(KERNEL_PRESETS)('%s kernel의 회계·와이어 불변식을 지킨다', (kernelPreset) => {
-      POLICY_NAMES.forEach((policyName) => {
-        expectCommonInvariants(requireReplayResult(scenario, kernelPreset, policyName));
-      });
-      const noCache = requireReplayResult(scenario, kernelPreset, 'no-cache');
-      expect(noCache.totalReadTokens).toBe(0);
-      expect(noCache.totalWriteTokens).toBe(0);
-      expect(noCache.totalNetSavedTokens).toBe(0);
-    });
+    it.each(CACHE_HIT_SIMULATOR_PRESETS)(
+      '%s cache hit simulator의 회계·와이어 불변식을 지킨다',
+      (cacheHitSimulatorPreset) => {
+        POLICY_NAMES.forEach((policyName) => {
+          expectCommonInvariants(
+            requireReplayResult(scenario, cacheHitSimulatorPreset, policyName),
+          );
+        });
+        const noCache = requireReplayResult(scenario, cacheHitSimulatorPreset, 'no-cache');
+        expect(noCache.totalReadTokens).toBe(0);
+        expect(noCache.totalWriteTokens).toBe(0);
+        expect(noCache.totalNetSavedTokens).toBe(0);
+      },
+    );
 
     it('golden 방향성 기대를 지킨다', () => {
       expectGoldenDirection(scenario);
@@ -296,23 +301,30 @@ function requestIndexesWithScoreDifference(
 }
 
 describe('adaptive policy cost golden comparisons', () => {
-  it.each(KERNEL_PRESETS)('%s kernel에서도 지연 write 비용 방향이 유지된다', (kernelPreset) => {
-    for (const scenarioId of ['11-churn-then-stable', '12-churn-oscillating']) {
-      const scenario = requireScenarioById(scenarioId);
-      const production = requireReplayResult(scenario, kernelPreset, 'legacy-production');
-      const adaptive = requireReplayResult(scenario, kernelPreset, 'adaptive-2strike');
-      const rerollAware = requireReplayResult(
-        scenario,
-        kernelPreset,
-        'adaptive-2strike-reroll-aware',
-      );
+  it.each(CACHE_HIT_SIMULATOR_PRESETS)(
+    '%s cache hit simulator에서도 지연 write 비용 방향이 유지된다',
+    (cacheHitSimulatorPreset) => {
+      for (const scenarioId of ['11-churn-then-stable', '12-churn-oscillating']) {
+        const scenario = requireScenarioById(scenarioId);
+        const production = requireReplayResult(
+          scenario,
+          cacheHitSimulatorPreset,
+          'legacy-production',
+        );
+        const adaptive = requireReplayResult(scenario, cacheHitSimulatorPreset, 'adaptive-2strike');
+        const rerollAware = requireReplayResult(
+          scenario,
+          cacheHitSimulatorPreset,
+          'adaptive-2strike-reroll-aware',
+        );
 
-      // 커널 가정이 달라도 안정화 직전 write를 미룬 adaptive만 다음 턴의
-      // frontier read를 잃고, monitor를 켜지 않은 reroll-aware는 production과 같다.
-      expect(adaptive.totalNetSavedTokens).toBeLessThan(production.totalNetSavedTokens);
-      expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
-    }
-  });
+        // simulator 가정이 달라도 안정화 직전 write를 미룬 adaptive만 다음 턴의
+        // frontier read를 잃고, monitor를 켜지 않은 reroll-aware는 production과 같다.
+        expect(adaptive.totalNetSavedTokens).toBeLessThan(production.totalNetSavedTokens);
+        expect(rerollAware.totalNetSavedTokens).toBe(production.totalNetSavedTokens);
+      }
+    },
+  );
 
   it.each([
     ['11-churn-then-stable', [4, 5]],

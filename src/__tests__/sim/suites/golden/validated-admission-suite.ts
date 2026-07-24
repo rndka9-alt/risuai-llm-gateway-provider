@@ -40,7 +40,7 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     it('영구 hard cap은 write와 함께 기존 순절감도 대부분 포기한다', () => {
       const calibrated = replayResults.filter(
         (result) =>
-          result.kernelName === 'calibrated' &&
+          result.cacheHitSimulatorName === 'calibrated' &&
           result.scenarioId !== '19-large-stable-prefix-admission' &&
           result.scenarioId !== '20-large-prefix-invalidated-after-admission',
       );
@@ -64,7 +64,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('content-addressed 선택적 검증은 전면 검증과 단일 상태보다 순절감을 높인다', () => {
-      const calibrated = replayResults.filter((result) => result.kernelName === 'calibrated');
+      const calibrated = replayResults.filter(
+        (result) => result.cacheHitSimulatorName === 'calibrated',
+      );
       const totalsFor = (policyName: PolicyName) => {
         const policyResults = calibrated.filter((result) => result.policyName === policyName);
         return {
@@ -104,7 +106,9 @@ export function registerValidatedAdmissionPolicyComparisons(): void {
     });
 
     it('한 번 생존 production은 직전 정책보다 read를 회복하면서 공격형보다 write를 억제한다', () => {
-      const calibrated = replayResults.filter((result) => result.kernelName === 'calibrated');
+      const calibrated = replayResults.filter(
+        (result) => result.cacheHitSimulatorName === 'calibrated',
+      );
       const totalsFor = (policyName: PolicyName) => {
         const policyResults = calibrated.filter((result) => result.policyName === policyName);
         return {

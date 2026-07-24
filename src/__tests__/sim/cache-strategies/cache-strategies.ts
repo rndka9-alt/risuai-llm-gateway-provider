@@ -28,7 +28,7 @@ export interface ReplayPolicyContext {
   atMinute: number;
 }
 
-// 새 정책은 이 인터페이스만 구현하면 동일 scenario와 gateway kernel을 재사용한다.
+// 새 정책은 이 인터페이스만 구현하면 동일 scenario와 cache hit simulator를 재사용한다.
 export interface ReplayCachePolicy {
   readonly name: string;
   apply(

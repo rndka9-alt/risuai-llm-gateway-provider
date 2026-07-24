@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel } from '../../cache-hit-simulators';
+import { createCacheHitSimulator } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import { createAppendSweepScenarios, createLongRunScenarios } from '../../scenarios';
 import { createAuthoredNeutralScenarios } from '../../scenarios';
@@ -67,7 +67,7 @@ describe('anchor eviction frontier-protection experiment', () => {
     });
 
     const rows: string[] = [];
-    for (const kernelPreset of ['calibrated', 'pessimistic'] as const) {
+    for (const cacheHitSimulatorPreset of ['calibrated', 'pessimistic'] as const) {
       const totals = new Map<string, { input: number; net: number }>();
       for (const scenario of createLongRunScenarios()) {
         const cells: string[] = [];
@@ -77,7 +77,7 @@ describe('anchor eviction frontier-protection experiment', () => {
         ] as const) {
           pluginStorage.clear();
           const result = await replayScenario({
-            kernel: createFakeGatewayKernel(kernelPreset),
+            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
             policy: createPolicy(),
             scenario,
           });
@@ -89,11 +89,11 @@ describe('anchor eviction frontier-protection experiment', () => {
           totals.set(name, total);
           expect(result.logs.length).toBeGreaterThan(0);
         }
-        rows.push(`[${kernelPreset}] ${scenario.id}: ${cells.join(' ')}`);
+        rows.push(`[${cacheHitSimulatorPreset}] ${scenario.id}: ${cells.join(' ')}`);
       }
       for (const [name, total] of totals) {
         rows.push(
-          `[${kernelPreset}] TOTAL ${name}: net=${total.net.toFixed(0)} net/input=${((total.net / total.input) * 100).toFixed(2)}%`,
+          `[${cacheHitSimulatorPreset}] TOTAL ${name}: net=${total.net.toFixed(0)} net/input=${((total.net / total.input) * 100).toFixed(2)}%`,
         );
       }
     }
@@ -131,7 +131,7 @@ describe('anchor eviction frontier-protection experiment', () => {
       for (const scenario of suiteScenarios) {
         pluginStorage.clear();
         const result = await replayScenario({
-          kernel: createFakeGatewayKernel('calibrated'),
+          cacheHitSimulator: createCacheHitSimulator('calibrated'),
           policy: createProductionCachePolicy(),
           scenario,
         });

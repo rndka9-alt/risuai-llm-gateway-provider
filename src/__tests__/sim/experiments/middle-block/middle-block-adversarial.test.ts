@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createFakeGatewayKernel, type FakeGatewayKernelPreset } from '../../cache-hit-simulators';
+import { createCacheHitSimulator, type CacheHitSimulatorPreset } from '../../cache-hit-simulators';
 import {
   createAdversarialTrajectories,
   type AdversarialScenario,
@@ -13,7 +13,10 @@ import {
 import { createV013SingleSlotCachePolicy } from '../../cache-strategies/v013';
 import { replayScenario, type ReplayResult } from '../../replay';
 
-const KERNEL_PRESETS = ['calibrated', 'pessimistic'] satisfies readonly FakeGatewayKernelPreset[];
+const CACHE_HIT_SIMULATOR_PRESETS = [
+  'calibrated',
+  'pessimistic',
+] satisfies readonly CacheHitSimulatorPreset[];
 
 const ORACLE_POLICY_NAMES = [
   'oracle-shield',
@@ -61,17 +64,17 @@ function stubPluginStorage(): void {
 
 function resultFor(
   scenarioId: string,
-  kernelName: FakeGatewayKernelPreset,
+  cacheHitSimulatorName: CacheHitSimulatorPreset,
   policyName: string,
 ): ReplayResult {
   const result = results.find(
     (candidate) =>
       candidate.scenarioId === scenarioId &&
-      candidate.kernelName === kernelName &&
+      candidate.cacheHitSimulatorName === cacheHitSimulatorName &&
       candidate.policyName === policyName,
   );
   if (result === undefined) {
-    throw new Error(`Missing result for ${scenarioId}/${kernelName}/${policyName}.`);
+    throw new Error(`Missing result for ${scenarioId}/${cacheHitSimulatorName}/${policyName}.`);
   }
   return result;
 }
@@ -99,13 +102,13 @@ function formatTable(
 }
 
 function formatScoreboard(): string {
-  return KERNEL_PRESETS.map((kernelName) =>
+  return CACHE_HIT_SIMULATOR_PRESETS.map((cacheHitSimulatorName) =>
     formatTable(
-      `Middle-block adversarial — ${kernelName} net/input · read · write`,
+      `Middle-block adversarial — ${cacheHitSimulatorName} net/input · read · write`,
       ['scenario', 'policy', 'net/input', 'read', 'write'],
       scenarios.flatMap((scenario) =>
         POLICY_FACTORIES.map((factory) => {
-          const result = resultFor(scenario.id, kernelName, factory.name);
+          const result = resultFor(scenario.id, cacheHitSimulatorName, factory.name);
           return [
             scenario.id,
             factory.name,
@@ -122,13 +125,13 @@ function formatScoreboard(): string {
 beforeAll(async () => {
   stubPluginStorage();
   for (const scenario of scenarios) {
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       for (const factory of POLICY_FACTORIES) {
         pluginStorage.clear();
         stubPluginStorage();
         results.push(
           await replayScenario({
-            kernel: createFakeGatewayKernel(kernelPreset),
+            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
             policy: factory.create(),
             scenario,
           }),
@@ -144,9 +147,9 @@ afterAll(() => {
 });
 
 describe('middle-block adversarial scenarios', () => {
-  it('모든 scenario × kernel × policy 결과를 수집한다', () => {
+  it('모든 scenario × cache hit simulator × policy 결과를 수집한다', () => {
     expect(results).toHaveLength(
-      scenarios.length * KERNEL_PRESETS.length * POLICY_FACTORIES.length,
+      scenarios.length * CACHE_HIT_SIMULATOR_PRESETS.length * POLICY_FACTORIES.length,
     );
   });
 
@@ -169,11 +172,19 @@ describe('middle-block adversarial scenarios', () => {
   });
 
   it('double-tap: 재등장 증거 기반 admission이 shield는 물론 production보다 뒤진다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv-double-tap', kernelPreset, 'production');
-      const shield = resultFor('adv-double-tap', kernelPreset, 'oracle-shield');
-      const fullRecall = resultFor('adv-double-tap', kernelPreset, 'oracle-shield-phase-recall');
-      const ttlAware = resultFor('adv-double-tap', kernelPreset, 'oracle-ttl-recurrence-admitted');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor('adv-double-tap', cacheHitSimulatorPreset, 'production');
+      const shield = resultFor('adv-double-tap', cacheHitSimulatorPreset, 'oracle-shield');
+      const fullRecall = resultFor(
+        'adv-double-tap',
+        cacheHitSimulatorPreset,
+        'oracle-shield-phase-recall',
+      );
+      const ttlAware = resultFor(
+        'adv-double-tap',
+        cacheHitSimulatorPreset,
+        'oracle-ttl-recurrence-admitted',
+      );
 
       // 두 번째 관측 = 마지막 등장이라 admitted write는 전부 죽고, 정작
       // 다음 턴에 확실히 읽혔을 첫 관측 frontier는 보류된다. 증거를 기다리지
@@ -185,10 +196,14 @@ describe('middle-block adversarial scenarios', () => {
   });
 
   it('unique-head: 단독 message hash phase identity가 over-admit으로 최악에 수렴한다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv-unique-head', kernelPreset, 'production');
-      const shield = resultFor('adv-unique-head', kernelPreset, 'oracle-shield');
-      const ttlAware = resultFor('adv-unique-head', kernelPreset, 'oracle-ttl-recurrence-admitted');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor('adv-unique-head', cacheHitSimulatorPreset, 'production');
+      const shield = resultFor('adv-unique-head', cacheHitSimulatorPreset, 'oracle-shield');
+      const ttlAware = resultFor(
+        'adv-unique-head',
+        cacheHitSimulatorPreset,
+        'oracle-ttl-recurrence-admitted',
+      );
 
       // 전체 prefix가 한 번도 반복되지 않는데 X 재등장만 보고 admit한다.
       // cumulative prefix 기반 bank + 백오프를 가진 production은 참여 자체를
@@ -201,10 +216,18 @@ describe('middle-block adversarial scenarios', () => {
   });
 
   it('slow-clock: 요청 수 창이 TTL 초과 재등장을 걸러내지 못한다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const shield = resultFor('adv-slow-clock', kernelPreset, 'oracle-shield');
-      const noWindow = resultFor('adv-slow-clock', kernelPreset, 'oracle-recurrence-admitted');
-      const ttlAware = resultFor('adv-slow-clock', kernelPreset, 'oracle-ttl-recurrence-admitted');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const shield = resultFor('adv-slow-clock', cacheHitSimulatorPreset, 'oracle-shield');
+      const noWindow = resultFor(
+        'adv-slow-clock',
+        cacheHitSimulatorPreset,
+        'oracle-recurrence-admitted',
+      );
+      const ttlAware = resultFor(
+        'adv-slow-clock',
+        cacheHitSimulatorPreset,
+        'oracle-ttl-recurrence-admitted',
+      );
 
       // 거리 4 ≤ 14창이라 창이 아무것도 거르지 않는다(무창 정책과 동일).
       // 주장된 shield-only 후퇴는 일어나지 않는다.
@@ -214,10 +237,18 @@ describe('middle-block adversarial scenarios', () => {
   });
 
   it('fast-clock: 요청 수 창이 TTL 안에 살아있는 재등장 히트를 포기한다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const shield = resultFor('adv-fast-clock', kernelPreset, 'oracle-shield');
-      const fullRecall = resultFor('adv-fast-clock', kernelPreset, 'oracle-shield-phase-recall');
-      const ttlAware = resultFor('adv-fast-clock', kernelPreset, 'oracle-ttl-recurrence-admitted');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const shield = resultFor('adv-fast-clock', cacheHitSimulatorPreset, 'oracle-shield');
+      const fullRecall = resultFor(
+        'adv-fast-clock',
+        cacheHitSimulatorPreset,
+        'oracle-shield-phase-recall',
+      );
+      const ttlAware = resultFor(
+        'adv-fast-clock',
+        cacheHitSimulatorPreset,
+        'oracle-ttl-recurrence-admitted',
+      );
 
       // 거리 16 > 14창이라 admission이 전부 거부돼 shield로 붕괴하지만,
       // 실제 재등장 간격은 24분 < TTL이라 깊은 히트가 실재한다(full recall 우위).
@@ -229,12 +260,12 @@ describe('middle-block adversarial scenarios', () => {
   it('보완판(wallclock): unique-head와 slow-clock에서 shield로 정확히 후퇴한다', () => {
     // cumulative prefix identity가 unique-head의 over-admit을, wall-clock 창이
     // slow-clock의 TTL 초과 admit을 각각 막아 안전 바닥(shield)에 안착한다.
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       for (const scenarioId of ['adv-unique-head', 'adv-slow-clock']) {
-        const shield = resultFor(scenarioId, kernelPreset, 'oracle-shield');
+        const shield = resultFor(scenarioId, cacheHitSimulatorPreset, 'oracle-shield');
         const wallClock = resultFor(
           scenarioId,
-          kernelPreset,
+          cacheHitSimulatorPreset,
           'oracle-wallclock-recurrence-admitted',
         );
         expect(wallClock.totalNetSavedTokens).toBeCloseTo(shield.totalNetSavedTokens);
@@ -246,18 +277,18 @@ describe('middle-block adversarial scenarios', () => {
     // 주기 24분 < TTL이므로 admit이 정답. 요청 수 창(14)은 거리 16을 영원히
     // 거부해 shield에 갇히고, wall-clock 창은 학습비 회수 구간(96요청)에서
     // production까지 넘어선다.
-    for (const kernelPreset of KERNEL_PRESETS) {
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
       const requestCountWindow = resultFor(
         'adv-fast-clock-long',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-ttl-recurrence-admitted',
       );
       const wallClock = resultFor(
         'adv-fast-clock-long',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-wallclock-recurrence-admitted',
       );
-      const production = resultFor('adv-fast-clock-long', kernelPreset, 'production');
+      const production = resultFor('adv-fast-clock-long', cacheHitSimulatorPreset, 'production');
       expect(wallClock.totalNetSavedTokens).toBeGreaterThan(
         requestCountWindow.totalNetSavedTokens * 3,
       );
@@ -266,12 +297,12 @@ describe('middle-block adversarial scenarios', () => {
   });
 
   it('dual-rotator: 단일 phase 블록 가정이 구조 diff 기반 production에 크게 뒤진다', () => {
-    for (const kernelPreset of KERNEL_PRESETS) {
-      const production = resultFor('adv-dual-rotator', kernelPreset, 'production');
-      const shield = resultFor('adv-dual-rotator', kernelPreset, 'oracle-shield');
+    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
+      const production = resultFor('adv-dual-rotator', cacheHitSimulatorPreset, 'production');
+      const shield = resultFor('adv-dual-rotator', cacheHitSimulatorPreset, 'oracle-shield');
       const ttlAware = resultFor(
         'adv-dual-rotator',
-        kernelPreset,
+        cacheHitSimulatorPreset,
         'oracle-ttl-recurrence-admitted',
       );
 

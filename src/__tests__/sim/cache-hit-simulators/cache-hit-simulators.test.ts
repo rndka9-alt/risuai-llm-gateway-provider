@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OpenAIChatCompletionsFormat, type JsonObject, type LlmMessage } from 'llm-io';
 import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
 import { planCacheAnchors } from '../../../cache/planner/plan-cache-anchors';
-import { createFakeGatewayKernel } from './cache-hit-simulators';
+import { createCacheHitSimulator } from './cache-hit-simulators';
 
 function createMarkedSystemMessage(segments: readonly string[]): LlmMessage {
   return {
@@ -42,11 +42,11 @@ function serialize(messages: readonly LlmMessage[], promptCacheKey: string): Jso
   }).createRequestBody({ messages });
 }
 
-describe('calibrated fake gateway contracts', () => {
+describe('calibrated cache hit simulator contracts', () => {
   it('cold 중첩 breakpoint는 prefix 합이 아니라 최심 union만 write한다', () => {
-    const kernel = createFakeGatewayKernel('calibrated');
+    const cacheHitSimulator = createCacheHitSimulator('calibrated');
     const key = 'nested-union';
-    const accounting = kernel.process({
+    const accounting = cacheHitSimulator.process({
       atMinute: 0,
       promptCacheKey: key,
       requestBody: serialize(
@@ -69,10 +69,10 @@ describe('calibrated fake gateway contracts', () => {
   });
 
   it('기존 P1 read와 P3-P1 증분 write를 같은 요청에 회계한다', () => {
-    const kernel = createFakeGatewayKernel('calibrated');
+    const cacheHitSimulator = createCacheHitSimulator('calibrated');
     const key = 'incremental-write';
     const segments = ['D'.repeat(5_000), 'E'.repeat(5_000), 'F'.repeat(5_000)];
-    const seed = kernel.process({
+    const seed = cacheHitSimulator.process({
       atMinute: 0,
       promptCacheKey: key,
       requestBody: serialize(
@@ -80,7 +80,7 @@ describe('calibrated fake gateway contracts', () => {
         key,
       ),
     });
-    const growth = kernel.process({
+    const growth = cacheHitSimulator.process({
       atMinute: 1,
       promptCacheKey: key,
       requestBody: serialize(
@@ -97,16 +97,16 @@ describe('calibrated fake gateway contracts', () => {
   });
 
   it('prompt_cache_key가 64자를 넘으면 거부한다', () => {
-    const kernel = createFakeGatewayKernel('calibrated');
+    const cacheHitSimulator = createCacheHitSimulator('calibrated');
     const key = 'K'.repeat(65);
     const requestBody = serialize(
       [createMarkedSystemMessage(['G'.repeat(5_000)]), createUserMessage('oversized key')],
       key,
     );
 
-    expect(() => kernel.process({ atMinute: 0, promptCacheKey: key, requestBody })).toThrow(
-      'prompt_cache_key exceeds 64 characters',
-    );
+    expect(() =>
+      cacheHitSimulator.process({ atMinute: 0, promptCacheKey: key, requestBody }),
+    ).toThrow('prompt_cache_key exceeds 64 characters');
   });
 
   it('planner가 통과시킨 비ASCII prefix를 독립 tokenizer는 1024 미달로 거부할 수 있다', () => {
@@ -116,7 +116,7 @@ describe('calibrated fake gateway contracts', () => {
     const plan = planCacheAnchors(confirmedPlan.nextState, messages);
     const markedMessages = markCacheBreakpoints(messages, plan);
     const key = 'tokenizer-separation';
-    const accounting = createFakeGatewayKernel('calibrated').process({
+    const accounting = createCacheHitSimulator('calibrated').process({
       atMinute: 0,
       promptCacheKey: key,
       requestBody: serialize(markedMessages, key),
@@ -133,9 +133,9 @@ describe('calibrated fake gateway contracts', () => {
     // R1/R2와 같은 모양이며, 실서버가 cached 0(exact 매칭)으로 실측 확정됐다.
     // 따라서 optimistic preset도 exact로 동작해야 하고, partial-prefix는
     // 가상 서버 탐구용 override로만 열린다.
-    const exactKernel = createFakeGatewayKernel('calibrated');
-    const optimisticKernel = createFakeGatewayKernel('optimistic');
-    const partialKernel = createFakeGatewayKernel('optimistic', {
+    const exactSimulator = createCacheHitSimulator('calibrated');
+    const optimisticSimulator = createCacheHitSimulator('optimistic');
+    const partialSimulator = createCacheHitSimulator('optimistic', {
       markerMatchMode: 'partial-prefix',
     });
     const key = 'partial-prefix';
@@ -154,21 +154,21 @@ describe('calibrated fake gateway contracts', () => {
       ],
       key,
     );
-    exactKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
-    optimisticKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
-    partialKernel.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
+    exactSimulator.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
+    optimisticSimulator.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
+    partialSimulator.process({ atMinute: 0, promptCacheKey: key, requestBody: seedBody });
 
-    const exactBranch = exactKernel.process({
+    const exactBranch = exactSimulator.process({
       atMinute: 1,
       promptCacheKey: key,
       requestBody: branchBody,
     });
-    const optimisticBranch = optimisticKernel.process({
+    const optimisticBranch = optimisticSimulator.process({
       atMinute: 1,
       promptCacheKey: key,
       requestBody: branchBody,
     });
-    const partialBranch = partialKernel.process({
+    const partialBranch = partialSimulator.process({
       atMinute: 1,
       promptCacheKey: key,
       requestBody: branchBody,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeGatewayKernel } from '../../cache-hit-simulators';
+import { createCacheHitSimulator } from '../../cache-hit-simulators';
 import { createCanonicalScenarios } from '../../scenarios';
 import { replayScenario } from '../../replay';
 import {
@@ -14,7 +14,7 @@ interface ExpectedV013Score {
   totalWriteTokens: number;
 }
 
-// Commit 3f3d7733 worktree 정책을 현재 27종 scenario에서 calibrated kernel로
+// Commit 3f3d7733 worktree 정책을 현재 27종 scenario에서 calibrated simulator로
 // replay한 값이다. 22 fixture 재설계 외 26종은 기존 실측값을 그대로 유지하며,
 // 벤더 로직이나 다른 fixture가 drift하면 시나리오 단위로 잡는다.
 const EXPECTED_V013_SCORES: readonly ExpectedV013Score[] = [
@@ -193,7 +193,7 @@ describe('v0.13 single-slot production fidelity', () => {
     const actualScores: ExpectedV013Score[] = [];
     for (const scenario of scenarios) {
       const result = await replayScenario({
-        kernel: createFakeGatewayKernel('calibrated'),
+        cacheHitSimulator: createCacheHitSimulator('calibrated'),
         policy: createV013SingleSlotCachePolicy(),
         scenario,
       });

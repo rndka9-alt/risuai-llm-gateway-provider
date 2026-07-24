@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { JsonObject, JsonValue } from 'llm-io';
 
-export type FakeGatewayKernelPreset = 'calibrated' | 'pessimistic' | 'optimistic';
+export type CacheHitSimulatorPreset = 'calibrated' | 'pessimistic' | 'optimistic';
 export type CacheWindowScope = 'per-key' | 'global';
 export type MarkerMatchMode = 'exact' | 'partial-prefix';
-export type KernelTokenizer = (text: string) => number;
+export type CacheHitSimulatorTokenizer = (text: string) => number;
 
-export interface FakeGatewayKernelOptions {
+export interface CacheHitSimulatorOptions {
   hardExpiry: boolean;
   infiniteTtl: boolean;
   markerMatchMode: MarkerMatchMode;
@@ -14,19 +14,19 @@ export interface FakeGatewayKernelOptions {
   minimumCacheablePrefixTokens: number;
   postMinimumSurvivalProbability: number;
   refreshTtlOnRead: boolean;
-  tokenizer: KernelTokenizer;
+  tokenizer: CacheHitSimulatorTokenizer;
   ttlMinutes: number;
   windowScope: CacheWindowScope;
   windowSize: number;
 }
 
-export interface FakeGatewayRequest {
+export interface CacheHitSimulationRequest {
   atMinute: number;
   promptCacheKey: string;
   requestBody: JsonObject;
 }
 
-export interface FakeGatewayAccounting {
+export interface CacheHitSimulationResult {
   inputTokens: number;
   markerPrefixTokens: readonly number[];
   readTokens: number;
@@ -50,11 +50,12 @@ interface CacheEntry {
   sequence: number;
 }
 
-const DEFAULT_KERNEL_TOKENIZER: KernelTokenizer = (text) => Math.ceil(text.length / 4);
+const DEFAULT_CACHE_HIT_SIMULATOR_TOKENIZER: CacheHitSimulatorTokenizer = (text) =>
+  Math.ceil(text.length / 4);
 
 // TTL 실측(probe --ttl, 2026-07): 29분 hit / 31·45·60분 miss로 무접근 시 30분
 // 하드 만료가 확인됐고, 25분 hit 후 45분 hit로 히트 시 수명 갱신이 확인됐다.
-const CALIBRATED_OPTIONS: FakeGatewayKernelOptions = {
+const CALIBRATED_OPTIONS: CacheHitSimulatorOptions = {
   hardExpiry: true,
   infiniteTtl: false,
   markerMatchMode: 'exact',
@@ -62,17 +63,17 @@ const CALIBRATED_OPTIONS: FakeGatewayKernelOptions = {
   minimumCacheablePrefixTokens: 1024,
   postMinimumSurvivalProbability: 0,
   refreshTtlOnRead: true,
-  tokenizer: DEFAULT_KERNEL_TOKENIZER,
+  tokenizer: DEFAULT_CACHE_HIT_SIMULATOR_TOKENIZER,
   ttlMinutes: 30,
   windowScope: 'per-key',
   windowSize: 50,
 };
 
-const PESSIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
+const PESSIMISTIC_OPTIONS: CacheHitSimulatorOptions = {
   ...CALIBRATED_OPTIONS,
   hardExpiry: true,
   postMinimumSurvivalProbability: 0,
-  // 히트 갱신은 실측으로 확인됐지만, 비관 커널은 갱신이 없는 세계도 계속 커버한다.
+  // 히트 갱신은 실측으로 확인됐지만, 비관 simulator는 갱신이 없는 세계도 계속 커버한다.
   refreshTtlOnRead: false,
   windowScope: 'global',
 };
@@ -81,7 +82,7 @@ const PESSIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
 // marker prefix가 entry prefix와 정확히 일치할 때만 read·write 공제 — R2/R3/R4
 // cached 0, R5만 히트) 더 이상 불확실성 축이 아니다. optimistic은 TTL·생존
 // 가정만 낙관한다. partial-prefix 모드는 가상 서버 탐구용으로만 남긴다.
-const OPTIMISTIC_OPTIONS: FakeGatewayKernelOptions = {
+const OPTIMISTIC_OPTIONS: CacheHitSimulatorOptions = {
   ...CALIBRATED_OPTIONS,
   infiniteTtl: true,
   postMinimumSurvivalProbability: 1,
@@ -173,23 +174,23 @@ function deterministicUnitInterval(value: string): number {
   return Number.parseInt(hashPrefix, 16) / 0xffffffff;
 }
 
-function optionsForPreset(preset: FakeGatewayKernelPreset): FakeGatewayKernelOptions {
+function optionsForPreset(preset: CacheHitSimulatorPreset): CacheHitSimulatorOptions {
   if (preset === 'calibrated') return CALIBRATED_OPTIONS;
   if (preset === 'pessimistic') return PESSIMISTIC_OPTIONS;
   return OPTIMISTIC_OPTIONS;
 }
 
-// planner는 ASCII/4 + 비ASCII/2를 사용하지만 gateway kernel은 의도적으로
+// planner는 ASCII/4 + 비ASCII/2를 사용하지만 cache hit simulator는 의도적으로
 // 고정 문자수/4 tokenizer를 쓴다. 두 추정기를 공유하면 1024-token guard의
 // 오판을 시뮬레이터가 스스로 숨기는 순환 검증이 된다.
-export class FakeGatewayKernel {
-  readonly name: FakeGatewayKernelPreset;
-  readonly options: FakeGatewayKernelOptions;
+export class CacheHitSimulator {
+  readonly name: CacheHitSimulatorPreset;
+  readonly options: CacheHitSimulatorOptions;
   private readonly entries: CacheEntry[] = [];
   private lastRequestMinute = 0;
   private nextSequence = 0;
 
-  constructor(preset: FakeGatewayKernelPreset, overrides: Partial<FakeGatewayKernelOptions> = {}) {
+  constructor(preset: CacheHitSimulatorPreset, overrides: Partial<CacheHitSimulatorOptions> = {}) {
     this.name = preset;
     this.options = { ...optionsForPreset(preset), ...overrides };
     if (
@@ -200,9 +201,9 @@ export class FakeGatewayKernel {
     }
   }
 
-  process(request: FakeGatewayRequest): FakeGatewayAccounting {
+  process(request: CacheHitSimulationRequest): CacheHitSimulationResult {
     if (request.atMinute < this.lastRequestMinute) {
-      throw new Error('Fake gateway request time must be monotonic.');
+      throw new Error('Cache hit simulation request time must be monotonic.');
     }
     this.lastRequestMinute = request.atMinute;
     if (request.promptCacheKey.length > this.options.maximumPromptCacheKeyLength) {
@@ -346,9 +347,9 @@ export class FakeGatewayKernel {
   }
 }
 
-export function createFakeGatewayKernel(
-  preset: FakeGatewayKernelPreset,
-  overrides: Partial<FakeGatewayKernelOptions> = {},
-): FakeGatewayKernel {
-  return new FakeGatewayKernel(preset, overrides);
+export function createCacheHitSimulator(
+  preset: CacheHitSimulatorPreset,
+  overrides: Partial<CacheHitSimulatorOptions> = {},
+): CacheHitSimulator {
+  return new CacheHitSimulator(preset, overrides);
 }

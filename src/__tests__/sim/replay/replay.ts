@@ -2,10 +2,10 @@ import type { JsonObject, LlmMessage } from 'llm-io';
 import type { SimulationScenario } from '../scenarios';
 import { OpenAIChatCompletionsFormat } from 'llm-io';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../ledger';
-import { FakeGatewayKernel, type FakeGatewayAccounting } from '../cache-hit-simulators';
+import { CacheHitSimulator, type CacheHitSimulationResult } from '../cache-hit-simulators';
 import type { ReplayCachePolicy } from '../cache-strategies';
 
-export interface ReplayRequestLog extends FakeGatewayAccounting {
+export interface ReplayRequestLog extends CacheHitSimulationResult {
   anchorIndexes: readonly number[];
   atMinute: number;
   consecutiveEpochResets: number;
@@ -19,7 +19,7 @@ export interface ReplayRequestLog extends FakeGatewayAccounting {
 }
 
 export interface ReplayResult {
-  kernelName: string;
+  cacheHitSimulatorName: string;
   logs: readonly ReplayRequestLog[];
   policyName: string;
   totalInputTokens: number;
@@ -52,11 +52,11 @@ function calculateRequestNetSavedTokens(readTokens: number, writeTokens: number)
 }
 
 export async function replayScenario(options: {
-  kernel: FakeGatewayKernel;
+  cacheHitSimulator: CacheHitSimulator;
   policy: ReplayCachePolicy;
   scenario: SimulationScenario;
 }): Promise<ReplayResult> {
-  const { kernel, policy, scenario } = options;
+  const { cacheHitSimulator, policy, scenario } = options;
   const logs: ReplayRequestLog[] = [];
   let atMinute = 0;
 
@@ -78,7 +78,7 @@ export async function replayScenario(options: {
       },
     });
     const requestBody = format.createRequestBody({ messages: decision.messages });
-    const accounting = kernel.process({
+    const accounting = cacheHitSimulator.process({
       atMinute,
       promptCacheKey: decision.promptCacheKey,
       requestBody,
@@ -99,7 +99,7 @@ export async function replayScenario(options: {
   }
 
   return {
-    kernelName: kernel.name,
+    cacheHitSimulatorName: cacheHitSimulator.name,
     logs,
     policyName: policy.name,
     totalInputTokens: logs.reduce((total, log) => total + log.inputTokens, 0),

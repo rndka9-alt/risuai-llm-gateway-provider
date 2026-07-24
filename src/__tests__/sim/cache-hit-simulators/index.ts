@@ -1,11 +1,11 @@
 export {
-  createFakeGatewayKernel,
-  FakeGatewayKernel,
+  CacheHitSimulator,
+  createCacheHitSimulator,
   type CacheWindowScope,
-  type FakeGatewayAccounting,
-  type FakeGatewayKernelOptions,
-  type FakeGatewayKernelPreset,
-  type FakeGatewayRequest,
-  type KernelTokenizer,
+  type CacheHitSimulationRequest,
+  type CacheHitSimulationResult,
+  type CacheHitSimulatorOptions,
+  type CacheHitSimulatorPreset,
+  type CacheHitSimulatorTokenizer,
   type MarkerMatchMode,
 } from './cache-hit-simulators';

@@ -34,9 +34,9 @@ npm run test:sim  # 캐싱 효율 측정 (src/__tests__/sim/) — 캐시 정책 
 npm run test:all  # 둘 다
 ```
 
-- `src/__tests__/sim/`은 fake gateway 커널 위에서 canonical scenario를 replay해 정책별 절감
-  토큰을 집계하는 벤치마크 하네스다. 정책 × 시나리오 × 커널 조합이라 실행 시간이 기능 테스트의
-  10배를 넘으므로(실측 21초 vs 2초) 기본 `npm test`에서 제외한다.
+- `src/__tests__/sim/`은 cache hit simulator 위에서 canonical scenario를 replay해 정책별 절감
+  토큰을 집계하는 벤치마크 하네스다. 정책 × 시나리오 × cache hit simulator 조합이라 실행
+  시간이 기능 테스트의 10배를 넘으므로(실측 21초 vs 2초) 기본 `npm test`에서 제외한다.
 - **캐싱 효율을 측정·비교할 때만** `npm run test:sim`을 쓴다. 대상은 `src/cache/`의 breakpoint
   배치·앵커 선택·축출 규칙, `ledger.ts`의 손익 산식처럼 절감량 자체를 바꾸는 변경이다.
   이 경로를 건드리지 않는 변경은 `npm test`로 충분하다.
@@ -76,7 +76,7 @@ npm run test:all  # 둘 다
 소비자는 `scenarios` 폴더 경로로 import한다. `scenarios/index.ts`에는 `scenarios.ts`의
 공개 심볼을 named re-export하는 선언만 두고, 폴더명과 같은 `scenarios/scenarios.ts`가
 모듈의 주인공 역할을 맡는다. 시나리오는 요청 메시지·시간 간격·식별자처럼 replay할 입력만
-소유하고, 커널·정책·assertion·report는 소유하지 않는다.
+소유하고, cache hit simulator·정책·assertion·report는 소유하지 않는다.
 구현은 `scenarios/internal/` 아래 canonical·long-run·neutral로 나눈다. `suites/golden/`은
 이 입력에 고정 기대값을 적용하는 golden 회귀 테스트이며, 시나리오 자체의 분류가 아니다.
 

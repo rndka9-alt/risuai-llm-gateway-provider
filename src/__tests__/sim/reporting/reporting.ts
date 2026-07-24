@@ -1,6 +1,6 @@
 import type { ReplayResult } from '../replay';
 
-const SCOREBOARD_KERNELS = ['calibrated', 'pessimistic', 'optimistic'];
+const SCOREBOARD_CACHE_HIT_SIMULATORS = ['calibrated', 'pessimistic', 'optimistic'];
 const MULTI_ROOM_SCENARIO_IDS: ReadonlySet<string> = new Set([
   '15-multi-room-roundrobin',
   '16-group-speaker-rotation',
@@ -49,7 +49,7 @@ function createScoreIndex(
   results.forEach((result) => {
     const scenarioScores = index.get(result.scenarioId) ?? new Map();
     const policyScores = scenarioScores.get(result.policyName) ?? new Map();
-    policyScores.set(result.kernelName, result.totalNetSavedTokens);
+    policyScores.set(result.cacheHitSimulatorName, result.totalNetSavedTokens);
     scenarioScores.set(result.policyName, policyScores);
     index.set(result.scenarioId, scenarioScores);
   });
@@ -61,7 +61,9 @@ function formatScore(score: number | undefined): string {
 }
 
 function formatPolicyTotals(results: readonly ReplayResult[]): string {
-  const calibratedResults = results.filter((result) => result.kernelName === 'calibrated');
+  const calibratedResults = results.filter(
+    (result) => result.cacheHitSimulatorName === 'calibrated',
+  );
   const scopes = [
     {
       label: 'multi-room (15/16/21/22)',
@@ -132,27 +134,30 @@ function formatRankingReversals(
       ) {
         const leftPolicy = SCOREBOARD_POLICIES[leftIndex];
         const rightPolicy = SCOREBOARD_POLICIES[rightIndex];
-        const comparisons = SCOREBOARD_KERNELS.map((kernel) => {
-          const leftScore = scenarioScores.get(leftPolicy)?.get(kernel);
-          const rightScore = scenarioScores.get(rightPolicy)?.get(kernel);
+        const comparisons = SCOREBOARD_CACHE_HIT_SIMULATORS.map((cacheHitSimulator) => {
+          const leftScore = scenarioScores.get(leftPolicy)?.get(cacheHitSimulator);
+          const rightScore = scenarioScores.get(rightPolicy)?.get(cacheHitSimulator);
           if (leftScore === undefined || rightScore === undefined) return 0;
           return Math.sign(leftScore - rightScore);
         });
         if (!comparisons.includes(-1) || !comparisons.includes(1)) continue;
 
-        const comparisonSummary = SCOREBOARD_KERNELS.map((kernel, kernelIndex) => {
-          const comparison = comparisons[kernelIndex];
-          const relation = comparison > 0 ? '>' : comparison < 0 ? '<' : '=';
-          return `${kernel}:${leftPolicy}${relation}${rightPolicy}`;
-        }).join(', ');
+        const comparisonSummary = SCOREBOARD_CACHE_HIT_SIMULATORS.map(
+          (cacheHitSimulator, cacheHitSimulatorIndex) => {
+            const comparison = comparisons[cacheHitSimulatorIndex];
+            const relation = comparison > 0 ? '>' : comparison < 0 ? '<' : '=';
+            return `${cacheHitSimulator}:${leftPolicy}${relation}${rightPolicy}`;
+          },
+        ).join(', ');
         reversals.push(`- ${scenarioId} ${labels.get(scenarioId)}: ${comparisonSummary}`);
       }
     }
   });
 
-  return ['Kernel ranking reversals', ...(reversals.length === 0 ? ['- none'] : reversals)].join(
-    '\n',
-  );
+  return [
+    'Cache hit simulator ranking reversals',
+    ...(reversals.length === 0 ? ['- none'] : reversals),
+  ].join('\n');
 }
 
 export function formatScoreboard(results: readonly ReplayResult[]): string {
@@ -174,7 +179,9 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
     const productionScores = scores.get(scenarioId)?.get('production');
     return [
       scenarioLabel(scenarioId),
-      ...SCOREBOARD_KERNELS.map((kernel) => formatScore(productionScores?.get(kernel))),
+      ...SCOREBOARD_CACHE_HIT_SIMULATORS.map((cacheHitSimulator) =>
+        formatScore(productionScores?.get(cacheHitSimulator)),
+      ),
     ];
   });
   const policyRows = scenarioOrder.map((scenarioId) => {
@@ -190,8 +197,8 @@ export function formatScoreboard(results: readonly ReplayResult[]): string {
   return [
     formatPolicyTotals(results),
     formatTable(
-      'Production by kernel (net token equivalents)',
-      ['scenario', ...SCOREBOARD_KERNELS],
+      'Production by cache hit simulator (net token equivalents)',
+      ['scenario', ...SCOREBOARD_CACHE_HIT_SIMULATORS],
       productionRows,
     ),
     formatTable(
