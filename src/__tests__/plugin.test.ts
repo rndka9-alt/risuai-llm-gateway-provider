@@ -77,6 +77,26 @@ function createStreamingResponse(textDeltas: readonly string[] = ['hel', 'lo']):
   });
 }
 
+function createReasoningOnlyStreamingResponse(): Response {
+  const serializedEvents = [
+    `data: ${JSON.stringify({
+      choices: [{ delta: { reasoning_content: 'thinking hard' }, index: 0 }],
+    })}`,
+    `data: ${JSON.stringify({
+      choices: [{ delta: {}, finish_reason: 'length', index: 0 }],
+    })}`,
+    `data: ${JSON.stringify({
+      choices: [],
+      usage: { completion_tokens: 1000, prompt_tokens: 1500, total_tokens: 2500 },
+    })}`,
+    'data: [DONE]',
+  ];
+  return new Response(serializedEvents.join('\n\n'), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
+
 function createAbortingStreamingResponse(abortController: AbortController): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>(
@@ -560,6 +580,34 @@ describe('streaming modes', () => {
     const response = await harness.provider(createProviderArguments());
 
     expect(response).toEqual({ success: true, content: 'legacy' });
+  });
+
+  it('decoupled에서 reasoning만으로 끝난 빈 응답은 원인 안내와 함께 실패로 반환한다', async () => {
+    const harness = await loadProvider([createReasoningOnlyStreamingResponse()], {
+      streaming_mode: 'decoupled',
+    });
+
+    const response = await harness.provider(createProviderArguments());
+
+    expect(response.success).toBe(false);
+    expect(response.content).toContain('내부 추론(reasoning)에 출력 한도를 모두 사용');
+    expect(response.content).toContain('"finishReason": "length"');
+    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
+  });
+
+  it('decoupled에서 스트림 이벤트가 없는 200 응답은 형식 문제 안내와 함께 실패로 반환한다', async () => {
+    const nonSseResponse = new Response(
+      JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const harness = await loadProvider([nonSseResponse], {
+      streaming_mode: 'decoupled',
+    });
+
+    const response = await harness.provider(createProviderArguments());
+
+    expect(response.success).toBe(false);
+    expect(response.content).toContain('스트림 이벤트를 하나도 읽지 못했어요');
   });
 
   it('decoupled 소비 중 abort되면 실패하고 앵커와 원장을 저장하지 않는다', async () => {

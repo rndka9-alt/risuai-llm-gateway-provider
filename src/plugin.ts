@@ -2,6 +2,7 @@ import {
   Llm,
   LLMGatewayProvider,
   OpenAIChatCompletionsFormat,
+  type LlmFinishReason,
   type LlmMessage,
   type LlmRequestOptions,
   type LlmUsage,
@@ -31,7 +32,7 @@ import {
 } from './config';
 import { toLlmMessages } from './convert';
 import { applyCustomExtraBody } from './extra-body';
-import { toFailureContent } from './failure-content';
+import { toEmptyStreamFailureContent, toFailureContent } from './failure-content';
 import { accumulateCacheUsage } from './ledger';
 import {
   DEFAULT_MODEL,
@@ -69,6 +70,9 @@ interface GatewayRequestContext {
 }
 
 interface StreamConsumptionResult {
+  finishReason: LlmFinishReason | undefined;
+  reasoningDeltaCount: number;
+  streamEventCount: number;
   text: string;
   usage: LlmUsage | undefined;
 }
@@ -88,6 +92,9 @@ async function consumeGatewayStream(
   const reader = stream.getReader();
   let text = '';
   let usage: LlmUsage | undefined;
+  let finishReason: LlmFinishReason | undefined;
+  let reasoningDeltaCount = 0;
+  let streamEventCount = 0;
 
   try {
     while (true) {
@@ -97,12 +104,26 @@ async function consumeGatewayStream(
       if (result.done) break;
 
       const event = result.value;
+      // 'done'은 파서가 스트림 종료 시 항상 합성하므로, 와이어에서 실제로 chunk를
+      // 받았는지 판별하는 카운트에서는 제외한다.
+      if (event.type !== 'done') {
+        streamEventCount += 1;
+      }
       if (event.type === 'text-delta') {
         text += event.text;
+      } else if (event.type === 'reasoning-delta') {
+        reasoningDeltaCount += 1;
+      } else if (event.type === 'finish') {
+        finishReason = event.finishReason;
       } else if (event.type === 'usage') {
         usage = event.usage;
-      } else if (event.type === 'done' && event.usage !== undefined) {
-        usage = event.usage;
+      } else if (event.type === 'done') {
+        if (event.usage !== undefined) {
+          usage = event.usage;
+        }
+        if (event.finishReason !== undefined) {
+          finishReason = event.finishReason;
+        }
       }
     }
   } finally {
@@ -115,7 +136,7 @@ async function consumeGatewayStream(
     }
   }
 
-  return { text, usage };
+  return { finishReason, reasoningDeltaCount, streamEventCount, text, usage };
 }
 
 async function completeSuccessfulRequest(
@@ -219,6 +240,7 @@ async function requestLLMGateway(
     if (streamingMode === 'decoupled') {
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
       const result = await consumeGatewayStream(context);
+      // 빈 응답도 과금과 서버측 캐시 쓰기가 끝난 요청이므로 앵커·원장 상태는 커밋한다.
       await completeSuccessfulRequest(
         cacheRequest.pendingCommit,
         result.usage,
@@ -226,6 +248,17 @@ async function requestLLMGateway(
         model,
         serviceTier,
       );
+      if (result.text === '') {
+        return {
+          success: false,
+          content: toEmptyStreamFailureContent({
+            finishReason: result.finishReason,
+            reasoningDeltaCount: result.reasoningDeltaCount,
+            streamEventCount: result.streamEventCount,
+            usage: result.usage,
+          }),
+        };
+      }
       return { success: true, content: result.text };
     }
 

@@ -1,4 +1,4 @@
-import { LlmHttpError } from 'llm-io';
+import { LlmHttpError, type LlmUsage } from 'llm-io';
 import { BridgeFetchError } from './bridge-fetch';
 
 const CONTINUED_FAILURE_GUIDANCE =
@@ -145,6 +145,34 @@ function withFailureDetails(summary: string, detail: string, status?: number): s
   return detail === ''
     ? `${summary}\n${guidance}\n\n${detailsTitle}`
     : `${summary}\n${guidance}\n\n${detailsTitle}\n${detail}`;
+}
+
+export interface EmptyStreamDiagnostics {
+  finishReason: string | undefined;
+  reasoningDeltaCount: number;
+  streamEventCount: number;
+  usage: LlmUsage | undefined;
+}
+
+/** 내용 없이 끝난 스트림을 무음 성공 대신 원인별 실패 안내로 바꿉니다. */
+export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics): string {
+  const detail = serializeObject(diagnostics);
+
+  if (diagnostics.finishReason === 'length' && diagnostics.reasoningDeltaCount > 0) {
+    return withFailureDetails(
+      '모델이 내부 추론(reasoning)에 출력 한도를 모두 사용해서 본문 없이 끝났어요.\n' +
+        'RisuAI의 응답 최대 토큰을 늘리거나, 플러그인 설정에서 reasoning 수준을 낮춰 보세요.',
+      detail,
+    );
+  }
+  if (diagnostics.streamEventCount === 0) {
+    return withFailureDetails(
+      'LLM Gateway 응답에서 스트림 이벤트를 하나도 읽지 못했어요.\n' +
+        '응답 본문이 비었거나 예상한 형식(SSE)이 아닐 수 있어요.',
+      detail,
+    );
+  }
+  return withFailureDetails('LLM Gateway 응답이 내용 없이 끝났어요.', detail);
 }
 
 /** 사용자에게 오류 종류를 구분해 알리되 Gateway·브릿지 원문은 그대로 보존합니다. */

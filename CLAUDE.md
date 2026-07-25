@@ -231,6 +231,9 @@ npm run test:all  # 둘 다
   Responses 지원은 llm-io에 경로 매핑을 추가하면 가능 — 보류 상태.
 - **스트리밍 2모드**: `off`는 `generate()`, `decoupled`는 `stream()`을 끝까지 소비한 완성 문자열을
   반환한다. streaming usage와 앵커 상태는 완료 시 반영한다. 과거 `stream` 저장값은 `decoupled`로 정규화한다.
+  decoupled에서 text-delta가 0개면(reasoning-only 토큰 소진, 비SSE 200 본문 등) 무음 빈 성공 대신
+  finishReason·이벤트 수 진단을 담은 실패를 반환한다 (`toEmptyStreamFailureContent`). 빈 응답도
+  과금과 서버측 캐시 쓰기는 끝난 요청이므로 앵커·원장 커밋은 유지한다 — 재시도가 캐시 read 이득을 본다.
 - **미디어 flags 비활성화**: `convert.ts`가 텍스트 전용이므로 Image/Audio/Video flags는 설정 UI에서
   disabled 상태다. 멀티모달 변환 구현 전 활성화하면 데이터가 조용히 유실될 수 있다.
 
