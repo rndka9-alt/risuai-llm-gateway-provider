@@ -38,7 +38,7 @@ npm run test:all  # 둘 다
   토큰을 집계하는 벤치마크 하네스다. 정책 × 시나리오 × cache hit simulator 조합이라 실행
   시간이 기능 테스트의 10배를 넘으므로(실측 21초 vs 2초) 기본 `npm test`에서 제외한다.
 - **캐싱 효율을 측정·비교할 때만** `npm run test:sim`을 쓴다. 대상은 `src/cache/`의 breakpoint
-  배치·앵커 선택·축출 규칙, `ledger.ts`의 손익 산식처럼 절감량 자체를 바꾸는 변경이다.
+  배치·앵커 선택·축출 규칙, `ledger/savings.ts`의 손익 산식처럼 절감량 자체를 바꾸는 변경이다.
   이 경로를 건드리지 않는 변경은 `npm test`로 충분하다.
 - sim은 실험 기록인 동시에 회귀망이다. `v013-single-slot.test.ts`는 기대 점수를 고정해 두므로
   정책을 의도적으로 바꿨다면 점수 갱신이 함께 필요하다.
@@ -107,7 +107,8 @@ npm run test:all  # 둘 다
   오류 직렬화는 `internal/`이 담당한다
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache/` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
-- `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
+- `src/ledger/` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산).
+  손익 산식은 `savings.ts`, 영속화는 `storage.ts`, 설정 UI가 구독하는 런타임 snapshot은 `snapshot.ts`가 맡는다
 - `src/options/` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자.
   관심사별 파일(`model`, `reasoning-effort`, `verbosity`, `streaming-mode`, `service-tier`, `llm-flags`)로 나뉜다
 - `src/json-editor/` — 스키마 기반 JSON 에디터 코어 (구문·스키마 진단, breadcrumb, 자동완성, format).
@@ -202,7 +203,7 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
   (후속: 응답 usage.inputTokens 기반 런타임 보정)
 - 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상된 index·slot은 빈 뱅크로 자가 회복.
 
-## 캐시 손익 원장 (ledger.ts)
+## 캐시 손익 원장 (`src/ledger/`)
 
 - 토큰 등가 순절감은 `0.9 × readTokens − 0.25 × writeTokens`로 표시한다.
 - 실측 USD 절감은 일반 입력 토큰의 `input_cost` 단가를 역산한 뒤 캐시 읽기 절감에서 캐시 쓰기 프리미엄을 뺀다.
