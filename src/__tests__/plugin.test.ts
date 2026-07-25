@@ -638,6 +638,8 @@ describe('streaming modes', () => {
 
     expect(response.success).toBe(false);
     expect(response.content).toContain('스트림 이벤트를 하나도 읽지 못했어요');
+    expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
+    expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(false);
   });
 
   it('decoupled 소비 중 abort되면 실패하고 앵커와 원장을 저장하지 않는다', async () => {

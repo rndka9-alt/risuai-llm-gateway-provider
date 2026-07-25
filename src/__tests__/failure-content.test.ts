@@ -1,7 +1,7 @@
 import { LlmHttpError, LlmInBandError } from 'llm-io';
 import { describe, expect, it } from 'vitest';
 import { BridgeFetchError } from '../bridge-fetch';
-import { toFailureContent } from '../failure-content';
+import { toEmptyStreamFailureContent, toFailureContent } from '../failure-content';
 
 describe('toFailureContent', () => {
   it('Gateway Zod 400을 요청 내용 문제로 안내하고 body 원문을 보존한다', () => {
@@ -34,6 +34,22 @@ describe('toFailureContent', () => {
       'LLM Gateway가 요청을 처리하지 못했어요.\n' +
         '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
         `자세한 오류 정보 (오류 코드 503)\n${body}`,
+    );
+  });
+
+  it('reasoning 델타 없이 usage로만 드러난 토큰 소진도 reasoning 안내로 분류한다', () => {
+    const diagnostics = {
+      finishReason: 'length',
+      reasoningDeltaCount: 0,
+      streamEventCount: 3,
+      usage: { reasoningTokens: 512 },
+    };
+
+    expect(toEmptyStreamFailureContent(diagnostics)).toBe(
+      '모델이 내부 추론(reasoning)에 출력 한도를 모두 사용해서 본문 없이 끝났어요.\n' +
+        'RisuAI의 응답 최대 토큰을 늘리거나, 플러그인 설정에서 reasoning 수준을 낮춰 보세요.\n' +
+        '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
+        `자세한 오류 정보\n${JSON.stringify(diagnostics, null, 2)}`,
     );
   });
 

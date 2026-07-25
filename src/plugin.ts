@@ -240,15 +240,19 @@ async function requestLLMGateway(
     if (streamingMode === 'decoupled') {
       // 연결은 streaming으로 유지해 중간 응답 제한을 피하되, RisuAI에는 완성 문자열만 반환한다.
       const result = await consumeGatewayStream(context);
-      // 빈 응답도 과금과 서버측 캐시 쓰기가 끝난 요청이므로 앵커·원장 상태는 커밋한다.
-      await completeSuccessfulRequest(
-        cacheRequest.pendingCommit,
-        result.usage,
-        undefined,
-        model,
-        serviceTier,
-      );
       if (result.text === '') {
+        // 이벤트가 하나라도 있으면 과금·서버측 캐시 쓰기가 끝난 완료 응답이라 커밋하지만,
+        // zero-event는 게이트웨이 완료 증거가 없어 실패 프롬프트가 다음 diff 기준을
+        // 오염시키지 않도록 기존 실패 계약(미커밋)을 따른다.
+        if (result.streamEventCount > 0) {
+          await completeSuccessfulRequest(
+            cacheRequest.pendingCommit,
+            result.usage,
+            undefined,
+            model,
+            serviceTier,
+          );
+        }
         return {
           success: false,
           content: toEmptyStreamFailureContent({
@@ -259,6 +263,13 @@ async function requestLLMGateway(
           }),
         };
       }
+      await completeSuccessfulRequest(
+        cacheRequest.pendingCommit,
+        result.usage,
+        undefined,
+        model,
+        serviceTier,
+      );
       return { success: true, content: result.text };
     }
 

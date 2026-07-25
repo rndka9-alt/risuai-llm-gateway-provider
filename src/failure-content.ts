@@ -158,7 +158,12 @@ export interface EmptyStreamDiagnostics {
 export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics): string {
   const detail = serializeObject(diagnostics);
 
-  if (diagnostics.finishReason === 'length' && diagnostics.reasoningDeltaCount > 0) {
+  // reasoning 델타를 노출하지 않는 모델은 usage의 reasoning 토큰으로만 소진이 드러난다
+  // (실측: SSE 24건 중 4건이 reasoning 토큰이 있는데 델타 미노출).
+  const reasoningTokens = diagnostics.usage?.reasoningTokens;
+  const consumedReasoning =
+    diagnostics.reasoningDeltaCount > 0 || (reasoningTokens !== undefined && reasoningTokens > 0);
+  if (diagnostics.finishReason === 'length' && consumedReasoning) {
     return withFailureDetails(
       '모델이 내부 추론(reasoning)에 출력 한도를 모두 사용해서 본문 없이 끝났어요.\n' +
         'RisuAI의 응답 최대 토큰을 늘리거나, 플러그인 설정에서 reasoning 수준을 낮춰 보세요.',
@@ -166,9 +171,11 @@ export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics)
     );
   }
   if (diagnostics.streamEventCount === 0) {
+    // streamEventCount는 wire 청크가 아니라 정규화 이벤트 수라, 내용 없는 필러 청크만
+    // 받은 경우도 0이 된다 — 본문 부재를 단정하지 않는 표현을 유지한다.
     return withFailureDetails(
       'LLM Gateway 응답에서 스트림 이벤트를 하나도 읽지 못했어요.\n' +
-        '응답 본문이 비었거나 예상한 형식(SSE)이 아닐 수 있어요.',
+        '응답 본문이 비었거나 형식이 다르거나, 내용 없는 청크만 왔을 수 있어요.',
       detail,
     );
   }
