@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PRESET_SCHEMES } from '../constants';
-import { applyTheme, resolveScheme } from '../theme';
+import { PRESET_SCHEMES, applyTheme, resolveScheme } from '../theme';
 
 afterEach(() => {
   document.documentElement.removeAttribute('style');

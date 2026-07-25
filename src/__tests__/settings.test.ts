@@ -3,8 +3,8 @@ import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CACHE_ANCHOR_STATE_STORAGE_KEY } from '../cache/constants';
-import { PRESET_SCHEMES } from '../constants';
 import { CACHE_LEDGER_STORAGE_KEY, accumulateCacheUsage, createEmptyCacheLedger } from '../ledger';
+import { PRESET_SCHEMES } from '../theme';
 import {
   buildLedgerDisplay,
   formatTokenCount,

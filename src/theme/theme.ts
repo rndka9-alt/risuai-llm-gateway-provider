@@ -1,4 +1,4 @@
-import { PRESET_SCHEMES } from './constants';
+import { PRESET_SCHEMES } from './preset-schemes';
 import type { ThemeColors } from './types';
 
 export function applyTheme(scheme: ThemeColors): void {
