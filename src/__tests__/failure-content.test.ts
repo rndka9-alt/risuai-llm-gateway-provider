@@ -1,4 +1,4 @@
-import { LlmHttpError } from 'llm-io';
+import { LlmHttpError, LlmInBandError } from 'llm-io';
 import { describe, expect, it } from 'vitest';
 import { BridgeFetchError } from '../bridge-fetch';
 import { toFailureContent } from '../failure-content';
@@ -34,6 +34,32 @@ describe('toFailureContent', () => {
       'LLM Gateway가 요청을 처리하지 못했어요.\n' +
         '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
         `자세한 오류 정보 (오류 코드 503)\n${body}`,
+    );
+  });
+
+  it('in-band 오류를 게이트웨이 응답 오류로 안내하고 payload 원문을 보존한다', () => {
+    const payload = {
+      message: "Invalid schema for response_format 'x'",
+      type: 'invalid_request_error',
+      code: 'invalid_json_schema',
+    };
+
+    expect(
+      toFailureContent(
+        new LlmInBandError(payload, 'OpenAI chat completions stream returned an error'),
+      ),
+    ).toBe(
+      'LLM Gateway가 응답 도중 오류를 반환했어요.\n' +
+        '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
+        `자세한 오류 정보\n${JSON.stringify(payload, null, 2)}`,
+    );
+  });
+
+  it('문자열 payload의 in-band 오류도 원문 그대로 보존한다', () => {
+    expect(toFailureContent(new LlmInBandError('rate limited', 'context'))).toBe(
+      'LLM Gateway가 응답 도중 오류를 반환했어요.\n' +
+        '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
+        '자세한 오류 정보\nrate limited',
     );
   });
 

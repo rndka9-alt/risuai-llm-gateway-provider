@@ -1,4 +1,4 @@
-import { LlmHttpError, type LlmUsage } from 'llm-io';
+import { LlmHttpError, LlmInBandError, type LlmUsage } from 'llm-io';
 import { BridgeFetchError } from './bridge-fetch';
 
 const CONTINUED_FAILURE_GUIDANCE =
@@ -186,6 +186,13 @@ export function toFailureContent(error: unknown): string {
       );
     }
     return withFailureDetails('LLM Gateway가 요청을 처리하지 못했어요.', error.body, error.status);
+  }
+  if (error instanceof LlmInBandError) {
+    // HTTP 200 뒤에 숨은 게이트웨이 오류라 상태 코드가 없다 — 원문 payload로만 안내한다.
+    return withFailureDetails(
+      'LLM Gateway가 응답 도중 오류를 반환했어요.',
+      safelyFormatErrorDetail(error.error),
+    );
   }
   if (error instanceof BridgeFetchError) {
     return withFailureDetails(

@@ -97,6 +97,23 @@ function createReasoningOnlyStreamingResponse(): Response {
   });
 }
 
+// 2026-07-25 실측: 게이트웨이는 200 SSE를 선커밋한 뒤 upstream의 늦은 거절을 in-band로 흘린다.
+function createInBandErrorStreamingResponse(): Response {
+  const serializedEvents = [
+    `data: ${JSON.stringify({
+      error: {
+        message: "Invalid schema for response_format 'x'",
+        type: 'invalid_request_error',
+        code: 'invalid_json_schema',
+      },
+    })}`,
+  ];
+  return new Response(serializedEvents.join('\n\n'), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
+
 function createAbortingStreamingResponse(abortController: AbortController): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>(
@@ -593,6 +610,19 @@ describe('streaming modes', () => {
     expect(response.content).toContain('내부 추론(reasoning)에 출력 한도를 모두 사용');
     expect(response.content).toContain('"finishReason": "length"');
     expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(true);
+  });
+
+  it('decoupled에서 200 SSE의 in-band 오류는 게이트웨이 오류 원문과 함께 실패로 반환한다', async () => {
+    const harness = await loadProvider([createInBandErrorStreamingResponse()], {
+      streaming_mode: 'decoupled',
+    });
+
+    const response = await harness.provider(createProviderArguments());
+
+    expect(response.success).toBe(false);
+    expect(response.content).toContain('LLM Gateway가 응답 도중 오류를 반환했어요.');
+    expect(response.content).toContain("Invalid schema for response_format 'x'");
+    expect(response.content).not.toContain('스트림 이벤트를 하나도 읽지 못했어요');
   });
 
   it('decoupled에서 스트림 이벤트가 없는 200 응답은 형식 문제 안내와 함께 실패로 반환한다', async () => {
