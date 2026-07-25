@@ -12,6 +12,7 @@ import { useSettingsSignals } from '../../utils/signals';
 
 interface SettingsPanelProps {
   cacheBackoffActive: boolean;
+  providerRegistered: boolean;
 }
 
 // useFooterMessage는 content 참조가 바뀌면 재발행하므로 모듈 상수로 고정한다
@@ -27,10 +28,11 @@ const CACHE_BACKOFF_FOOTER_MESSAGE = (
   </span>
 );
 
-export function SettingsPanel({ cacheBackoffActive }: SettingsPanelProps) {
+export function SettingsPanel({ cacheBackoffActive, providerRegistered }: SettingsPanelProps) {
   const { reloadNeeded } = useSettingsSignals();
   // 스크롤 하단 notices에선 못 보고 지나치는 안내라 항상 보이는 푸터로 발행한다.
-  // 새로고침(사용자 액션 필요)이 백오프(정보성)보다 먼저 보이게 우선순위를 둔다.
+  // 우선순위는 사용자 액션이 급한 순: 설치 마무리(2) > 새로고침(1) > 백오프(0).
+  useFooterMessage(providerRegistered ? null : '새로고침해야 모델 목록에 추가돼요.', 2);
   useFooterMessage(reloadNeeded ? '변경 사항을 적용하려면 새로고침해 주세요.' : null, 1);
   useFooterMessage(cacheBackoffActive ? CACHE_BACKOFF_FOOTER_MESSAGE : null);
 

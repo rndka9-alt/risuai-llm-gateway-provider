@@ -45,6 +45,7 @@ import {
   type ConfigurableLlmFlagName,
   type StreamingMode,
 } from './options';
+import { loadProviderRegistered, markProviderRegistered } from './provider-registered-state';
 import { openSettings } from './settings';
 import { showCacheBackoffToast } from './toast';
 
@@ -252,6 +253,10 @@ async function main(): Promise<void> {
   void loadCacheAnchorBankSnapshot().catch((error) => {
     console.error('[llm-gateway-provider] cache anchor bank eager load failed; continuing', error);
   });
+  // config 존재를 등록 이력 판별에 쓰므로 config 초기화(첫 부팅 시 생성)보다 먼저 읽는다.
+  // 이번 세션 UI가 쓸 값을 여기서 확보하고, 등록을 마치면 true를 기록해
+  // 다음 로드(새로고침)부터 설치 완료로 읽히게 한다.
+  const providerRegistered = await loadProviderRegistered();
   const config = await initializeConfigOnStartup();
   const registrationSettings: ProviderRegistrationSettings = {
     flagNames: resolveConfigurableLlmFlagNames(config[FLAGS_ARGUMENT]),
@@ -270,9 +275,12 @@ async function main(): Promise<void> {
       },
     },
   );
+  if (!providerRegistered) {
+    void markProviderRegistered();
+  }
   const settingsRegistration = await risuai.registerSetting(
     'LLM Gateway',
-    () => openSettings(registrationSettings),
+    () => openSettings(registrationSettings, providerRegistered),
     '&#x1f511;',
     'html',
     'llm-gateway-settings',

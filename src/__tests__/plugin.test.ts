@@ -259,6 +259,24 @@ describe('provider registration metadata', () => {
     );
   });
 
+  it('provider 등록을 마친 뒤 등록 상태를 기록해 다음 로드부터 설치 완료로 읽힌다', async () => {
+    const harness = await loadProvider([]);
+
+    expect(harness.startupEvents.indexOf('addProvider')).toBeLessThan(
+      harness.startupEvents.indexOf('setItem:llm-gateway-provider:provider-registered'),
+    );
+    // config 존재를 등록 이력으로 호환 읽기하므로, 판별은 config 생성보다 앞서야 한다
+    expect(
+      harness.startupEvents.indexOf('getItem:llm-gateway-provider:provider-registered'),
+    ).toBeLessThan(harness.startupEvents.indexOf(`setItem:${CONFIG_STORAGE_KEY}`));
+  });
+
+  it('플래그 도입 전 사용자(config 보유)는 첫 설치로 취급하지 않는다', async () => {
+    const harness = await loadProvider([], {}, false, 'hasFullSystemPrompt');
+
+    expect(harness.startupEvents).not.toContain('setItem:llm-gateway-provider:provider-registered');
+  });
+
   it('cache anchor bank eager load 실패를 무시하고 요청 시 lazy load로 재시도한다', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const harness = await loadProvider([createSuccessfulResponse()], {}, false, undefined, 1);

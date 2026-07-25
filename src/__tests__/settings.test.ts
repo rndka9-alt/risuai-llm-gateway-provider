@@ -408,10 +408,11 @@ function stubSettingsUi(
 async function renderSettingsUi(
   configValues: Readonly<Record<string, string>> = {},
   storageValues: Readonly<Record<string, unknown>> = {},
+  providerRegistered = true,
 ): Promise<ReturnType<typeof stubSettingsUi>> {
   const harness = stubSettingsUi(configValues, storageValues);
   await act(async () => {
-    await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+    await openSettings({ flagNames: ['hasFullSystemPrompt'] }, providerRegistered);
   });
   return harness;
 }
@@ -562,7 +563,7 @@ describe('settings UI', () => {
 
     await act(async () => requireButton('close').click());
     await act(async () => {
-      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] }, true);
     });
     expect(requireButton('request-body-settings-toggle').getAttribute('aria-expanded')).toBe(
       'true',
@@ -730,7 +731,7 @@ describe('settings UI', () => {
 
     await act(async () => requireButton('close').click());
     await act(async () => {
-      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] }, true);
     });
 
     expect(document.getElementById('footer-message')?.textContent).toContain(
@@ -773,6 +774,22 @@ describe('settings UI', () => {
     expect(document.getElementById('footer-message')).toBeNull();
     expect(document.getElementById('footer-message-reveal')).toBeNull();
     expect(document.getElementById('ledger-layer')?.className).toContain('opacity-100');
+  });
+
+  it('첫 설치 세션에는 설치 마무리 안내를 최우선으로 표시한다', async () => {
+    await renderSettingsUi({}, {}, false);
+    expect(document.getElementById('footer-message')?.textContent).toBe(
+      '새로고침해야 모델 목록에 추가돼요.',
+    );
+
+    // 플래그 변경으로 새로고침 안내가 발행돼도 설치 안내가 우선순위를 유지한다
+    await expandSettingsAccordion('advanced-settings');
+    const poolSupported = requireInput('flag-poolSupported');
+    poolSupported.checked = true;
+    await dispatchChange(poolSupported);
+    expect(document.getElementById('footer-message')?.textContent).toBe(
+      '새로고침해야 모델 목록에 추가돼요.',
+    );
   });
 
   it('손익·백오프를 표시하고 원장 초기화를 저장소에 반영한다', async () => {
@@ -848,7 +865,7 @@ describe('settings UI', () => {
     expect(document.getElementById('ledger-amount-summary')?.textContent).toBe('+8.0k tokens');
 
     await act(async () => {
-      await openSettings({ flagNames: ['hasFullSystemPrompt'] });
+      await openSettings({ flagNames: ['hasFullSystemPrompt'] }, true);
     });
 
     expect(document.getElementById('ledger-read-detail')?.textContent).toBe('10.0k');

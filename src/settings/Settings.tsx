@@ -33,15 +33,22 @@ function injectSettingsStyles(): void {
   document.head.appendChild(style);
 }
 
-function renderSettings(cacheBackoffActive: boolean): void {
+function renderSettings(cacheBackoffActive: boolean, providerRegistered: boolean): void {
   injectSettingsStyles();
   document.documentElement.className = 'bg-transparent';
   document.body.className = SETTINGS_BODY_CLASS;
-  render(<SettingsPanel cacheBackoffActive={cacheBackoffActive} />, document.body);
+  render(
+    <SettingsPanel
+      cacheBackoffActive={cacheBackoffActive}
+      providerRegistered={providerRegistered}
+    />,
+    document.body,
+  );
 }
 
 export async function openSettings(
   registrationSettings: ProviderRegistrationSettings,
+  providerRegistered: boolean,
 ): Promise<void> {
   await risuai.showContainer('fullscreen');
 
@@ -89,6 +96,6 @@ export async function openSettings(
   initializeSettingsSignals({
     reloadNeeded: createProviderRegistrationSignature({ flagNames }) !== registrationSignature,
   });
-  renderSettings(isCacheBackoffActive(cacheAnchorBankMissCount));
+  renderSettings(isCacheBackoffActive(cacheAnchorBankMissCount), providerRegistered);
   applyTheme(await resolveScheme());
 }
