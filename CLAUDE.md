@@ -105,9 +105,10 @@ npm run test:all  # 둘 다
 - `src/error-codes.ts` — 사용자 실패 안내의 `LGP:ERR:NNN` 코드 레지스트리
 - `src/failure-content.ts` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
-- `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
+- `src/cache/` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
-- `src/options.ts` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자
+- `src/options/` — 모델 프리셋·서비스 티어·reasoning/verbosity·스트리밍·RisuAI LLM flags 인자.
+  관심사별 파일(`model`, `reasoning-effort`, `verbosity`, `streaming-mode`, `service-tier`, `llm-flags`)로 나뉜다
 - `src/json-editor/` — 스키마 기반 JSON 에디터 코어 (구문·스키마 진단, breadcrumb, 자동완성, format).
   UI 독립 — (text, offset)만 주고받는다. zod 스키마(`zod/v4` 서브패스) 하나에서 검증(safeParse)과
   자동완성(toJSONSchema → vscode-json-languageservice)을 모두 파생한다. `request-body-schema.ts`는
@@ -116,7 +117,8 @@ npm run test:all  # 둘 다
 - `src/extra-body.ts` — 설정의 커스텀 요청 body(JSON, config `extra_body`)를 요청 직전 extraBody에
   deep merge (겹치는 필드는 커스텀 우선, invalid JSON이면 그 요청에서는 통째로 무시). 편집 UI는
   설정 패널의 RequestBodyField (json-editor 소비자)
-- `src/settings.ts` + `src/theme.ts` + `src/constants.ts` — 설정 UI (인자 편집 + 손익 표시/리셋)
+- `src/settings/` — 설정 UI (인자 편집 + 손익 표시/리셋)
+- `src/theme/` — 설정 UI가 쓰는 RisuAI 컬러스킴 적용과 프리셋 폴백
 - `src/toast.ts` — 캐시 백오프 발동/해제 메인 DOM 토스트 (`SafeDocument`, 실패 시 경고 폴백)
 - `types/risuai.d.ts` — RisuAI 본체 `src/ts/plugins/apiV3/risuai.d.ts` 사본 (갱신 시 재복사.
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
@@ -236,7 +238,7 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
   변경 적용에는 새로고침이 필요하다. `streaming_mode`는 매 요청 라이브로 읽어 저장 즉시
   반영된다 — hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌기 때문
   (plugin.ts requestLLMGateway 주석 참고).
-- **LLMFlags 숫자 동기화**: `src/options.ts`의 이름→숫자 매핑은 RisuAI
+- **LLMFlags 숫자 동기화**: `src/options/llm-flags.ts`의 이름→숫자 매핑은 RisuAI
   `src/ts/model/types.ts`의 `LLMFlags`가 출처다. 본체 값 변경 시 반드시 함께 갱신한다.
 - **tokenizer**: legacy custom 경로용 addProvider top-level `o200k_base`와 V3 모델 메타용
   `LLMTokenizer.tiktokenO200Base`(2)를 함께 지정한다.
@@ -260,8 +262,9 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
   이벤트가 1개 이상인 완료 응답은 과금·서버측 캐시 쓰기가 끝났으므로 앵커·원장을 커밋하지만
   (재시도가 캐시 read 이득을 봄), zero-event는 게이트웨이 완료 증거가 없어 커밋하지 않는다 —
   실패 프롬프트가 다음 diff 기준을 오염시키지 않는 기존 실패 계약을 따른다.
-- **미디어 flags 비활성화**: `convert.ts`가 텍스트 전용이므로 Image/Audio/Video flags는 설정 UI에서
-  disabled 상태다. 멀티모달 변환 구현 전 활성화하면 데이터가 조용히 유실될 수 있다.
+- **미디어 flags 미노출**: `convert.ts`가 텍스트와 이미지 입력만 변환하므로, Image Output·Audio·Video
+  flags는 설정 UI의 flags 목록(`CONFIGURABLE_LLM_FLAG_NAMES`)에 두지 않는다. 멀티모달 변환 구현 전
+  노출하면 데이터가 조용히 유실될 수 있다.
 
 ## 알려진 제한
 
