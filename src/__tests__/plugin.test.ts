@@ -622,10 +622,10 @@ describe('streaming modes', () => {
     expect(response.success).toBe(false);
     expect(response.content).toContain('LLM Gateway가 응답 도중 오류를 반환했어요.');
     expect(response.content).toContain("Invalid schema for response_format 'x'");
-    expect(response.content).not.toContain('스트림 이벤트를 하나도 읽지 못했어요');
+    expect(response.content).not.toContain('LLM Gateway에서 빈 응답을 받았어요.');
   });
 
-  it('decoupled에서 스트림 이벤트가 없는 200 응답은 형식 문제 안내와 함께 실패로 반환한다', async () => {
+  it('decoupled에서 스트림 이벤트가 없는 200 응답은 빈 응답 안내와 함께 실패로 반환한다', async () => {
     const nonSseResponse = new Response(
       JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }),
       { status: 200, headers: { 'content-type': 'application/json' } },
@@ -637,7 +637,8 @@ describe('streaming modes', () => {
     const response = await harness.provider(createProviderArguments());
 
     expect(response.success).toBe(false);
-    expect(response.content).toContain('스트림 이벤트를 하나도 읽지 못했어요');
+    expect(response.content).toContain('LLM Gateway에서 빈 응답을 받았어요.');
+    expect(response.content).toContain("스트리밍 모드를 '사용 안 함'으로 바꿔");
     expect(harness.stored.has(CACHE_ANCHOR_STATE_STORAGE_KEY)).toBe(false);
     expect(harness.stored.has(CACHE_LEDGER_STORAGE_KEY)).toBe(false);
   });

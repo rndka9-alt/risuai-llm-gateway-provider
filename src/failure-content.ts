@@ -170,16 +170,20 @@ export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics)
       detail,
     );
   }
+  // 스트리밍 off 전환 유도는 우회이자 진단이다 — 같은 본문이라도 generate() 경로는
+  // JSON 파싱을 타서 구체적인 오류가 그대로 드러난다.
+  const RETRY_GUIDANCE =
+    '일시적인 문제일 수 있으니 다시 시도해 보시고, 반복되면 플러그인 설정에서 ' +
+    "스트리밍 모드를 '사용 안 함'으로 바꿔 다시 시도해 보세요. 더 자세한 오류가 보일 수 있어요.";
   if (diagnostics.streamEventCount === 0) {
     // streamEventCount는 wire 청크가 아니라 정규화 이벤트 수라, 내용 없는 필러 청크만
-    // 받은 경우도 0이 된다 — 본문 부재를 단정하지 않는 표현을 유지한다.
-    return withFailureDetails(
-      'LLM Gateway 응답에서 스트림 이벤트를 하나도 읽지 못했어요.\n' +
-        '응답 본문이 비었거나 형식이 다르거나, 내용 없는 청크만 왔을 수 있어요.',
-      detail,
-    );
+    // 받은 경우도 0이 된다 — 세부 구분은 진단 JSON이 담당한다.
+    return withFailureDetails(`LLM Gateway에서 빈 응답을 받았어요.\n${RETRY_GUIDANCE}`, detail);
   }
-  return withFailureDetails('LLM Gateway 응답이 내용 없이 끝났어요.', detail);
+  return withFailureDetails(
+    `LLM Gateway 응답이 내용 없이 끝났어요.\n${RETRY_GUIDANCE}`,
+    detail,
+  );
 }
 
 /** 사용자에게 오류 종류를 구분해 알리되 Gateway·브릿지 원문은 그대로 보존합니다. */
