@@ -102,8 +102,9 @@ npm run test:all  # 둘 다
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
 - `src/bridge-fetch.ts` — RisuAI의 server-side 경로를 강제하는 FetchLike 생성.
   legacy `risuFetch`의 raw bytes 응답을 iframe 안에서 Response로 재구성 (아래 런타임 제약 참고)
-- `src/error-codes.ts` — 사용자 실패 안내의 `LGP:ERR:NNN` 코드 레지스트리
-- `src/failure-content.ts` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시
+- `src/failure-content/` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시.
+  `error-codes.ts`가 사용자 실패 안내의 `LGP:ERR:NNN` 코드 레지스트리이고, 민감값 마스킹을 포함한
+  오류 직렬화는 `internal/`이 담당한다
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache/` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger.ts` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산)
@@ -128,7 +129,7 @@ npm run test:all  # 둘 다
 ## 사용자 오류 코드
 
 `LGP:ERR:NNN`은 사용자 제보와 옛 스크린샷을 장기간 식별하는 지원 계약이다.
-배포된 코드는 삭제·재번호·재사용하지 않고 `src/error-codes.ts`에 새 코드만 추가한다.
+배포된 코드는 삭제·재번호·재사용하지 않고 `src/failure-content/error-codes.ts`에 새 코드만 추가한다.
 대역은 0xx 플러그인 내부·설정, 1xx RisuAI 브릿지·전송, 2xx Gateway HTTP,
 3xx Gateway 응답 내용·스트림으로 구분한다.
 

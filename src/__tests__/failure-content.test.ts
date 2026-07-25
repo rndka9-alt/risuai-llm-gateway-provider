@@ -1,11 +1,12 @@
 import { LlmHttpError, LlmInBandError } from 'llm-io';
 import { describe, expect, it } from 'vitest';
 import { BridgeFetchError } from '../bridge-fetch';
-import { USER_ERROR_CODES, type UserErrorCode } from '../error-codes';
 import {
+  USER_ERROR_CODES,
   toEmptyStreamFailureContent,
   toFailureContent,
   toMissingApiKeyFailureContent,
+  type UserErrorCode,
 } from '../failure-content';
 
 describe('toFailureContent', () => {
