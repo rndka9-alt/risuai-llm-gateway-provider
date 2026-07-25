@@ -32,7 +32,11 @@ import {
 } from './config';
 import { toLlmMessages } from './convert';
 import { applyCustomExtraBody } from './extra-body';
-import { toEmptyStreamFailureContent, toFailureContent } from './failure-content';
+import {
+  toEmptyStreamFailureContent,
+  toFailureContent,
+  toMissingApiKeyFailureContent,
+} from './failure-content';
 import { accumulateCacheUsage } from './ledger';
 import {
   DEFAULT_MODEL,
@@ -175,8 +179,7 @@ async function requestLLMGateway(
   if (apiKey === '') {
     return {
       success: false,
-      content:
-        'LLM Gateway API 키가 설정되어 있지 않아요.\n플러그인 설정에서 API 키를 입력해 주세요.',
+      content: toMissingApiKeyFailureContent(),
     };
   }
 

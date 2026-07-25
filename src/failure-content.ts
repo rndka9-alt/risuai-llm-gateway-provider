@@ -1,5 +1,6 @@
 import { LlmHttpError, LlmInBandError, type LlmUsage } from 'llm-io';
 import { BridgeFetchError } from './bridge-fetch';
+import { USER_ERROR_CODES, type UserErrorCode } from './error-codes';
 
 const CONTINUED_FAILURE_GUIDANCE =
   '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.';
@@ -133,15 +134,22 @@ function safelyFormatErrorDetail(value: unknown): string {
   }
 }
 
-function withFailureDetails(summary: string, detail: string, status?: number): string {
+function withFailureDetails(
+  summary: string,
+  detail: string,
+  errorCode: UserErrorCode,
+  status?: number,
+): string {
   const hasDetails = detail !== '' || status !== undefined;
   const guidance = hasDetails
     ? CONTINUED_FAILURE_GUIDANCE
     : CONTINUED_FAILURE_WITHOUT_DETAILS_GUIDANCE;
-  if (!hasDetails) return `${summary}\n${guidance}`;
+  if (!hasDetails) return `${summary} (${errorCode})\n${guidance}`;
 
   const detailsTitle =
-    status === undefined ? '자세한 오류 정보' : `자세한 오류 정보 (오류 코드 ${status})`;
+    status === undefined
+      ? `자세한 오류 정보 (${errorCode})`
+      : `자세한 오류 정보 (${errorCode}, 오류 코드 ${status})`;
   return detail === ''
     ? `${summary}\n${guidance}\n\n${detailsTitle}`
     : `${summary}\n${guidance}\n\n${detailsTitle}\n${detail}`;
@@ -152,6 +160,13 @@ export interface EmptyStreamDiagnostics {
   reasoningDeltaCount: number;
   streamEventCount: number;
   usage: LlmUsage | undefined;
+}
+
+export function toMissingApiKeyFailureContent(): string {
+  return (
+    `LLM Gateway API 키가 설정되어 있지 않아요. (${USER_ERROR_CODES.missingApiKey})\n` +
+    '플러그인 설정에서 API 키를 입력해 주세요.'
+  );
 }
 
 /** 내용 없이 끝난 스트림을 무음 성공 대신 원인별 실패 안내로 바꿉니다. */
@@ -168,6 +183,7 @@ export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics)
       '모델이 내부 추론(reasoning)에 출력 한도를 모두 사용해서 본문 없이 끝났어요.\n' +
         'RisuAI의 응답 최대 토큰을 늘리거나, 플러그인 설정에서 reasoning 수준을 낮춰 보세요.',
       detail,
+      USER_ERROR_CODES.emptyStreamReasoningLimit,
     );
   }
   // 스트리밍 off 전환 유도는 우회이자 진단이다 — 같은 본문이라도 generate() 경로는
@@ -178,11 +194,16 @@ export function toEmptyStreamFailureContent(diagnostics: EmptyStreamDiagnostics)
   if (diagnostics.streamEventCount === 0) {
     // streamEventCount는 wire 청크가 아니라 정규화 이벤트 수라, 내용 없는 필러 청크만
     // 받은 경우도 0이 된다 — 세부 구분은 진단 JSON이 담당한다.
-    return withFailureDetails(`LLM Gateway에서 빈 응답을 받았어요.\n${RETRY_GUIDANCE}`, detail);
+    return withFailureDetails(
+      `LLM Gateway에서 빈 응답을 받았어요.\n${RETRY_GUIDANCE}`,
+      detail,
+      USER_ERROR_CODES.emptyStreamWithoutEvents,
+    );
   }
   return withFailureDetails(
     `LLM Gateway 응답이 내용 없이 끝났어요.\n${RETRY_GUIDANCE}`,
     detail,
+    USER_ERROR_CODES.emptyStreamWithoutText,
   );
 }
 
@@ -193,26 +214,35 @@ export function toFailureContent(error: unknown): string {
       return withFailureDetails(
         'LLM Gateway가 요청 내용에 문제가 있다고 응답했어요.',
         error.body,
+        USER_ERROR_CODES.gatewayRequestValidationFailure,
         error.status,
       );
     }
-    return withFailureDetails('LLM Gateway가 요청을 처리하지 못했어요.', error.body, error.status);
+    return withFailureDetails(
+      'LLM Gateway가 요청을 처리하지 못했어요.',
+      error.body,
+      USER_ERROR_CODES.gatewayHttpFailure,
+      error.status,
+    );
   }
   if (error instanceof LlmInBandError) {
     // HTTP 200 뒤에 숨은 게이트웨이 오류라 상태 코드가 없다 — 원문 payload로만 안내한다.
     return withFailureDetails(
       'LLM Gateway가 응답 도중 오류를 반환했어요.',
       safelyFormatErrorDetail(error.error),
+      USER_ERROR_CODES.gatewayInBandFailure,
     );
   }
   if (error instanceof BridgeFetchError) {
     return withFailureDetails(
       'RisuAI에서 LLM Gateway 요청을 처리하는 중 문제가 발생했어요.',
       safelyFormatErrorDetail(error.detail),
+      USER_ERROR_CODES.bridgeTransportFailure,
     );
   }
   return withFailureDetails(
     '플러그인에서 LLM Gateway 요청을 처리하는 중 문제가 발생했어요.',
     safelyFormatErrorDetail(error),
+    USER_ERROR_CODES.unexpectedPluginFailure,
   );
 }

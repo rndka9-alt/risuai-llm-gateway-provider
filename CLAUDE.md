@@ -102,6 +102,7 @@ npm run test:all  # 둘 다
 - `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
 - `src/bridge-fetch.ts` — RisuAI의 server-side 경로를 강제하는 FetchLike 생성.
   legacy `risuFetch`의 raw bytes 응답을 iframe 안에서 Response로 재구성 (아래 런타임 제약 참고)
+- `src/error-codes.ts` — 사용자 실패 안내의 `LGP:ERR:NNN` 코드 레지스트리
 - `src/failure-content.ts` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache.ts` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
@@ -121,6 +122,29 @@ npm run test:all  # 둘 다
   본체 d.ts의 JSDoc 정규식 `*/` 버그로 tsc 구문 에러가 나면 예시를 `new RegExp(...)`로 교체)
 - `types/risuai-legacy.d.ts` — 본체 d.ts에 없는 deprecated `risuFetch`와 `plainFetchDeforce`
   선언 (본체 제거 가능성 때문에 optional로 선언해 존재 확인을 강제)
+
+## 사용자 오류 코드
+
+`LGP:ERR:NNN`은 사용자 제보와 옛 스크린샷을 장기간 식별하는 지원 계약이다.
+배포된 코드는 삭제·재번호·재사용하지 않고 `src/error-codes.ts`에 새 코드만 추가한다.
+대역은 0xx 플러그인 내부·설정, 1xx RisuAI 브릿지·전송, 2xx Gateway HTTP,
+3xx Gateway 응답 내용·스트림으로 구분한다.
+
+상세 진단이 있는 실패는 `자세한 오류 정보 (LGP:ERR:NNN)` 타이틀에 표시하고,
+HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인다. 상세 블록이 없는
+실패는 첫 문장에 코드를 표시한다.
+
+| 코드          | 의미                            | 트리거 조건                                                       |
+| ------------- | ------------------------------- | ----------------------------------------------------------------- |
+| `LGP:ERR:001` | API 키 미설정                   | 저장된 API 키를 trim한 결과가 빈 문자열                           |
+| `LGP:ERR:002` | 플러그인 내부 처리 실패         | 다른 분류에 속하지 않은 요청 처리 예외                            |
+| `LGP:ERR:101` | RisuAI 브릿지·전송 실패         | `BridgeFetchError`                                                 |
+| `LGP:ERR:201` | Gateway 요청 스키마 검증 실패   | HTTP 400 body의 `error.name`이 `ZodError`                          |
+| `LGP:ERR:202` | Gateway HTTP 처리 실패          | `LGP:ERR:201`을 제외한 `LlmHttpError`                              |
+| `LGP:ERR:301` | Gateway in-band 응답 오류       | HTTP 성공 응답 안에서 `LlmInBandError` 발생                       |
+| `LGP:ERR:302` | 빈 스트림의 reasoning 한도 소진 | `finishReason=length`이고 reasoning delta 또는 usage token이 존재 |
+| `LGP:ERR:303` | 이벤트 없는 빈 스트림           | 본문이 없고 정규화된 stream event가 0개                           |
+| `LGP:ERR:304` | 본문 없는 스트림 완료           | `LGP:ERR:302`가 아니며 stream event는 있지만 text delta가 0개     |
 
 ## breakpoint 자동 배치 (`src/cache/`)
 

@@ -410,7 +410,8 @@ describe('request body options', () => {
     expect(response).toEqual({
       success: false,
       content:
-        'LLM Gateway API 키가 설정되어 있지 않아요.\n플러그인 설정에서 API 키를 입력해 주세요.',
+        'LLM Gateway API 키가 설정되어 있지 않아요. (LGP:ERR:001)\n' +
+        '플러그인 설정에서 API 키를 입력해 주세요.',
     });
     expect(harness.risuFetch).not.toHaveBeenCalled();
   });
