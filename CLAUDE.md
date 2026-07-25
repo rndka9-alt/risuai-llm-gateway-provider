@@ -99,7 +99,10 @@ npm run test:all  # 둘 다
 
 ## 구조
 
-- `src/plugin.ts` — 엔트리. `risuai.addProvider('LLM Gateway', ...)` 등록 + 요청 오케스트레이션
+- `src/plugin.ts` — 엔트리. 부팅과 `risuai.addProvider('LLM Gateway', ...)` 등록
+- `src/provider/` — 요청 오케스트레이션. extraBody 조립과 클라이언트 생성은 `request-llm-gateway.ts`,
+  decoupled 스트림 소비는 `consume-gateway-stream.ts`, 성공 응답 뒤 캐시·원장 커밋은
+  `complete-successful-request.ts`가 맡는다
 - `src/bridge-fetch.ts` — RisuAI의 server-side 경로를 강제하는 FetchLike 생성.
   legacy `risuFetch`의 raw bytes 응답을 iframe 안에서 Response로 재구성 (아래 런타임 제약 참고)
 - `src/failure-content/` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시.
@@ -239,7 +242,7 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
 - **flags 등록 스냅샷**: flags는 플러그인 로드 때 읽어 provider model metadata에 고정한다.
   변경 적용에는 새로고침이 필요하다. `streaming_mode`는 매 요청 라이브로 읽어 저장 즉시
   반영된다 — hasStreaming flag 자동 선언이 사라져 등록 스냅샷과 무관해졌기 때문
-  (plugin.ts requestLLMGateway 주석 참고).
+  (provider/request-llm-gateway.ts 주석 참고).
 - **LLMFlags 숫자 동기화**: `src/options/llm-flags.ts`의 이름→숫자 매핑은 RisuAI
   `src/ts/model/types.ts`의 `LLMFlags`가 출처다. 본체 값 변경 시 반드시 함께 갱신한다.
 - **tokenizer**: legacy custom 경로용 addProvider top-level `o200k_base`와 V3 모델 메타용

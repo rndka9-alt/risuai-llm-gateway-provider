@@ -2,6 +2,7 @@ export { openSettings } from './Settings';
 export { buildLedgerDisplay, formatTokenCount } from './utils/ledger-display';
 export { buildModelOptionList } from './utils/model-options';
 export { createProviderRegistrationSignature } from './utils/registration';
+export type { ProviderRegistrationSettings } from './utils/registration';
 export {
   loadApiKey,
   loadConfigurableLlmFlagNames,
