@@ -1,5 +1,5 @@
 import type { ReplayCachePolicyFactory } from '../sim';
-import { createNoCachePolicy, createProductionCachePolicy } from '../sim-adapters/cache-policies';
+import { createNoCachePolicy, createProductionCachePolicy } from './adapters';
 
 export const STANDALONE_POLICY_NAMES = ['production', 'no-cache'] as const;
 

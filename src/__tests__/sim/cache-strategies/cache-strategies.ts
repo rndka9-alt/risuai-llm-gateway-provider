@@ -399,7 +399,4 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
   };
 }
 
-export {
-  createNoCachePolicy,
-  createProductionCachePolicy,
-} from '../../../sim-adapters/cache-policies';
+export { createNoCachePolicy, createProductionCachePolicy } from '../../../sim-runner/adapters';

@@ -113,32 +113,6 @@ function toSimulationScenario(
   };
 }
 
-function installEmptyPluginStorage(): void {
-  const storage = new Map<string, string>();
-  Object.defineProperty(globalThis, 'risuai', {
-    configurable: true,
-    value: {
-      pluginStorage: {
-        getItem: async (key: string) => storage.get(key) ?? null,
-        setItem: async (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
-    },
-    writable: true,
-  });
-}
-
-function restoreRisuaiProperty(previousDescriptor: PropertyDescriptor | undefined): void {
-  if (previousDescriptor === undefined) {
-    if (!Reflect.deleteProperty(globalThis, 'risuai')) {
-      throw new Error('Failed to restore the global risuai property.');
-    }
-    return;
-  }
-  Object.defineProperty(globalThis, 'risuai', previousDescriptor);
-}
-
 function toStandaloneReplayResult(result: ReplayResult): StandaloneReplayResult {
   return {
     cacheHitSimulatorName: result.cacheHitSimulatorName,
@@ -169,22 +143,16 @@ export async function runStandaloneSimulation(
   rawInput: unknown,
 ): Promise<StandaloneSimulationReport> {
   const input = standaloneSimulationInputSchema.parse(rawInput);
-  const previousRisuaiDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'risuai');
-
-  try {
-    const report = await simulate({
-      cacheHitSimulatorPresets: input.cacheBackendPresets,
-      costModel: input.costModel satisfies CacheCostModel,
-      policyFactories: input.policies.map(resolveStandalonePolicyFactory),
-      prepareReplay: installEmptyPluginStorage,
-      scenarios: input.scenarios.map(toSimulationScenario),
-    });
-    return {
-      costModel: report.costModel,
-      results: report.results.map(toStandaloneReplayResult),
-      schemaVersion: 1,
-    };
-  } finally {
-    restoreRisuaiProperty(previousRisuaiDescriptor);
-  }
+  const report = await simulate({
+    cacheHitSimulatorPresets: input.cacheBackendPresets,
+    costModel: input.costModel satisfies CacheCostModel,
+    policyFactories: input.policies.map(resolveStandalonePolicyFactory),
+    prepareReplay() {},
+    scenarios: input.scenarios.map(toSimulationScenario),
+  });
+  return {
+    costModel: report.costModel,
+    results: report.results.map(toStandaloneReplayResult),
+    schemaVersion: 1,
+  };
 }

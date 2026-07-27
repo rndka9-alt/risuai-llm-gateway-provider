@@ -68,8 +68,9 @@ npm run test:all  # 둘 다
   - `contracts.ts` — scenario·policy·cost model 공개 계약
   - `replay/` — 단일 scenario replay와 요청별 비용 집계
   - `cache-backend/` — 서버측 prompt cache의 hit·miss·read·write 회계 재현
-- `src/sim-adapters/` — 현재 provider의 production cache 정책을 core 계약에 연결
 - `src/sim-runner/` — 버전된 JSON 입력을 받아 headless API를 실행하는 standalone 소비자
+  - `adapters/` — production cache 정책을 core 계약에 연결한다. policy 인스턴스는
+    cache snapshot을 closure에 유지하며 RisuAI storage나 global을 사용하지 않는다.
 - `src/__tests__/sim/scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
 - `src/__tests__/sim/cache-strategies/` — breakpoint·cache key·admission을 결정하는 현행·과거·실험 전략
 - `src/__tests__/sim/reporting/` — scoreboard 등 결과 표현
