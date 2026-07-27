@@ -8,4 +8,4 @@ export {
   type CacheHitSimulatorPreset,
   type CacheHitSimulatorTokenizer,
   type MarkerMatchMode,
-} from './cache-hit-simulators';
+} from '../../../sim';

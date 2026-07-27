@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OpenAIChatCompletionsFormat, type JsonObject, type LlmMessage } from 'llm-io';
 import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
 import { planCacheAnchors } from '../../../cache/planner/plan-cache-anchors';
-import { createCacheHitSimulator } from './cache-hit-simulators';
+import { createCacheHitSimulator } from '../../../sim';
 
 function createMarkedSystemMessage(segments: readonly string[]): LlmMessage {
   return {

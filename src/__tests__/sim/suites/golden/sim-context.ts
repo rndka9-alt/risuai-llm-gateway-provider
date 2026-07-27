@@ -1,6 +1,12 @@
 import { expect, vi } from 'vitest';
 import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../../ledger';
-import { createCacheHitSimulator, type CacheHitSimulatorPreset } from '../../cache-hit-simulators';
+import {
+  simulate,
+  type CacheHitSimulatorPreset,
+  type ReplayCachePolicy,
+  type ReplayResult,
+  type SimulationScenario,
+} from '../../../../sim';
 import { createCanonicalScenarios } from '../../scenarios';
 import {
   createAdaptiveTwoStrikeCachePolicy,
@@ -12,11 +18,8 @@ import {
   createSelectiveHardCapCachePolicy,
   createTwoSurvivalProductionCachePolicy,
   createValidatedAllCachePolicy,
-  type ReplayCachePolicy,
 } from '../../cache-strategies';
 import { createV013SingleSlotCachePolicy } from '../../cache-strategies/v013';
-import { replayScenario, type ReplayResult } from '../../replay';
-import type { SimulationScenario } from '../../scenarios';
 import { formatScoreboard } from '../../reporting';
 
 export const CACHE_HIT_SIMULATOR_PRESETS = [
@@ -148,22 +151,21 @@ export function requireScenarioById(scenarioId: string): SimulationScenario {
 }
 
 export async function initializeReplayResults(): Promise<void> {
-  for (const scenario of scenarios) {
-    for (const cacheHitSimulatorPreset of CACHE_HIT_SIMULATOR_PRESETS) {
-      for (const createPolicy of POLICY_FACTORIES) {
-        // planner 상태와 wrapper 클로저를 정책·simulator 실행마다 함께 격리한다.
-        pluginStorage.clear();
-        stubPluginStorage();
-        replayResults.push(
-          await replayScenario({
-            cacheHitSimulator: createCacheHitSimulator(cacheHitSimulatorPreset),
-            policy: createPolicy(),
-            scenario,
-          }),
-        );
-      }
-    }
-  }
+  const report = await simulate({
+    cacheHitSimulatorPresets: CACHE_HIT_SIMULATOR_PRESETS,
+    costModel: {
+      readTokenSavingsRate: CACHE_READ_SAVING_RATE,
+      writeTokenPremiumRate: CACHE_WRITE_PREMIUM_RATE,
+    },
+    policyFactories: POLICY_FACTORIES,
+    prepareReplay() {
+      // planner 상태와 wrapper 클로저를 정책·simulator 실행마다 함께 격리한다.
+      pluginStorage.clear();
+      stubPluginStorage();
+    },
+    scenarios,
+  });
+  replayResults.push(...report.results);
   console.log(formatScoreboard(replayResults));
 }
 

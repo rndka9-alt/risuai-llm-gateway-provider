@@ -65,13 +65,16 @@ npm run test:all  # 둘 다
 
 ### sim 내부 구조
 
-- `replay/` — scenario·cache strategy·cache hit simulator를 조립하고 비용 결과를 집계
-- `cache-hit-simulators/` — 서버측 prompt cache의 hit·miss·read·write 회계 재현
-- `scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
-- `cache-strategies/` — breakpoint·cache key·admission을 결정하는 현행·과거·실험 전략
-- `reporting/` — scoreboard 등 결과 표현
-- `suites/` — golden 회귀와 eviction 비교 스위트
-- `experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험
+- `src/sim/` — 테스트 러너와 프로젝트 전역에 의존하지 않는 headless sim API
+  - `sim.ts` — scenario × cache backend × policy matrix 실행과 구조화된 report 반환
+  - `contracts.ts` — scenario·policy·cost model 공개 계약
+  - `replay/` — 단일 scenario replay와 요청별 비용 집계
+  - `cache-backend/` — 서버측 prompt cache의 hit·miss·read·write 회계 재현
+- `src/__tests__/sim/scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
+- `src/__tests__/sim/cache-strategies/` — breakpoint·cache key·admission을 결정하는 현행·과거·실험 전략
+- `src/__tests__/sim/reporting/` — scoreboard 등 결과 표현
+- `src/__tests__/sim/suites/` — golden 회귀와 eviction 비교 스위트
+- `src/__tests__/sim/experiments/` — 아직 현행 정책이나 공통 회귀망으로 승격되지 않은 탐구성 실험
 
 소비자는 `scenarios` 폴더 경로로 import한다. `scenarios/index.ts`에는 `scenarios.ts`의
 공개 심볼을 named re-export하는 선언만 두고, 폴더명과 같은 `scenarios/scenarios.ts`가

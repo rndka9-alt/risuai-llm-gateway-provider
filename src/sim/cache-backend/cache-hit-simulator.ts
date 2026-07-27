@@ -50,8 +50,7 @@ interface CacheEntry {
   sequence: number;
 }
 
-const DEFAULT_CACHE_HIT_SIMULATOR_TOKENIZER: CacheHitSimulatorTokenizer = (text) =>
-  Math.ceil(text.length / 4);
+const DEFAULT_SERVER_TOKENIZER: CacheHitSimulatorTokenizer = (text) => Math.ceil(text.length / 4);
 
 // TTL 실측(probe --ttl, 2026-07): 29분 hit / 31·45·60분 miss로 무접근 시 30분
 // 하드 만료가 확인됐고, 25분 hit 후 45분 hit로 히트 시 수명 갱신이 확인됐다.
@@ -63,7 +62,7 @@ const CALIBRATED_OPTIONS: CacheHitSimulatorOptions = {
   minimumCacheablePrefixTokens: 1024,
   postMinimumSurvivalProbability: 0,
   refreshTtlOnRead: true,
-  tokenizer: DEFAULT_CACHE_HIT_SIMULATOR_TOKENIZER,
+  tokenizer: DEFAULT_SERVER_TOKENIZER,
   ttlMinutes: 30,
   windowScope: 'per-key',
   windowSize: 50,

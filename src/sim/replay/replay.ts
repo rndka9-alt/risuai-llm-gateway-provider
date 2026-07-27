@@ -1,9 +1,10 @@
 import type { JsonObject, LlmMessage } from 'llm-io';
-import type { SimulationScenario } from '../scenarios';
 import { OpenAIChatCompletionsFormat } from 'llm-io';
-import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../ledger';
-import { CacheHitSimulator, type CacheHitSimulationResult } from '../cache-hit-simulators';
-import type { ReplayCachePolicy } from '../cache-strategies';
+import {
+  CacheHitSimulator,
+  type CacheHitSimulationResult,
+} from '../cache-backend/cache-hit-simulator';
+import type { CacheCostModel, ReplayCachePolicy, SimulationScenario } from '../contracts';
 
 export interface ReplayRequestLog extends CacheHitSimulationResult {
   anchorIndexes: readonly number[];
@@ -47,16 +48,33 @@ function countPolicyMarkers(messages: readonly LlmMessage[]): {
   return { count, roles };
 }
 
-function calculateRequestNetSavedTokens(readTokens: number, writeTokens: number): number {
-  return readTokens * CACHE_READ_SAVING_RATE - writeTokens * CACHE_WRITE_PREMIUM_RATE;
+function validateRate(name: string, rate: number): void {
+  if (!Number.isFinite(rate) || rate < 0) {
+    throw new RangeError(`Cache cost model ${name} must be a non-negative finite number.`);
+  }
 }
 
-export async function replayScenario(options: {
+function calculateRequestNetSavedTokens(
+  readTokens: number,
+  writeTokens: number,
+  costModel: CacheCostModel,
+): number {
+  return (
+    readTokens * costModel.readTokenSavingsRate - writeTokens * costModel.writeTokenPremiumRate
+  );
+}
+
+export interface ReplayScenarioOptions {
   cacheHitSimulator: CacheHitSimulator;
+  costModel: CacheCostModel;
   policy: ReplayCachePolicy;
   scenario: SimulationScenario;
-}): Promise<ReplayResult> {
-  const { cacheHitSimulator, policy, scenario } = options;
+}
+
+export async function replayScenario(options: ReplayScenarioOptions): Promise<ReplayResult> {
+  const { cacheHitSimulator, costModel, policy, scenario } = options;
+  validateRate('readTokenSavingsRate', costModel.readTokenSavingsRate);
+  validateRate('writeTokenPremiumRate', costModel.writeTokenPremiumRate);
   const logs: ReplayRequestLog[] = [];
   let atMinute = 0;
 
@@ -89,7 +107,11 @@ export async function replayScenario(options: {
       atMinute,
       consecutiveEpochResets: decision.consecutiveEpochResets,
       elapsedMinutes: request.elapsedMinutes,
-      netSavedTokens: calculateRequestNetSavedTokens(accounting.readTokens, accounting.writeTokens),
+      netSavedTokens: calculateRequestNetSavedTokens(
+        accounting.readTokens,
+        accounting.writeTokens,
+        costModel,
+      ),
       policyMarkerCount: markerObservation.count,
       policyMarkerRoles: markerObservation.roles,
       promptCacheKey: decision.promptCacheKey,
