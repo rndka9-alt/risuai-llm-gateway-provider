@@ -2,7 +2,7 @@ import { CACHE_READ_SAVING_RATE, CACHE_WRITE_PREMIUM_RATE } from '../../../ledge
 import {
   replayScenario as replaySimulationScenario,
   type ReplayScenarioOptions,
-} from '../../../sim';
+} from 'llm-cache-simulator';
 
 type ProjectReplayScenarioOptions = Omit<ReplayScenarioOptions, 'costModel'>;
 
@@ -16,4 +16,4 @@ export function replayScenario(options: ProjectReplayScenarioOptions) {
   });
 }
 
-export type { ReplayRequestLog, ReplayResult } from '../../../sim';
+export type { ReplayRequestLog, ReplayResult } from 'llm-cache-simulator';

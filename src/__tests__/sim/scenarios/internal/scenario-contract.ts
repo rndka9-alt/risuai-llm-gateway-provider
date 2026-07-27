@@ -1,1 +1,1 @@
-export type { ScenarioRequest, SimulationScenario } from '../../../../sim';
+export type { ScenarioRequest, SimulationScenario } from 'llm-cache-simulator';

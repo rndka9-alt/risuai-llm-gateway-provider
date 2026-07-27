@@ -8,4 +8,4 @@ export {
   type CacheHitSimulatorPreset,
   type CacheHitSimulatorTokenizer,
   type MarkerMatchMode,
-} from '../../../sim';
+} from 'llm-cache-simulator';

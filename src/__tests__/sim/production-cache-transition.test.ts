@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LlmMessage } from 'llm-io';
-import {
-  createEmptyProductionCacheSnapshot,
-  createProductionCacheTransition,
-} from '../../sim-runner/adapters';
+import { createEmptyProductionCacheSnapshot, createProductionCacheTransition } from './adapters';
 
 function createMessage(role: LlmMessage['role'], text: string): LlmMessage {
   return { content: [{ text, type: 'text' }], role };

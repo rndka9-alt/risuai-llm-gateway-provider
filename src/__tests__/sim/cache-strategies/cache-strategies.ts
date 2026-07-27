@@ -13,9 +13,13 @@ import { loadCacheAnchorState } from '../../../cache/state/load-cache-anchor-sta
 import { saveCacheAnchorState } from '../../../cache/state/save-cache-anchor-state';
 import type { CacheAnchorState, MessageFingerprint } from '../../../cache/state/schema';
 import type { CachePlan } from '../../../cache/types';
-import type { CachePolicyDecision, ReplayCachePolicy } from '../../../sim';
+import type { CachePolicyDecision, ReplayCachePolicy } from 'llm-cache-simulator';
 
-export type { CachePolicyDecision, ReplayCachePolicy, ReplayPolicyContext } from '../../../sim';
+export type {
+  CachePolicyDecision,
+  ReplayCachePolicy,
+  ReplayPolicyContext,
+} from 'llm-cache-simulator';
 
 function fingerprintsEqual(left: MessageFingerprint, right: MessageFingerprint): boolean {
   return left.role === right.role && left.hash === right.hash;
@@ -399,4 +403,5 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
   };
 }
 
-export { createNoCachePolicy, createProductionCachePolicy } from '../../../sim-runner/adapters';
+export { createNoCachePolicy } from 'llm-cache-simulator';
+export { createProductionCachePolicy } from '../adapters';

@@ -6,7 +6,7 @@ import {
   type ReplayCachePolicy,
   type ReplayResult,
   type SimulationScenario,
-} from '../../../../sim';
+} from 'llm-cache-simulator';
 import { createCanonicalScenarios } from '../../scenarios';
 import {
   createAdaptiveTwoStrikeCachePolicy,
