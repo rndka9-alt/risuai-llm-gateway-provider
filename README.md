@@ -100,11 +100,20 @@ npm run build      # TS/TSX + CSS 번들 및 minify → plugin.min.js
 npm run typecheck  # TypeScript 타입 검사
 npm test           # 기능·계약 테스트 (sim 제외)
 npm run test:sim   # 캐싱 효율 측정 벤치마크 — 캐시 정책 변경 시에만
+npm run --silent sim:run -- examples/sim/basic.json
 npm run test:all   # 둘 다
 npm run test:watch
 ```
 
 빌드 버전은 `package.json`에서만 관리하며, `plugin.min.js`의 `@version` 메타데이터에 자동 반영된다.
+
+### Standalone cache sim
+
+`sim:run`은 API 요청을 보내지 않고 JSON 입력의 scenario를 로컬 cache backend에서 replay한다.
+입력 v1은 `production`·`no-cache` 정책, cache backend preset, 비용 계수와 role별 텍스트 메시지를
+받으며 구조화된 JSON report를 stdout으로 출력한다. synthetic 대형 블록은 메시지의 선택적
+`repeat` 값으로 만들 수 있고, report에는 입력 원문과 직렬화된 request body를 포함하지 않는다. 입력 예시는
+`examples/sim/basic.json`에 있다.
 
 ## 릴리즈
 

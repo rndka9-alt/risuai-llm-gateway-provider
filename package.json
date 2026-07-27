@@ -8,6 +8,8 @@
     "build": "node build.mjs",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
+    "sim:build": "node scripts/build-sim-runner.mjs",
+    "sim:run": "npm run sim:build --silent && node dist/cache-sim.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude 'src/__tests__/sim/**'",
     "test:sim": "vitest run src/__tests__/sim",

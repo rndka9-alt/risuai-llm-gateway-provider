@@ -5,7 +5,6 @@ import {
 } from '../../../cache/constants';
 import { sumTextTokenEstimatesBetween } from '../../../cache/planner/utils/sum-token-estimates-between';
 import type { AnchorAdmission } from '../../../cache/state/schema';
-import { commitPromptCacheState, preparePromptCacheRequest } from '../../../cache';
 import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
 import { getPromptCacheKey } from '../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../cache/planner/fingerprint-message';
@@ -304,25 +303,6 @@ function createAdaptiveTwoStrikePolicy(options: AdaptiveTwoStrikeOptions): Repla
   };
 }
 
-export function createProductionCachePolicy(): ReplayCachePolicy {
-  return {
-    name: 'production',
-    async apply(messages) {
-      const prepared = await preparePromptCacheRequest([...messages], 'explicit');
-      if (prepared.pendingCommit === null) {
-        throw new Error('Production cache policy must prepare a bank commit.');
-      }
-      await commitPromptCacheState(prepared.pendingCommit);
-      return {
-        anchorIndexes: [],
-        consecutiveEpochResets: 0,
-        messages: prepared.requestMessages,
-        promptCacheKey: getPromptCacheKey('explicit'),
-      };
-    },
-  };
-}
-
 export function createTwoSurvivalProductionCachePolicy(): ReplayCachePolicy {
   const epochResetTracker = createLegacyEpochResetTracker();
   return {
@@ -419,16 +399,7 @@ export function createFirstTurnSafeCachePolicy(): ReplayCachePolicy {
   };
 }
 
-export function createNoCachePolicy(): ReplayCachePolicy {
-  return {
-    name: 'no-cache',
-    async apply(messages) {
-      return {
-        anchorIndexes: [],
-        consecutiveEpochResets: 0,
-        messages: [...messages],
-        promptCacheKey: getPromptCacheKey('disabled'),
-      };
-    },
-  };
-}
+export {
+  createNoCachePolicy,
+  createProductionCachePolicy,
+} from '../../../sim-adapters/cache-policies';

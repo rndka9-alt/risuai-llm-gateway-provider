@@ -42,8 +42,6 @@ npm run test:all  # 둘 다
   이 경로를 건드리지 않는 변경은 `npm test`로 충분하다.
 - sim은 실험 기록인 동시에 회귀망이다. `v013-single-slot.test.ts`는 기대 점수를 고정해 두므로
   정책을 의도적으로 바꿨다면 점수 갱신이 함께 필요하다.
-- `src/__tests__/sim/`의 일부 파일은 타 플러그인 이식 코드라 `.git/info/exclude`(로컬 전용)로
-  커밋에서 제외돼 있다. git이 추적하지 않으므로 삭제하면 복구할 수 없다.
 
 ### sim 결과 해석 원칙
 
@@ -70,6 +68,8 @@ npm run test:all  # 둘 다
   - `contracts.ts` — scenario·policy·cost model 공개 계약
   - `replay/` — 단일 scenario replay와 요청별 비용 집계
   - `cache-backend/` — 서버측 prompt cache의 hit·miss·read·write 회계 재현
+- `src/sim-adapters/` — 현재 provider의 production cache 정책을 core 계약에 연결
+- `src/sim-runner/` — 버전된 JSON 입력을 받아 headless API를 실행하는 standalone 소비자
 - `src/__tests__/sim/scenarios/` — 테스트 입력 시나리오의 공개 진입점과 canonical·long-run·neutral 구성
 - `src/__tests__/sim/cache-strategies/` — breakpoint·cache key·admission을 결정하는 현행·과거·실험 전략
 - `src/__tests__/sim/reporting/` — scoreboard 등 결과 표현
