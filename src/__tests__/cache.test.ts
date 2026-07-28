@@ -60,8 +60,8 @@ describe('prompt cache request wiring', () => {
   it('explicit 모드는 유저별 suffix가 붙은 키를 만들고 요청 간 유지한다', async () => {
     stubMapStorage();
 
-    const first = await preparePromptCacheRequest([], 'explicit');
-    const second = await preparePromptCacheRequest([], 'explicit');
+    const first = await prepareOk([], 'explicit');
+    const second = await prepareOk([], 'explicit');
 
     expect(first.cacheExtraBody).toEqual({
       prompt_cache_key: expect.stringMatching(/^LGP:prompt-cache:v2:[0-9a-f]{16}$/),
@@ -73,7 +73,7 @@ describe('prompt cache request wiring', () => {
   it('저장된 유저 suffix를 재사용한다', async () => {
     stubMapStorage([['llm-gateway-provider:prompt-cache-user-suffix', '0123456789abcdef']]);
 
-    const prepared = await preparePromptCacheRequest([], 'explicit');
+    const prepared = await prepareOk([], 'explicit');
 
     expect(prepared.cacheExtraBody.prompt_cache_key).toBe(
       'LGP:prompt-cache:v2:0123456789abcdef',
@@ -85,7 +85,7 @@ describe('prompt cache request wiring', () => {
       ['llm-gateway-provider:prompt-cache-user-suffix', 'not-a-valid-suffix!'],
     ]);
 
-    const prepared = await preparePromptCacheRequest([], 'explicit');
+    const prepared = await prepareOk([], 'explicit');
 
     expect(prepared.cacheExtraBody.prompt_cache_key).toMatch(
       /^LGP:prompt-cache:v2:[0-9a-f]{16}$/,
@@ -96,13 +96,34 @@ describe('prompt cache request wiring', () => {
   it('disabled 모드는 suffix를 만들지 않고 disabled 키를 쓴다', async () => {
     const stored = stubMapStorage();
 
-    const prepared = await preparePromptCacheRequest([], 'disabled');
+    const prepared = await prepareOk([], 'disabled');
 
     expect(prepared.cacheExtraBody).toEqual({
       prompt_cache_key: 'LGP:prompt-cache:v2:disabled',
       prompt_cache_options: { mode: 'explicit', ttl: '30m' },
     });
     expect(stored.has('llm-gateway-provider:prompt-cache-user-suffix')).toBe(false);
+  });
+
+  it('계획 단계 예외는 채팅을 막지 않고 캐시 없이 진행한다', async () => {
+    stubMapStorage();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const messages = [
+      {
+        role: 'user',
+        get content(): never {
+          throw new Error('planner bug');
+        },
+      } as LlmMessage,
+    ];
+
+    const prepared = await preparePromptCacheRequest(messages, 'explicit');
+
+    if (prepared.status !== 'prepared') throw new Error('Expected prepare to succeed');
+    expect(prepared.requestMessages).toBe(messages);
+    expect(prepared.pendingCommit).toBeNull();
+    expect(prepared.cacheExtraBody.prompt_cache_key).toMatch(/^LGP:prompt-cache:v2:[0-9a-f]{16}$/);
+    expect(consoleError).toHaveBeenCalled();
   });
 });
 
@@ -120,6 +141,12 @@ function breakpointIndexes(messages: readonly LlmMessage[]): number[] {
     if (marked) indexes.push(index);
   });
   return indexes;
+}
+
+async function prepareOk(messages: LlmMessage[], mode: 'explicit' | 'disabled') {
+  const result = await preparePromptCacheRequest(messages, mode);
+  if (result.status !== 'prepared') throw new Error('Expected prepare to succeed');
+  return result;
 }
 
 // 여러 턴을 순차 실행해 마지막 턴의 plan을 얻는다.
@@ -534,7 +561,7 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
     const transitions: Array<CacheBackoffTransition | null> = [];
 
     for (const turn of turns.slice(0, CACHE_BACKOFF_BANK_MISS_THRESHOLD)) {
-      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      const prepared = await prepareOk(turn, 'explicit');
       markedIndexes.push(breakpointIndexes(prepared.requestMessages));
       if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
       transitions.push(await commitPromptCacheState(prepared.pendingCommit));
@@ -562,13 +589,13 @@ describe('planCacheAnchors / markCacheBreakpoints', () => {
       makeMessage('user', 'input'),
     ]);
     for (const turn of changingTurns) {
-      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      const prepared = await prepareOk(turn, 'explicit');
       if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
       await commitPromptCacheState(prepared.pendingCommit);
     }
 
     const stableTurn = [...changingTurns[changingTurns.length - 1]];
-    const recovered = await preparePromptCacheRequest(stableTurn, 'explicit');
+    const recovered = await prepareOk(stableTurn, 'explicit');
     if (recovered.pendingCommit === null) throw new Error('Expected a pending commit');
 
     expect(breakpointIndexes(recovered.requestMessages)).toEqual([0]);
@@ -736,9 +763,8 @@ describe('frontier death monitor', () => {
 });
 
 describe('prompt cache orchestration', () => {
-  it('prepare 저장소 읽기 실패는 원본 messages와 extra body를 유지하고 commit을 만들지 않는다', async () => {
+  it('prepare 저장소 실패는 요청을 보내지 않도록 storage-failure를 반환한다', async () => {
     const storageError = new Error('cache storage unavailable');
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubGlobal('risuai', {
       pluginStorage: {
         getItem: async () => {
@@ -750,16 +776,7 @@ describe('prompt cache orchestration', () => {
 
     const prepared = await preparePromptCacheRequest(messages, 'explicit');
 
-    expect(prepared.requestMessages).toBe(messages);
-    expect(prepared.pendingCommit).toBeNull();
-    expect(prepared.cacheExtraBody).toEqual({
-      prompt_cache_key: 'LGP:prompt-cache:v2',
-      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-    });
-    expect(consoleError).toHaveBeenCalledWith(
-      '[llm-gateway-provider] cache anchor handling failed; sending without breakpoints',
-      storageError,
-    );
+    expect(prepared).toEqual({ status: 'storage-failure', error: storageError });
   });
 
   it('commit 저장 실패는 throw하지 않고 transition을 반환하지 않는다', async () => {
@@ -775,7 +792,7 @@ describe('prompt cache orchestration', () => {
         },
       },
     });
-    const prepared = await preparePromptCacheRequest(
+    const prepared = await prepareOk(
       [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input')],
       'explicit',
     );
@@ -802,7 +819,7 @@ describe('prompt cache orchestration', () => {
     });
     const messages = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'input')];
 
-    const prepared = await preparePromptCacheRequest(messages, 'disabled');
+    const prepared = await prepareOk(messages, 'disabled');
 
     expect(prepared.requestMessages).toBe(messages);
     if (prepared.pendingCommit === null) {
@@ -813,28 +830,21 @@ describe('prompt cache orchestration', () => {
     await expect(loadCacheAnchorBankMissCount()).resolves.toBe(1);
   });
 
-  it.each([
-    ['explicit', 'LGP:prompt-cache:v2'],
-    ['disabled', 'LGP:prompt-cache:v2:disabled'],
-  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
-    '%s prepare 실패도 원래 mode의 cache extra body를 유지한다',
-    async (mode, promptCacheKey) => {
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it.each(['explicit', 'disabled'] as const)(
+    '%s 모드의 storage 실패는 storage-failure로 반환한다',
+    async (mode) => {
+      const storageError = new Error('cache storage unavailable');
       vi.stubGlobal('risuai', {
         pluginStorage: {
           getItem: async () => {
-            throw new Error('cache storage unavailable');
+            throw storageError;
           },
         },
       });
 
       const prepared = await preparePromptCacheRequest([], mode);
 
-      expect(prepared.cacheExtraBody).toEqual({
-        prompt_cache_key: promptCacheKey,
-        prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-      });
-      expect(prepared.pendingCommit).toBeNull();
+      expect(prepared).toEqual({ status: 'storage-failure', error: storageError });
     },
   );
 
@@ -855,7 +865,7 @@ describe('prompt cache orchestration', () => {
     let transition: CacheBackoffTransition | null = null;
 
     for (const turn of changingTurns) {
-      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      const prepared = await prepareOk(turn, 'explicit');
       if (prepared.pendingCommit === null) {
         throw new Error('Expected prepare to create a pending commit');
       }
@@ -863,7 +873,7 @@ describe('prompt cache orchestration', () => {
     }
 
     expect(transition).toBe('activated');
-    const stablePrepared = await preparePromptCacheRequest(
+    const stablePrepared = await prepareOk(
       [...changingTurns[changingTurns.length - 1]],
       'explicit',
     );
@@ -891,7 +901,7 @@ describe('content-addressed cache anchor state bank', () => {
   }
 
   async function prepareAndCommit(messages: LlmMessage[]): Promise<void> {
-    const prepared = await preparePromptCacheRequest(messages, 'explicit');
+    const prepared = await prepareOk(messages, 'explicit');
     if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
     await commitPromptCacheState(prepared.pendingCommit);
   }
@@ -1045,7 +1055,7 @@ describe('content-addressed cache anchor state bank', () => {
 
     for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
       const turn = turns[turnIndex];
-      const prepared = await preparePromptCacheRequest(turn, 'explicit');
+      const prepared = await prepareOk(turn, 'explicit');
       expect(breakpointIndexes(prepared.requestMessages)).toEqual([]);
       if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
       transitions.push(await commitPromptCacheState(prepared.pendingCommit));
@@ -1097,7 +1107,7 @@ describe('content-addressed cache anchor state bank', () => {
       makeMessage('user', 'small input'),
     ];
 
-    const prepared = await preparePromptCacheRequest(smallMiss, 'explicit');
+    const prepared = await prepareOk(smallMiss, 'explicit');
 
     expect(breakpointIndexes(prepared.requestMessages)).toEqual([]);
     if (prepared.pendingCommit === null) throw new Error('Expected a pending commit');
@@ -1125,12 +1135,12 @@ describe('content-addressed cache anchor state bank', () => {
     ];
 
     await prepareAndCommit(small);
-    const crossedPrepared = await preparePromptCacheRequest(crossed, 'explicit');
+    const crossedPrepared = await prepareOk(crossed, 'explicit');
     expect(breakpointIndexes(crossedPrepared.requestMessages)).toEqual([]);
     if (crossedPrepared.pendingCommit === null) throw new Error('Expected a pending commit');
     await commitPromptCacheState(crossedPrepared.pendingCommit);
 
-    const grownPrepared = await preparePromptCacheRequest(grown, 'explicit');
+    const grownPrepared = await prepareOk(grown, 'explicit');
     expect(breakpointIndexes(grownPrepared.requestMessages).length).toBeGreaterThan(0);
     if (grownPrepared.pendingCommit === null) throw new Error('Expected a pending commit');
     await commitPromptCacheState(grownPrepared.pendingCommit);
@@ -1485,12 +1495,12 @@ describe('content-addressed cache anchor state bank', () => {
     await prepareAndCommit(branchA);
     await prepareAndCommit(branchB);
 
-    const returnedA = await preparePromptCacheRequest([...branchA], 'explicit');
+    const returnedA = await prepareOk([...branchA], 'explicit');
     expect(breakpointIndexes(returnedA.requestMessages).length).toBeGreaterThan(0);
     if (returnedA.pendingCommit === null) throw new Error('Expected a pending commit');
     await commitPromptCacheState(returnedA.pendingCommit);
 
-    const returnedB = await preparePromptCacheRequest([...branchB], 'explicit');
+    const returnedB = await prepareOk([...branchB], 'explicit');
     expect(breakpointIndexes(returnedB.requestMessages).length).toBeGreaterThan(0);
     if (returnedB.pendingCommit === null) throw new Error('Expected a pending commit');
     await commitPromptCacheState(returnedB.pendingCommit);

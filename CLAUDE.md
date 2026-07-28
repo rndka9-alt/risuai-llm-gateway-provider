@@ -147,6 +147,7 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
 | `LGP:ERR:001` | API 키 미설정                   | 저장된 API 키를 trim한 결과가 빈 문자열                           |
 | `LGP:ERR:002` | 플러그인 내부 처리 실패         | 다른 분류에 속하지 않은 요청 처리 예외                            |
 | `LGP:ERR:101` | RisuAI 브릿지·전송 실패         | `BridgeFetchError`                                                 |
+| `LGP:ERR:102` | 플러그인 저장소 캐시 접근 실패  | prepare의 storage 격리 블록에서 pluginStorage 예외 (요청 전송 전) |
 | `LGP:ERR:201` | Gateway 요청 스키마 검증 실패   | HTTP 400 body의 `error.name`이 `ZodError`                          |
 | `LGP:ERR:202` | Gateway HTTP 처리 실패          | `LGP:ERR:201`을 제외한 `LlmHttpError`                              |
 | `LGP:ERR:301` | Gateway in-band 응답 오류       | HTTP 성공 응답 안에서 `LlmInBandError` 발생                       |
@@ -205,7 +206,9 @@ HTTP status가 있으면 같은 괄호에 `, 오류 코드 N`을 이어 붙인�
   (구버전 상태는 0으로 마이그레이션하며, 그룹을 못 찾는 요청은 bank miss 백오프가 담당하므로 제외).
 - 토큰 추정: ASCII/4 + 비ASCII/2 + 메시지당 framing 4토큰. 1024토큰 미만 프리픽스는 마킹 생략.
   (후속: 응답 usage.inputTokens 기반 런타임 보정)
-- 캐시 처리 실패는 채팅 요청을 죽이지 않고 로그 후 캐시 없이 진행. 손상된 index·slot은 빈 뱅크로 자가 회복.
+- 캐시 storage 접근 실패(키 suffix·뱅크 로드)는 조용히 생략하지 않고 요청 전송 전에 `LGP:ERR:102`로
+  사용자에게 표면화한다. 순수 계획 단계 예외(플러그인 버그)는 채팅 요청을 죽이지 않고 로그 후 캐시 없이
+  진행한다 — disabled 모드도 같은 경로를 타 수정 배포 전 우회가 없기 때문. 손상된 index·slot은 빈 뱅크로 자가 회복.
 
 ## 캐시 손익 원장 (`src/ledger/`)
 

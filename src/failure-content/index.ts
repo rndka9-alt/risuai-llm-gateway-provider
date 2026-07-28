@@ -1,4 +1,8 @@
-export { toFailureContent, toMissingApiKeyFailureContent } from './failure-content';
+export {
+  toCacheStorageFailureContent,
+  toFailureContent,
+  toMissingApiKeyFailureContent,
+} from './failure-content';
 export { toEmptyStreamFailureContent } from './empty-stream';
 
 // 여기부터는 테스트만 의존한다 (프로덕션 소비자 없음).

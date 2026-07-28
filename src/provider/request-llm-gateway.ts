@@ -20,6 +20,7 @@ import {
 import { toLlmMessages } from '../convert';
 import { applyCustomExtraBody } from '../extra-body';
 import {
+  toCacheStorageFailureContent,
   toEmptyStreamFailureContent,
   toFailureContent,
   toMissingApiKeyFailureContent,
@@ -70,6 +71,10 @@ export async function requestLLMGateway(
   try {
     const messages = toLlmMessages(providerArguments.prompt_chat);
     const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
+    if (cacheRequest.status === 'storage-failure') {
+      // 요청 전송 전의 환경성 실패 — 조용한 캐시 생략 대신 사용자에게 알린다.
+      return { success: false, content: toCacheStorageFailureContent(cacheRequest.error) };
+    }
 
     const extraBody: GatewayChatCompletionsExtraBody = {
       max_tokens: providerArguments.max_tokens,

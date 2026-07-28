@@ -8,6 +8,7 @@ export const USER_ERROR_CODES = {
   missingApiKey: 'LGP:ERR:001',
   unexpectedPluginFailure: 'LGP:ERR:002',
   bridgeTransportFailure: 'LGP:ERR:101',
+  cacheStorageFailure: 'LGP:ERR:102',
   gatewayRequestValidationFailure: 'LGP:ERR:201',
   gatewayHttpFailure: 'LGP:ERR:202',
   gatewayInBandFailure: 'LGP:ERR:301',

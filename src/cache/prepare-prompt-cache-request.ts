@@ -1,14 +1,12 @@
 import type { LlmMessage, OpenAIChatCompletionsExtraBody } from 'llm-io';
 import { resolveCacheBackoffTransition } from './backoff/resolve-cache-backoff-transition';
 import { markCacheBreakpoints } from './breakpoint/mark-cache-breakpoints';
-import {
-  createFallbackPromptCacheExtraBody,
-  createPromptCacheExtraBody,
-} from './mode/create-prompt-cache-extra-body';
+import { createPromptCacheExtraBody } from './mode/create-prompt-cache-extra-body';
 import { isExplicitPromptCacheMode } from './mode/is-explicit-prompt-cache-mode';
 import { fingerprintMessage } from './planner/fingerprint-message';
 import { planCacheAnchorsFromFingerprints } from './planner/plan-cache-anchors';
 import { loadCacheAnchorBankSnapshot } from './state/bank/cache-anchor-bank-store';
+import type { CacheAnchorBankSnapshot } from './state/bank/schema';
 import {
   createNextCacheAnchorBankSnapshot,
   selectCacheAnchorBankState,
@@ -20,22 +18,38 @@ import {
 import type { PromptCacheMode } from './types';
 
 interface PreparedPromptCacheRequest {
+  status: 'prepared';
   requestMessages: LlmMessage[];
   cacheExtraBody: OpenAIChatCompletionsExtraBody;
   pendingCommit: PendingPromptCacheCommit | null;
 }
 
+// 에러 클래스 대신 위치 기반 분류 — storage I/O만 담은 격리 블록의 실패라는 위치가
+// 환경성 실패임을 보장한다. 소비자(provider)는 이를 LGP:ERR:102로 사용자에게 표면화한다.
+interface PromptCacheStorageFailure {
+  status: 'storage-failure';
+  error: unknown;
+}
+
+export type PromptCacheRequestResult = PreparedPromptCacheRequest | PromptCacheStorageFailure;
+
 export async function preparePromptCacheRequest(
   messages: LlmMessage[],
   mode: PromptCacheMode,
-): Promise<PreparedPromptCacheRequest> {
+): Promise<PromptCacheRequestResult> {
+  let cacheExtraBody: OpenAIChatCompletionsExtraBody;
+  let previousSnapshot: CacheAnchorBankSnapshot;
   try {
-    // 유저별 키 로드가 storage를 읽으므로 anchor 처리와 같은 실패 격리 안에 둔다.
-    const cacheExtraBody = await createPromptCacheExtraBody(mode);
-
+    // 요청 전송 전이라 실패해도 중복 과금이 없다 — 조용한 캐시 생략 대신 표면화한다.
+    cacheExtraBody = await createPromptCacheExtraBody(mode);
     // disabled 모드에서도 diff 기준은 계속 갱신한다 — explicit로 되돌렸을 때
     // 스테일 diff로 잘못된 앵커가 잡히는 것을 막는다.
-    const previousSnapshot = await loadCacheAnchorBankSnapshot();
+    previousSnapshot = await loadCacheAnchorBankSnapshot();
+  } catch (error) {
+    return { status: 'storage-failure', error };
+  }
+
+  try {
     const fingerprints = messages.map(fingerprintMessage);
     const selection = selectCacheAnchorBankState(previousSnapshot, fingerprints);
     const plan = planCacheAnchorsFromFingerprints(selection.previousState, fingerprints);
@@ -53,6 +67,7 @@ export async function preparePromptCacheRequest(
     );
 
     return {
+      status: 'prepared',
       requestMessages,
       cacheExtraBody,
       pendingCommit: {
@@ -64,16 +79,12 @@ export async function preparePromptCacheRequest(
       },
     };
   } catch (error) {
-    // 캐시 처리 실패(유저별 키 로드·앵커 처리)가 채팅 요청까지 죽여선 안 된다 —
-    // 이번 요청은 breakpoint 없이 base 키 폴백으로 보낸다.
+    // 순수 계획 단계의 예외는 플러그인 버그다 — 채팅을 막으면 수정 배포 전까지
+    // 우회가 없으므로(disabled 모드도 이 경로를 탄다) 캐시 없이 요청을 이어간다.
     console.error(
       '[llm-gateway-provider] cache anchor handling failed; sending without breakpoints',
       error,
     );
-    return {
-      requestMessages: messages,
-      cacheExtraBody: createFallbackPromptCacheExtraBody(mode),
-      pendingCommit: null,
-    };
+    return { status: 'prepared', requestMessages: messages, cacheExtraBody, pendingCommit: null };
   }
 }

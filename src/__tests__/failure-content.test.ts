@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BridgeFetchError } from '../bridge-fetch';
 import {
   USER_ERROR_CODES,
+  toCacheStorageFailureContent,
   toEmptyStreamFailureContent,
   toFailureContent,
   toMissingApiKeyFailureContent,
@@ -129,6 +130,15 @@ describe('toFailureContent', () => {
     );
   });
 
+  it('캐시 저장소 실패를 전송 전 실패로 안내한다', () => {
+    expect(toCacheStorageFailureContent(new Error('storage unavailable'))).toBe(
+      '플러그인 저장소에서 프롬프트 캐시 키와 상태를 읽거나 쓰지 못했어요.\n' +
+        '이번 요청은 전송되지 않았어요.\n' +
+        '같은 문제가 계속되면 아래 오류 정보를 플러그인 개발자에게 알려 주세요.\n\n' +
+        '자세한 오류 정보 (LGP:ERR:102)\nError: storage unavailable',
+    );
+  });
+
   it('일반 Error의 cause chain을 상세 정보에 남긴다', () => {
     const error = new Error('응답을 해석하지 못했어요.', {
       cause: new TypeError('Unexpected token'),
@@ -189,6 +199,7 @@ describe('toFailureContent', () => {
       missingApiKey: 'LGP:ERR:001',
       unexpectedPluginFailure: 'LGP:ERR:002',
       bridgeTransportFailure: 'LGP:ERR:101',
+      cacheStorageFailure: 'LGP:ERR:102',
       gatewayRequestValidationFailure: 'LGP:ERR:201',
       gatewayHttpFailure: 'LGP:ERR:202',
       gatewayInBandFailure: 'LGP:ERR:301',
@@ -202,6 +213,9 @@ describe('toFailureContent', () => {
       [USER_ERROR_CODES.unexpectedPluginFailure]: toFailureContent(new Error('unexpected')),
       [USER_ERROR_CODES.bridgeTransportFailure]: toFailureContent(
         new BridgeFetchError('bridge failed'),
+      ),
+      [USER_ERROR_CODES.cacheStorageFailure]: toCacheStorageFailureContent(
+        new Error('storage unavailable'),
       ),
       [USER_ERROR_CODES.gatewayRequestValidationFailure]: toFailureContent(
         new LlmHttpError(400, '{"error":{"name":"ZodError"}}'),

@@ -24,15 +24,9 @@ async function loadOrCreateUserSuffix(): Promise<string> {
   return created;
 }
 
-// storage 실패를 여기서 삼키지 않는다 — preparePromptCacheRequest의 캐시 실패
-// 격리가 base 키 폴백(getFallbackPromptCacheKey)으로 요청을 이어간다.
+// storage 실패를 여기서 삼키지 않는다 — preparePromptCacheRequest의 storage 격리
+// 블록이 받아 요청 전송 전 실패(LGP:ERR:102)로 사용자에게 표면화한다.
 export async function getPromptCacheKey(mode: PromptCacheMode): Promise<string> {
   if (!isExplicitPromptCacheMode(mode)) return DISABLED_PROMPT_CACHE_KEY;
   return `${EXPLICIT_PROMPT_CACHE_KEY}:${await loadOrCreateUserSuffix()}`;
-}
-
-// storage에 닿지 않아 실패할 수 없는 base 키 — 폴백 요청은 breakpoint 없이 나가
-// 캐시가 동작하지 않으므로 유저 분리 없는 공유 값으로 충분하다.
-export function getFallbackPromptCacheKey(mode: PromptCacheMode): string {
-  return isExplicitPromptCacheMode(mode) ? EXPLICIT_PROMPT_CACHE_KEY : DISABLED_PROMPT_CACHE_KEY;
 }

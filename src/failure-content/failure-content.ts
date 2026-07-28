@@ -23,6 +23,17 @@ export function toMissingApiKeyFailureContent(): string {
   );
 }
 
+// 에러 클래스 없이 호출 지점 지식으로 분류한다 — prepare의 storage 격리 블록만 이
+// 실패를 만들 수 있다 (prepare-prompt-cache-request.ts). 요청 전송 전이라 과금이 없다.
+export function toCacheStorageFailureContent(error: unknown): string {
+  return withFailureDetails(
+    '플러그인 저장소에서 프롬프트 캐시 키와 상태를 읽거나 쓰지 못했어요.\n' +
+      '이번 요청은 전송되지 않았어요.',
+    safelyFormatErrorDetail(error),
+    USER_ERROR_CODES.cacheStorageFailure,
+  );
+}
+
 /** 사용자에게 오류 종류를 구분해 알리되 Gateway·브릿지 원문은 그대로 보존합니다. */
 export function toFailureContent(error: unknown): string {
   if (error instanceof LlmHttpError) {
