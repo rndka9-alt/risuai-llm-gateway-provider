@@ -1,11 +1,18 @@
-export const EXPLICIT_PROMPT_CACHE_KEY = 'risuai:llm-gateway-provider:v1';
-export const DISABLED_PROMPT_CACHE_KEY = 'risuai:llm-gateway-provider:v1:disabled';
+// LGP:ERR 코드 레지스트리와 같은 LGP 브랜딩. v2는 유저별 suffix 분리 세대를 뜻한다
+// (v1은 전 사용자 공유 키 — 30m TTL로 자연 소멸해 마이그레이션 불필요).
+export const EXPLICIT_PROMPT_CACHE_KEY = 'LGP:prompt-cache:v2';
+export const DISABLED_PROMPT_CACHE_KEY = 'LGP:prompt-cache:v2:disabled';
 
 // pluginStorage는 전 플러그인 공용 네임스페이스라 접두사가 필수다.
 // 이 키는 구버전 단일 상태와 신버전 bank index가 공유한다. 신버전 index는
 // 구버전 state schema에 맞지 않아 롤백 시 안전하게 새 epoch로 강하한다.
 export const CACHE_ANCHOR_STATE_STORAGE_KEY = 'llm-gateway-provider:cache-anchor-state';
 export const CACHE_ANCHOR_BANK_SLOT_STORAGE_KEY_PREFIX = `${CACHE_ANCHOR_STATE_STORAGE_KEY}:`;
+
+// 전 사용자가 base 키를 공유하면 게이트웨이 캐시 라우팅이 한 지점으로 몰려
+// 트래픽 초과 시 히트가 저하된다 — 설치별 무작위 suffix로 라우팅을 분리한다.
+export const PROMPT_CACHE_USER_SUFFIX_STORAGE_KEY =
+  'llm-gateway-provider:prompt-cache-user-suffix';
 export const BANK_MAX_STATES = 16;
 
 // OpenAI는 1024토큰 미만 프리픽스를 캐시하지 않고, explicit 문서상 non-cacheable

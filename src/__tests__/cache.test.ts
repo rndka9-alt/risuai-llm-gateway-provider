@@ -44,26 +44,66 @@ describe('prompt cache mode', () => {
 });
 
 describe('prompt cache request wiring', () => {
-  it.each([
-    ['explicit', 'risuai:llm-gateway-provider:v1'],
-    ['disabled', 'risuai:llm-gateway-provider:v1:disabled'],
-  ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
-    '%s 모드에 explicit 캐시 옵션과 해당 키를 구성한다',
-    async (mode, promptCacheKey) => {
-      vi.stubGlobal('risuai', {
-        pluginStorage: {
-          getItem: async () => null,
+  function stubMapStorage(seed?: ReadonlyArray<readonly [string, string]>): Map<string, string> {
+    const stored = new Map<string, string>(seed);
+    vi.stubGlobal('risuai', {
+      pluginStorage: {
+        getItem: async (key: string) => stored.get(key) ?? null,
+        setItem: async (key: string, value: string) => {
+          stored.set(key, value);
         },
-      });
+      },
+    });
+    return stored;
+  }
 
-      const prepared = await preparePromptCacheRequest([], mode);
+  it('explicit 모드는 유저별 suffix가 붙은 키를 만들고 요청 간 유지한다', async () => {
+    stubMapStorage();
 
-      expect(prepared.cacheExtraBody).toEqual({
-        prompt_cache_key: promptCacheKey,
-        prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-      });
-    },
-  );
+    const first = await preparePromptCacheRequest([], 'explicit');
+    const second = await preparePromptCacheRequest([], 'explicit');
+
+    expect(first.cacheExtraBody).toEqual({
+      prompt_cache_key: expect.stringMatching(/^LGP:prompt-cache:v2:[0-9a-f]{16}$/),
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+    });
+    expect(second.cacheExtraBody.prompt_cache_key).toBe(first.cacheExtraBody.prompt_cache_key);
+  });
+
+  it('저장된 유저 suffix를 재사용한다', async () => {
+    stubMapStorage([['llm-gateway-provider:prompt-cache-user-suffix', '0123456789abcdef']]);
+
+    const prepared = await preparePromptCacheRequest([], 'explicit');
+
+    expect(prepared.cacheExtraBody.prompt_cache_key).toBe(
+      'LGP:prompt-cache:v2:0123456789abcdef',
+    );
+  });
+
+  it('이형 suffix는 새로 생성해 자가 회복한다', async () => {
+    const stored = stubMapStorage([
+      ['llm-gateway-provider:prompt-cache-user-suffix', 'not-a-valid-suffix!'],
+    ]);
+
+    const prepared = await preparePromptCacheRequest([], 'explicit');
+
+    expect(prepared.cacheExtraBody.prompt_cache_key).toMatch(
+      /^LGP:prompt-cache:v2:[0-9a-f]{16}$/,
+    );
+    expect(stored.get('llm-gateway-provider:prompt-cache-user-suffix')).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('disabled 모드는 suffix를 만들지 않고 disabled 키를 쓴다', async () => {
+    const stored = stubMapStorage();
+
+    const prepared = await preparePromptCacheRequest([], 'disabled');
+
+    expect(prepared.cacheExtraBody).toEqual({
+      prompt_cache_key: 'LGP:prompt-cache:v2:disabled',
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+    });
+    expect(stored.has('llm-gateway-provider:prompt-cache-user-suffix')).toBe(false);
+  });
 });
 
 function makeMessage(role: LlmMessage['role'], text: string): LlmMessage {
@@ -713,7 +753,7 @@ describe('prompt cache orchestration', () => {
     expect(prepared.requestMessages).toBe(messages);
     expect(prepared.pendingCommit).toBeNull();
     expect(prepared.cacheExtraBody).toEqual({
-      prompt_cache_key: 'risuai:llm-gateway-provider:v1',
+      prompt_cache_key: 'LGP:prompt-cache:v2',
       prompt_cache_options: { mode: 'explicit', ttl: '30m' },
     });
     expect(consoleError).toHaveBeenCalledWith(
@@ -727,7 +767,9 @@ describe('prompt cache orchestration', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubGlobal('risuai', {
       pluginStorage: {
-        getItem: async () => null,
+        // suffix는 저장돼 있는 상태로 두어, setItem 실패를 commit 단계로 격리한다.
+        getItem: async (key: string) =>
+          key === 'llm-gateway-provider:prompt-cache-user-suffix' ? '0123456789abcdef' : null,
         setItem: async () => {
           throw storageError;
         },
@@ -772,8 +814,8 @@ describe('prompt cache orchestration', () => {
   });
 
   it.each([
-    ['explicit', 'risuai:llm-gateway-provider:v1'],
-    ['disabled', 'risuai:llm-gateway-provider:v1:disabled'],
+    ['explicit', 'LGP:prompt-cache:v2'],
+    ['disabled', 'LGP:prompt-cache:v2:disabled'],
   ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
     '%s prepare 실패도 원래 mode의 cache extra body를 유지한다',
     async (mode, promptCacheKey) => {
@@ -1038,6 +1080,8 @@ describe('content-addressed cache anchor state bank', () => {
     }
     const initialLru = Array.from({ length: BANK_MAX_STATES }, (_, index) => index).reverse();
     seedCacheAnchorBank(stored, statesBySlot, initialLru);
+    // suffix를 미리 저장해, setItem 미호출 검증이 앵커 상태 쓰기만 가리키게 한다.
+    stored.set('llm-gateway-provider:prompt-cache-user-suffix', '0123456789abcdef');
     const storedBeforeRequest = new Map(stored);
     const setItem = vi.fn(async (key: string, value: string) => {
       stored.set(key, value);
@@ -1531,13 +1575,16 @@ describe('content-addressed cache anchor state bank', () => {
         },
       },
     });
+    // 유저 suffix는 요청마다 읽는 게 정상 동작이라, 절약 대상인 앵커 read만 센다.
+    const anchorReadCount = () =>
+      getItem.mock.calls.filter(([key]) => key.startsWith(CACHE_ANCHOR_STATE_STORAGE_KEY)).length;
     const first = [makeMessage('system', LONG_SYSTEM_TEXT), makeMessage('user', 'first')];
     await prepareAndCommit(first);
-    const readCountAfterFirstCommit = getItem.mock.calls.length;
+    const readCountAfterFirstCommit = anchorReadCount();
 
     await prepareAndCommit([...first, makeMessage('user', 'second')]);
 
-    expect(getItem).toHaveBeenCalledTimes(readCountAfterFirstCommit);
+    expect(anchorReadCount()).toBe(readCountAfterFirstCommit);
   });
 });
 
