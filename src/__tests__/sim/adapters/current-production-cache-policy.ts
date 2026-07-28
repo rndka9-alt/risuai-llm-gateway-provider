@@ -1,7 +1,6 @@
 import type { LlmMessage } from 'llm-io';
 import type { ReplayCachePolicy } from 'llm-cache-simulator';
 import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../cache/planner/fingerprint-message';
 import { planCacheAnchorsFromFingerprints } from '../../../cache/planner/plan-cache-anchors';
 import type { CacheAnchorBankSnapshot } from '../../../cache/state/bank/schema';
@@ -9,6 +8,10 @@ import {
   createNextCacheAnchorBankSnapshot,
   selectCacheAnchorBankState,
 } from '../../../cache/state/bank/select-cache-anchor-bank-state';
+
+// HEAD 재현 대상은 planner 정책뿐이다 — 캐시 키는 정책이 아니라 identity라
+// 프로덕션 값과 분리된 sim 고정 픽스처를 쓴다 (시뮬레이터는 안정성만 요구한다).
+const SIM_PROMPT_CACHE_KEY = 'sim:prompt-cache-key';
 
 export interface ProductionCacheTransition {
   readonly nextSnapshot: CacheAnchorBankSnapshot;
@@ -60,7 +63,7 @@ export function createProductionCachePolicy(): ReplayCachePolicy {
         anchorIndexes: [],
         consecutiveEpochResets: 0,
         messages: transition.requestMessages,
-        promptCacheKey: getPromptCacheKey('explicit'),
+        promptCacheKey: SIM_PROMPT_CACHE_KEY,
       };
     },
   };

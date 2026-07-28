@@ -6,7 +6,6 @@ import {
 import { sumTextTokenEstimatesBetween } from '../../../cache/planner/utils/sum-token-estimates-between';
 import type { AnchorAdmission } from '../../../cache/state/schema';
 import { markCacheBreakpoints } from '../../../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../cache/planner/fingerprint-message';
 import { planCacheAnchors } from '../../../cache/planner/plan-cache-anchors';
 import { loadCacheAnchorState } from '../../../cache/state/load-cache-anchor-state';
@@ -20,6 +19,9 @@ export type {
   ReplayCachePolicy,
   ReplayPolicyContext,
 } from 'llm-cache-simulator';
+
+// 캐시 키는 시뮬레이터의 엔트리 네임스페이스로 안정성만 필요하다 — 프로덕션 키 값과 무관한 고정 픽스처.
+const SIM_PROMPT_CACHE_KEY = 'sim:prompt-cache-key';
 
 function fingerprintsEqual(left: MessageFingerprint, right: MessageFingerprint): boolean {
   return left.role === right.role && left.hash === right.hash;
@@ -46,7 +48,7 @@ function createDecision(
     anchorIndexes: plan.anchorIndexes,
     consecutiveEpochResets,
     messages,
-    promptCacheKey: getPromptCacheKey('explicit'),
+    promptCacheKey: SIM_PROMPT_CACHE_KEY,
   };
 }
 

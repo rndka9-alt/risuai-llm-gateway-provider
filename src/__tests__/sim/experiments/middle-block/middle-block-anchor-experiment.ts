@@ -1,10 +1,12 @@
 import type { LlmMessage } from 'llm-io';
 import { markCacheBreakpoints } from '../../../../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../../../../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../../../../cache/planner/fingerprint-message';
 import type { CachePlan } from '../../../../cache/types';
 import type { ReplayCachePolicy } from '../../cache-strategies';
 import type { SimulationScenario, ScenarioRequest } from '../../scenarios';
+
+// 캐시 키는 시뮬레이터의 엔트리 네임스페이스로 안정성만 필요하다 — 프로덕션 키 값과 무관한 고정 픽스처.
+const SIM_PROMPT_CACHE_KEY = 'sim:prompt-cache-key';
 
 const FIXED_HEAD_INDEX = 0;
 const ROTATING_BLOCK_INDEX = 1;
@@ -255,7 +257,7 @@ function createSemanticAnchorPolicy(options: SemanticAnchorPolicyOptions): Repla
         anchorIndexes: normalizedAnchorIndexes,
         consecutiveEpochResets: 0,
         messages: markedMessages,
-        promptCacheKey: getPromptCacheKey('explicit'),
+        promptCacheKey: SIM_PROMPT_CACHE_KEY,
       };
     },
   };

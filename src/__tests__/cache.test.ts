@@ -5,8 +5,6 @@ import {
   CACHE_ANCHOR_BANK_SLOT_STORAGE_KEY_PREFIX,
   CACHE_ANCHOR_STATE_STORAGE_KEY,
   CACHE_BACKOFF_BANK_MISS_THRESHOLD,
-  DISABLED_PROMPT_CACHE_KEY,
-  EXPLICIT_PROMPT_CACHE_KEY,
 } from '../cache/constants';
 import {
   commitPromptCacheState,
@@ -17,7 +15,6 @@ import {
   type CacheBackoffTransition,
 } from '../cache';
 import { markCacheBreakpoints } from '../cache/breakpoint/mark-cache-breakpoints';
-import { getPromptCacheKey } from '../cache/mode/get-prompt-cache-key';
 import { fingerprintMessage } from '../cache/planner/fingerprint-message';
 import { planCacheAnchors } from '../cache/planner/plan-cache-anchors';
 import { loadCacheAnchorState } from '../cache/state/load-cache-anchor-state';
@@ -47,14 +44,9 @@ describe('prompt cache mode', () => {
 });
 
 describe('prompt cache request wiring', () => {
-  it('모드별 캐시 키를 선택한다', () => {
-    expect(getPromptCacheKey('explicit')).toBe(EXPLICIT_PROMPT_CACHE_KEY);
-    expect(getPromptCacheKey('disabled')).toBe(DISABLED_PROMPT_CACHE_KEY);
-  });
-
   it.each([
-    ['explicit', EXPLICIT_PROMPT_CACHE_KEY],
-    ['disabled', DISABLED_PROMPT_CACHE_KEY],
+    ['explicit', 'risuai:llm-gateway-provider:v1'],
+    ['disabled', 'risuai:llm-gateway-provider:v1:disabled'],
   ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
     '%s 모드에 explicit 캐시 옵션과 해당 키를 구성한다',
     async (mode, promptCacheKey) => {
@@ -721,7 +713,7 @@ describe('prompt cache orchestration', () => {
     expect(prepared.requestMessages).toBe(messages);
     expect(prepared.pendingCommit).toBeNull();
     expect(prepared.cacheExtraBody).toEqual({
-      prompt_cache_key: EXPLICIT_PROMPT_CACHE_KEY,
+      prompt_cache_key: 'risuai:llm-gateway-provider:v1',
       prompt_cache_options: { mode: 'explicit', ttl: '30m' },
     });
     expect(consoleError).toHaveBeenCalledWith(
@@ -780,8 +772,8 @@ describe('prompt cache orchestration', () => {
   });
 
   it.each([
-    ['explicit', EXPLICIT_PROMPT_CACHE_KEY],
-    ['disabled', DISABLED_PROMPT_CACHE_KEY],
+    ['explicit', 'risuai:llm-gateway-provider:v1'],
+    ['disabled', 'risuai:llm-gateway-provider:v1:disabled'],
   ] satisfies ReadonlyArray<readonly ['explicit' | 'disabled', string]>)(
     '%s prepare 실패도 원래 mode의 cache extra body를 유지한다',
     async (mode, promptCacheKey) => {
