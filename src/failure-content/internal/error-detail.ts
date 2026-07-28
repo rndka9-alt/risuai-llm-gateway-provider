@@ -1,29 +1,9 @@
+import { isSensitivePropertyName } from '../../sensitive-values';
 import { isRecord } from './is-record';
 
 const REDACTED_VALUE = '[가려진 값]';
 const CIRCULAR_REFERENCE = '[순환 참조]';
 const MAX_CAUSE_DEPTH = 3;
-
-const SENSITIVE_PROPERTY_NAMES = new Set([
-  'accesstoken',
-  'apikey',
-  'authorization',
-  'bearertoken',
-  'clientsecret',
-  'cookie',
-  'idtoken',
-  'password',
-  'proxyauthorization',
-  'refreshtoken',
-  'secret',
-  'setcookie',
-  'token',
-  'xapikey',
-]);
-
-function isSensitivePropertyName(name: string): boolean {
-  return SENSITIVE_PROPERTY_NAMES.has(name.toLowerCase().replaceAll('-', '').replaceAll('_', ''));
-}
 
 function toSerializableError(error: Error): Record<string, unknown> {
   const serialized: Record<string, unknown> = {

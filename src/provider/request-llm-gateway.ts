@@ -32,6 +32,7 @@ import {
   resolveStreamingMode,
   resolveVerbosity,
 } from '../options';
+import { beginRequestLog } from '../request-log';
 import { completeSuccessfulRequest } from './complete-successful-request';
 import { consumeGatewayStream } from './consume-gateway-stream';
 import type {
@@ -66,6 +67,7 @@ export async function requestLLMGateway(
   const serviceTier = resolveServiceTier(config[SERVICE_TIER_ARGUMENT]);
   const reasoningEffort = resolveReasoningEffort(config[REASONING_EFFORT_ARGUMENT]);
   const verbosity = resolveVerbosity(config[VERBOSITY_ARGUMENT]);
+  const requestLog = beginRequestLog({ model, streamingMode });
   // 메시지 변환·커스텀 body 병합 예외(미지원 미디어, 초심층 JSON 등)도 promise reject가
   // 아니라 provider 실패 응답({success:false})으로 수렴해야 RisuAI가 처리할 수 있다
   try {
@@ -73,7 +75,9 @@ export async function requestLLMGateway(
     const cacheRequest = await preparePromptCacheRequest(messages, promptCacheMode);
     if (cacheRequest.status === 'storage-failure') {
       // 요청 전송 전의 환경성 실패 — 조용한 캐시 생략 대신 사용자에게 알린다.
-      return { success: false, content: toCacheStorageFailureContent(cacheRequest.error) };
+      const content = toCacheStorageFailureContent(cacheRequest.error);
+      requestLog.recordFailure(content);
+      return { success: false, content };
     }
 
     const extraBody: GatewayChatCompletionsExtraBody = {
@@ -105,7 +109,7 @@ export async function requestLLMGateway(
       // 플러그인 iframe은 CSP(connect-src 'none')로 직접 fetch가 막혀 있어
       // RisuAI의 server-side proxy-aware 브릿지를 경유한다. 구형 Safari도 raw bytes
       // 객체만 전달받으므로 ReadableStream transferable 지원 여부와 무관하게 동작한다.
-      fetch: createBridgeFetch(),
+      fetch: createBridgeFetch(requestLog.wireObserver),
     });
     const requestOptions: LlmRequestOptions = {
       temperature: providerArguments.temperature,
@@ -134,15 +138,14 @@ export async function requestLLMGateway(
             serviceTier,
           );
         }
-        return {
-          success: false,
-          content: toEmptyStreamFailureContent({
-            finishReason: result.finishReason,
-            reasoningDeltaCount: result.reasoningDeltaCount,
-            streamEventCount: result.streamEventCount,
-            usage: result.usage,
-          }),
-        };
+        const content = toEmptyStreamFailureContent({
+          finishReason: result.finishReason,
+          reasoningDeltaCount: result.reasoningDeltaCount,
+          streamEventCount: result.streamEventCount,
+          usage: result.usage,
+        });
+        requestLog.recordFailure(content);
+        return { success: false, content };
       }
       await completeSuccessfulRequest(
         cacheRequest.pendingCommit,
@@ -151,6 +154,7 @@ export async function requestLLMGateway(
         model,
         serviceTier,
       );
+      requestLog.recordSuccess({ finishReason: result.finishReason, usage: result.usage });
       return { success: true, content: result.text };
     }
 
@@ -166,8 +170,11 @@ export async function requestLLMGateway(
       model,
       serviceTier,
     );
+    requestLog.recordSuccess({ finishReason: output.finishReason, usage: output.usage });
     return { success: true, content: output.message.text };
   } catch (error) {
-    return { success: false, content: toFailureContent(error) };
+    const content = toFailureContent(error);
+    requestLog.recordFailure(content);
+    return { success: false, content };
   }
 }

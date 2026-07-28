@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { LlmFlagsField } from './LlmFlagsField';
 import { ModelField } from './ModelField';
+import { RequestLogField } from './RequestLogField';
 import { ServiceTierField } from './ServiceTierField';
 import { SettingsAccordion } from './SettingsAccordion';
 import { StreamingModeField } from './StreamingModeField';
@@ -19,6 +20,7 @@ export function AdvancedSettingsAccordion() {
       <StreamingModeField />
       <ServiceTierField />
       <LlmFlagsField />
+      <RequestLogField />
       <span class="text-xs leading-none text-ui-content/70">버전: {__VERSION__}</span>
     </SettingsAccordion>
   );

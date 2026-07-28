@@ -91,6 +91,51 @@ describe('createBridgeFetch', () => {
       });
     });
 
+    it('observer에게 실제 전송 헤더와 응답 본문 텍스트를 전달한다', async () => {
+      const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
+      vi.stubGlobal('risuai', { risuFetch });
+      const onRequest = vi.fn();
+      const onResponse = vi.fn();
+
+      await createBridgeFetch({ onRequest, onResponse })(REQUEST_URL, {
+        body: REQUEST_BODY,
+        headers: REQUEST_HEADERS,
+        method: 'POST',
+      });
+
+      expect(onRequest).toHaveBeenCalledWith({
+        url: REQUEST_URL,
+        method: 'POST',
+        headers: { authorization: 'Bearer key', 'Content-Type': 'application/json' },
+        body: REQUEST_BODY,
+      });
+      expect(onResponse).toHaveBeenCalledWith({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        bodyText: '{"choices":[]}',
+      });
+    });
+
+    it('observer 예외는 삼켜지고 요청을 방해하지 않는다', async () => {
+      const risuFetch = vi.fn().mockResolvedValue(createLegacyResult());
+      vi.stubGlobal('risuai', { risuFetch });
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const response = asResponse(
+        await createBridgeFetch({
+          onRequest: () => {
+            throw new Error('observer bug');
+          },
+          onResponse: () => {
+            throw new Error('observer bug');
+          },
+        })(REQUEST_URL, { body: REQUEST_BODY, headers: REQUEST_HEADERS, method: 'POST' }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(consoleError).toHaveBeenCalledTimes(2);
+    });
+
     it('소문자 content-type을 Content-Type 하나로 정규화한다', async () => {
       // globalFetch가 'Content-Type' 표기로 기본값을 병합하므로, 소문자 키가 그대로
       // 가면 두 키가 공존해 'application/json, application/json'으로 합쳐진다.

@@ -109,6 +109,11 @@ npm run test:all  # 둘 다
 - `src/failure-content/` — 실제 HTTP 오류와 브릿지 합성 오류를 구분하되 원본 body를 보존해 표시.
   `error-codes.ts`가 사용자 실패 안내의 `LGP:ERR:NNN` 코드 레지스트리이고, 민감값 마스킹을 포함한
   오류 직렬화는 `internal/`이 담당한다
+- `src/request-log/` — 최근 요청 5개의 wire 메타데이터 인메모리 링 버퍼 (영속화 없음, 새로고침에 소실).
+  bridge-fetch의 `BridgeWireObserver`로 실제 전송 헤더·본문을 받아 채팅 내용 필드만 자리표시자로
+  컷하고, 설정 '고급'의 요청 로그 UI(`RequestLogField`)가 snapshot 구독으로 표시한다
+- `src/sensitive-values.ts` — 민감 속성명 목록·판별·마스킹의 단일 출처. failure-content의 완전
+  마스킹(`[가려진 값]`)과 request-log의 프리픽스 보존 마스킹(`llmg***`)이 공유한다
 - `src/convert.ts` — RisuAI `prompt_chat`(OpenAIChat[]) → llm-io `LlmMessage[]` 변환
 - `src/cache/` — 캐시 모드/키 + breakpoint 자동 배치(아래 참고) + 앵커 상태 저장
 - `src/ledger/` — 캐시 손익 원장 (읽기/쓰기 토큰·실 지출 누적, 토큰 등가 손익과 `cost_details` 기반 `savedUsd` 계산).

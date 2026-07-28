@@ -24,6 +24,18 @@ export class BridgeFetchError extends Error {
   }
 }
 
+// 요청 로그 같은 관찰자가 wire 실체(실제 전송 헤더·본문·응답 bytes)를 보는 훅.
+// 관찰자 예외는 브릿지가 삼켜 실요청에 영향을 주지 않는다.
+export interface BridgeWireObserver {
+  onRequest(request: {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }): void;
+  onResponse(response: { status: number; headers: Record<string, string>; bodyText: string }): void;
+}
+
 const LEGACY_FETCH_UNAVAILABLE_MESSAGE =
   '이 플러그인은 현재 버전의 RisuAI를 지원하지 않아요. ' + '플러그인 개발자에게 문의해 주세요.';
 
@@ -68,56 +80,13 @@ function isSyntheticBridgeFailure(result: LegacyFetchResult): result is LegacyFe
   );
 }
 
-const legacyRisuFetch: FetchLike = async (url, init) => {
-  // JSON.parse나 브릿지 안내 에러가 abort보다 먼저 나가지 않도록 진입 시점에 확인한다.
-  init?.signal?.throwIfAborted();
-  const risuFetch = risuai.risuFetch;
-  if (risuFetch === undefined) {
-    throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
-  }
-  const method = init?.method;
-  if (method !== undefined && method !== 'POST' && method !== 'GET') {
-    throw new Error(`risuFetch 브릿지는 ${method} 요청을 지원하지 않습니다.`);
-  }
-  let result: LegacyFetchResult;
+function safelyObserve(observe: () => void): void {
   try {
-    result = await risuFetch(url, {
-      // globalFetch가 body를 다시 JSON.stringify하므로, llm-io가 직렬화한 JSON 문자열을
-      // 그대로 넘기면 이중 인코딩된다 — 파싱해 원래 값으로 되돌려 전달한다.
-      ...(init?.body === undefined ? {} : { body: JSON.parse(init.body) }),
-      ...(init?.headers === undefined ? {} : { headers: normalizeLegacyHeaders(init.headers) }),
-      ...(method === undefined ? {} : { method }),
-      // 끄면 SSE·오류 본문이 globalFetch의 JSON 파싱 경로로 들어가 깨진다.
-      rawResponse: true,
-      // LLM Gateway는 server-to-server 호출만 지원하므로 RisuAI의 "직접 요청 보내기"
-      // 설정을 이 요청에 적용하지 않는다. web/node는 /proxy2, Tauri는 native HTTP를 쓴다.
-      plainFetchDeforce: true,
-      ...(init?.signal === undefined ? {} : { abortSignal: init.signal }),
-    });
+    observe();
   } catch (error) {
-    init?.signal?.throwIfAborted();
-    // 게스트의 risuai는 모든 프로퍼티에 함수를 돌려주는 Proxy라 위 존재 확인은
-    // 실전에서 걸리지 않는다. 본체에서 risuFetch가 제거되면 브릿지가
-    // 'API method risuFetch not found'로 거절하므로 여기서 안내 메시지로 바꾼다.
-    if (error instanceof Error && error.message.includes('risuFetch not found')) {
-      throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
-    }
-    throw new BridgeFetchError(error);
+    console.error('[llm-gateway-provider] wire observer failed', error);
   }
-  // globalFetch는 abort를 throw 없이 {ok:false, status:400}으로 반환하므로,
-  // HTTP 실패로 오인되기 전에 표준 abort 예외로 되돌린다.
-  init?.signal?.throwIfAborted();
-  if (isSyntheticBridgeFailure(result)) {
-    throw new BridgeFetchError(result.data);
-  }
-  return new Response(
-    NULL_BODY_STATUSES.has(result.status) ? null : toLegacyResponseBody(result.data),
-    {
-      status: result.status,
-      headers: result.headers,
-    },
-  );
-};
+}
 
 /**
  * RisuAI 브릿지를 건너는 FetchLike를 만든다.
@@ -127,6 +96,71 @@ const legacyRisuFetch: FetchLike = async (url, init) => {
  * raw bytes 객체만 iframe으로 전달하므로 transferable streams가 없는 구형 Safari에서도
  * 같은 경로가 동작한다. 유료 요청 뒤 다른 경로로 재시도하지 않는다.
  */
-export function createBridgeFetch(): FetchLike {
-  return legacyRisuFetch;
+export function createBridgeFetch(observer?: BridgeWireObserver): FetchLike {
+  return async (url, init) => {
+    // JSON.parse나 브릿지 안내 에러가 abort보다 먼저 나가지 않도록 진입 시점에 확인한다.
+    init?.signal?.throwIfAborted();
+    const risuFetch = risuai.risuFetch;
+    if (risuFetch === undefined) {
+      throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
+    }
+    const method = init?.method;
+    if (method !== undefined && method !== 'POST' && method !== 'GET') {
+      throw new Error(`risuFetch 브릿지는 ${method} 요청을 지원하지 않습니다.`);
+    }
+    const headers = init?.headers === undefined ? undefined : normalizeLegacyHeaders(init.headers);
+    if (observer !== undefined) {
+      // 실패·중단되는 요청도 무엇을 보내려 했는지 남도록 전송 직전에 기록한다.
+      safelyObserve(() =>
+        observer.onRequest({ url, method: method ?? 'POST', headers, body: init?.body }),
+      );
+    }
+    let result: LegacyFetchResult;
+    try {
+      result = await risuFetch(url, {
+        // globalFetch가 body를 다시 JSON.stringify하므로, llm-io가 직렬화한 JSON 문자열을
+        // 그대로 넘기면 이중 인코딩된다 — 파싱해 원래 값으로 되돌려 전달한다.
+        ...(init?.body === undefined ? {} : { body: JSON.parse(init.body) }),
+        ...(headers === undefined ? {} : { headers }),
+        ...(method === undefined ? {} : { method }),
+        // 끄면 SSE·오류 본문이 globalFetch의 JSON 파싱 경로로 들어가 깨진다.
+        rawResponse: true,
+        // LLM Gateway는 server-to-server 호출만 지원하므로 RisuAI의 "직접 요청 보내기"
+        // 설정을 이 요청에 적용하지 않는다. web/node는 /proxy2, Tauri는 native HTTP를 쓴다.
+        plainFetchDeforce: true,
+        ...(init?.signal === undefined ? {} : { abortSignal: init.signal }),
+      });
+    } catch (error) {
+      init?.signal?.throwIfAborted();
+      // 게스트의 risuai는 모든 프로퍼티에 함수를 돌려주는 Proxy라 위 존재 확인은
+      // 실전에서 걸리지 않는다. 본체에서 risuFetch가 제거되면 브릿지가
+      // 'API method risuFetch not found'로 거절하므로 여기서 안내 메시지로 바꾼다.
+      if (error instanceof Error && error.message.includes('risuFetch not found')) {
+        throw new BridgeFetchError(LEGACY_FETCH_UNAVAILABLE_MESSAGE);
+      }
+      throw new BridgeFetchError(error);
+    }
+    // globalFetch는 abort를 throw 없이 {ok:false, status:400}으로 반환하므로,
+    // HTTP 실패로 오인되기 전에 표준 abort 예외로 되돌린다.
+    init?.signal?.throwIfAborted();
+    if (isSyntheticBridgeFailure(result)) {
+      throw new BridgeFetchError(result.data);
+    }
+    if (observer !== undefined) {
+      safelyObserve(() =>
+        observer.onResponse({
+          status: result.status,
+          headers: result.headers,
+          bodyText: result.data instanceof Uint8Array ? new TextDecoder().decode(result.data) : '',
+        }),
+      );
+    }
+    return new Response(
+      NULL_BODY_STATUSES.has(result.status) ? null : toLegacyResponseBody(result.data),
+      {
+        status: result.status,
+        headers: result.headers,
+      },
+    );
+  };
 }
